@@ -8,6 +8,7 @@ import '../domain/game_state.dart';
 import '../rendering/base_scene.dart';
 import 'city_development.dart';
 import 'facility_queue_card.dart';
+import 'investment_comparison.dart';
 import 'research_tree.dart';
 import 'strategy_widgets.dart';
 
@@ -25,6 +26,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   int facilityTab = 0;
   String cityId = 'earth_delta';
   String researchId = 'life_support';
+  InvestmentCandidate? savedInvestment;
   GameController get controller => widget.controller;
   GameState get game => controller.state;
   bool get _compactLandscape => MediaQuery.sizeOf(context).height < 450;
@@ -83,6 +85,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     controller: controller,
                     cityId: cityId,
                     onCityChanged: _selectCity,
+                    savedInvestment: savedInvestment,
+                    onSaveInvestment: (candidate) => setState(() {
+                      savedInvestment = candidate;
+                    }),
                     onOpenResearch: (id) => setState(() {
                       researchId = id;
                       tab = 2;
@@ -455,7 +461,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     ? null
                     : Text(
                         game.cityUnlocked(candidate.id)
-                            ? '開発可能 · ${candidate.plotCount}区画'
+                            ? '${game.cityDevelopment(candidate.id).stageName} · 完成 ${game.cityDevelopment(candidate.id).completedPlots}/${candidate.plotCount} · 総Lv.${game.cityDevelopment(candidate.id).totalLevels}'
                             : game.cityLockReason(candidate.id) ?? '研究が必要',
                         style: const TextStyle(
                           fontSize: 11,
@@ -476,6 +482,18 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           city.description,
           style: const TextStyle(color: strategyMuted, fontSize: 12),
         ),
+        const SizedBox(height: 8),
+        Text(
+          '${game.cityDevelopment(city.id).stageName} · 完成 ${game.cityDevelopment(city.id).completedPlots}/${city.plotCount}区画 · 総Lv.${game.cityDevelopment(city.id).totalLevels}',
+          key: const Key('planet-city-development'),
+          style: const TextStyle(color: strategyMint, fontSize: 12),
+        ),
+        if (game.cityDevelopment(city.id).nextStageAtTotalLevels
+            case final next?)
+          Text(
+            '次の発展段階まで あと ${next - game.cityDevelopment(city.id).totalLevels} Lvの建設・増強',
+            style: const TextStyle(color: strategyMuted, fontSize: 11),
+          ),
         const SizedBox(height: 12),
         FilledButton.icon(
           key: const Key('open-city'),

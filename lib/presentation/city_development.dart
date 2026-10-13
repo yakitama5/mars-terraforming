@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../application/game_controller.dart';
 import '../domain/game_content.dart';
 import '../domain/game_state.dart';
+import 'investment_comparison.dart';
 import 'strategy_widgets.dart';
 
 class CityDevelopment extends StatefulWidget {
@@ -14,11 +15,15 @@ class CityDevelopment extends StatefulWidget {
     required this.cityId,
     required this.onCityChanged,
     required this.onOpenResearch,
+    required this.onSaveInvestment,
+    this.savedInvestment,
   });
   final GameController controller;
   final String cityId;
   final ValueChanged<String> onCityChanged;
   final ValueChanged<String> onOpenResearch;
+  final InvestmentCandidate? savedInvestment;
+  final ValueChanged<InvestmentCandidate?> onSaveInvestment;
 
   @override
   State<CityDevelopment> createState() => _CityDevelopmentState();
@@ -37,8 +42,14 @@ class _CityDevelopmentState extends State<CityDevelopment> {
   void didUpdateWidget(covariant CityDevelopment oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.cityId != widget.cityId) {
+      final previousDistrict =
+          game.districtAt(oldWidget.cityId, selectedPlot)?.districtId ??
+          selectedDistrict ??
+          widget.savedInvestment?.districtId;
       selectedPlot = 12;
-      selectedDistrict = null;
+      selectedDistrict = available.any((item) => item.id == previousDistrict)
+          ? previousDistrict
+          : null;
     }
   }
 
@@ -88,6 +99,14 @@ class _CityDevelopmentState extends State<CityDevelopment> {
               style: TextStyle(color: strategyMint, fontSize: 12),
             ),
           ],
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 5),
+        child: Text(
+          '${game.cityDevelopment(city.id).stageName} · 完成 ${game.cityDevelopment(city.id).completedPlots}/${city.plotCount}区画 · 総Lv.${game.cityDevelopment(city.id).totalLevels} · 未予約空地 ${game.cityDevelopment(city.id).availablePlots}',
+          key: const Key('city-development-summary'),
+          style: const TextStyle(color: strategyMint, fontSize: 11),
         ),
       ),
       Expanded(
@@ -191,7 +210,12 @@ class _CityDevelopmentState extends State<CityDevelopment> {
       selected: selected,
       child: GestureDetector(
         key: Key('plot-${city.id}-$index'),
-        onTap: () => setState(() => selectedPlot = index),
+        onTap: () => setState(() {
+          selectedDistrict =
+              game.districtAt(city.id, selectedPlot)?.districtId ??
+              selectedDistrict;
+          selectedPlot = index;
+        }),
         child: CustomPaint(
           painter: _HexPaint(
             fill: selected ? const Color(0xff31564f) : fill,
@@ -253,11 +277,18 @@ class _CityDevelopmentState extends State<CityDevelopment> {
             ? selectedDistrict!
             : districts.first.id);
     final definition = GameContent.districts[selected]!;
+    final maxLevel = existing != null && existing.level >= definition.maxLevel;
     final preview = game.districtPreview(
       city.id,
       selectedPlot,
       selected,
       upgrade: existing != null,
+    );
+    final candidate = InvestmentCandidate(
+      cityId: city.id,
+      plotIndex: selectedPlot,
+      districtId: selected,
+      targetLevel: preview.targetLevel,
     );
     final plans = game.plans.where(
       (plan) =>
@@ -336,83 +367,109 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 style: const TextStyle(fontSize: 12, color: strategyMuted),
               ),
               const SizedBox(height: 12),
-              StrategyCard(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '建設前の見積もり',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: strategyMint,
-                      ),
-                    ),
-                    StrategyFact('建設費', '${preview.cost} Cr'),
-                    StrategyFact('現在の資金', '${game.money} Cr'),
-                    StrategyFact('完成まで', gameDuration(preview.durationMs)),
-                    StrategyFact(
-                      '稼働先',
-                      GameContent
-                          .facilities[definition.operatingFacilityId]!
-                          .name,
-                    ),
-                    StrategyFact(
-                      '現在効率',
-                      '+${game.facilityBonusPercent(definition.operatingFacilityId)}% / 上限 ${game.facilityBonusCap(definition.operatingFacilityId)}%',
-                    ),
-                    StrategyFact(
-                      '税収の変化',
-                      '${signedNumber(preview.taxDeltaPerMinute)} Cr/分',
-                    ),
-                    StrategyFact(
-                      '維持費',
-                      '${signedNumber(preview.upkeepDeltaPerMinute)} Cr/分',
-                    ),
-                    if (preview.researchBonusDelta != 0)
-                      StrategyFact(
-                        '研究効率',
-                        '${signedNumber(preview.researchBonusDelta)}%',
-                      ),
-                    if (preview.factoryBonusDelta != 0)
-                      StrategyFact(
-                        '製造効率',
-                        '${signedNumber(preview.factoryBonusDelta)}%',
-                      ),
-                    if (preview.launchBonusDelta != 0)
-                      StrategyFact(
-                        '輸送効率',
-                        '${signedNumber(preview.launchBonusDelta)}%',
-                      ),
-                    if (preview.marsBonusDelta != 0)
-                      StrategyFact(
-                        '火星建設',
-                        '${signedNumber(preview.marsBonusDelta)}%',
-                      ),
-                    if (city.planet == 'mars')
-                      StrategyFact('必要資材', '到着キット 1基 / 在庫 ${game.marsKits}基'),
-                  ],
-                ),
+              OutlinedButton.icon(
+                key: const Key('save-investment'),
+                onPressed: maxLevel
+                    ? null
+                    : () => widget.onSaveInvestment(candidate),
+                icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                label: const Text('比較に保存'),
               ),
-              const SizedBox(height: 12),
-              const Text(
-                '立地・隣接ボーナス',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              for (final bonus in preview.bonuses)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 5),
-                  child: Text(
-                    '＋ $bonus',
-                    style: const TextStyle(fontSize: 12, color: strategyMint),
+              if (widget.savedInvestment case final saved?) ...[
+                const SizedBox(height: 8),
+                StrategyCard(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        '保存した候補',
+                        style: TextStyle(color: strategyMint, fontSize: 11),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '${saved.title}\n${saved.action}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        '別の区画・都市を選ぶと、現在の候補と比較できます。',
+                        style: TextStyle(color: strategyMuted, fontSize: 11),
+                      ),
+                      TextButton.icon(
+                        key: const Key('compare-investments'),
+                        onPressed: maxLevel
+                            ? null
+                            : () => showDialog<void>(
+                                context: context,
+                                builder: (context) => ListenableBuilder(
+                                  listenable: widget.controller,
+                                  builder: (context, _) => InvestmentComparison(
+                                    game: widget.controller.state,
+                                    saved: saved,
+                                    current: candidate,
+                                  ),
+                                ),
+                              ),
+                        icon: const Icon(Icons.compare_arrows, size: 18),
+                        label: const Text('候補を比較'),
+                      ),
+                      TextButton(
+                        key: const Key('clear-investment'),
+                        onPressed: () => widget.onSaveInvestment(null),
+                        child: const Text('比較候補を解除'),
+                      ),
+                    ],
                   ),
                 ),
-              if (preview.bonuses.isEmpty)
-                const Text(
-                  'この配置で追加の立地効果はありません。隣の区画も比較できます。',
-                  style: TextStyle(fontSize: 12, color: strategyMuted),
+              ],
+              const SizedBox(height: 12),
+              if (maxLevel)
+                const StrategyCard(
+                  child: Text('この地区は最大レベルです。別の区画への展開を検討してください。'),
+                )
+              else ...[
+                StrategyCard(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '建設前の見積もり',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: strategyMint,
+                        ),
+                      ),
+                      StrategyFact('現在の資金', '${game.money} Cr'),
+                      InvestmentEstimate(
+                        game: game,
+                        preview: preview,
+                        cityId: city.id,
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(height: 12),
+                const Text(
+                  '立地・隣接ボーナス',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                for (final bonus in preview.bonuses)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Text(
+                      '＋ $bonus',
+                      style: const TextStyle(fontSize: 12, color: strategyMint),
+                    ),
+                  ),
+                if (preview.bonuses.isEmpty)
+                  const Text(
+                    'この配置で追加の立地効果はありません。隣の区画も比較できます。',
+                    style: TextStyle(fontSize: 12, color: strategyMuted),
+                  ),
+              ],
               if (definition.requiredResearch != null)
                 StrategyFact(
                   '必要研究',
