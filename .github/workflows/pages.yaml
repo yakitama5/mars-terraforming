@@ -1,0 +1,150 @@
+name: GitHub Pages (main + develop)
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One Pages site contains both channels. Serialize the whole run, including
+# resolving branch heads, so two pushes cannot overwrite one another's output.
+concurrency:
+  group: github-pages-main-and-develop
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      main_sha: ${{ steps.refs.outputs.main_sha }}
+      develop_sha: ${{ steps.refs.outputs.develop_sha }}
+    steps:
+      - name: Resolve both branch heads
+        id: refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          develop_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/develop" --jq '.object.sha')
+          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
+          echo "develop_sha=$develop_sha" >> "$GITHUB_OUTPUT"
+      - name: Check out main at the resolved commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.refs.outputs.main_sha }}
+          path: main-source
+          persist-credentials: false
+      - name: Check out develop at the resolved commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.refs.outputs.develop_sha }}
+          path: develop-source
+          persist-credentials: false
+      - uses: actions/configure-pages@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Validate and build main (normal time)
+        working-directory: main-source
+        env:
+          MARS_DEV_TOOLS: 'false'
+          MARS_WEB_BASE_HREF: /mars-terraforming/
+          MARS_WEB_SAVE_NAMESPACE: mars-terraforming-main
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get --enforce-lockfile
+          bash tools/check.sh
+          bash tools/build_web_preview.sh
+      - name: Validate and build develop (time controls)
+        working-directory: develop-source
+        env:
+          MARS_DEV_TOOLS: 'true'
+          MARS_WEB_BASE_HREF: /mars-terraforming/develop/
+          MARS_WEB_SAVE_NAMESPACE: mars-terraforming-develop
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get --enforce-lockfile
+          bash tools/check.sh
+          bash tools/build_web_preview.sh
+      - name: Assemble the complete site
+        env:
+          MAIN_SHA: ${{ steps.refs.outputs.main_sha }}
+          DEVELOP_SHA: ${{ steps.refs.outputs.develop_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p pages-site/develop
+          cp -R main-source/site-preview/dist/. pages-site/
+          cp -R develop-source/site-preview/dist/. pages-site/develop/
+          touch pages-site/.nojekyll
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          Path('pages-site/deployment.json').write_text(json.dumps({
+              'main': os.environ['MAIN_SHA'],
+              'develop': os.environ['DEVELOP_SHA'],
+              'run': os.environ['GITHUB_RUN_ID'],
+          }, indent=2) + '\n')
+          PYTHON
+      - name: Upload both channels as one Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Skip a build superseded while it was running
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILT_MAIN: ${{ needs.build.outputs.main_sha }}
+          BUILT_DEVELOP: ${{ needs.build.outputs.develop_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          current_develop=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/develop" --jq '.object.sha')
+          if [[ "$BUILT_MAIN" == "$current_main" && "$BUILT_DEVELOP" == "$current_develop" ]]; then
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            echo 'A branch changed during the build. The queued workflow will build both latest heads.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Deploy both channels together
+        id: deployment
+        if: steps.current.outputs.publish == 'true'
+        uses: actions/deploy-pages@v4
+      - name: Record published channels
+        if: steps.current.outputs.publish == 'true'
+        env:
+          SITE_URL: ${{ steps.deployment.outputs.page_url }}
+          MAIN_SHA: ${{ needs.build.outputs.main_sha }}
+          DEVELOP_SHA: ${{ needs.build.outputs.develop_sha }}
+        shell: bash
+        run: |
+          {
+            echo "main: $SITE_URL ($MAIN_SHA)"
+            echo "develop: ${SITE_URL%/}/develop/ ($DEVELOP_SHA)"
+          } >> "$GITHUB_STEP_SUMMARY"
