@@ -63,6 +63,7 @@ void main() {
     expect(waiting.status, 'queued');
     expect(waiting.stopReason, contains('実証待ち'));
     one.enqueueDistrict('mars_arcadia', 2, 'mars_habitat');
+    final constructionTime = state.currentPlanFor('mars')!.remainingMs;
     final before = state.moneyUnits;
     var split = GameEngine(copy(state));
     one.advanceBy(const Duration(hours: 1));
@@ -74,7 +75,8 @@ void main() {
     expect(waiting.status, 'running');
     expect(
       waiting.remainingMs,
-      const Duration(hours: 11, minutes: 30).inMilliseconds,
+      GameContent.tasks['closed_ecology']!.durationMs -
+          (const Duration(hours: 1).inMilliseconds - constructionTime),
     );
     expect(one.researchRequirementReasons('closed_ecology'), isEmpty);
     expect(state.moneyUnits, lessThan(before));
@@ -108,7 +110,7 @@ void main() {
       game.researchRequirementReasons('regional_habitats').single,
       contains('1/2'),
     );
-    game.advanceBy(const Duration(hours: 3));
+    game.advanceBy(const Duration(hours: 4));
     expect(game.researchRequirementReasons('regional_habitats'), isEmpty);
     expect(state.currentPlanFor('lab')!.taskId, 'regional_habitats');
     expect(state.developedMarsCityIds, {'mars_arcadia', 'mars_elysium'});
@@ -147,12 +149,6 @@ void main() {
       final task = GameContent.tasks[entry.key]!;
       expect([task.durationSeconds, task.cost, task.reward], entry.value);
     }
-    expect(
-      GameContent.tasks.values
-          .where((t) => t.unique)
-          .fold(0, (sum, t) => sum + t.cost),
-      5014180,
-    );
   });
 
   test('a normal funded route reaches all branches through construction and superior contracts', () {

@@ -18,6 +18,16 @@ void main() {
     isUtc: true,
   );
 
+  // Actual district-2 engine snapshot at ac8e9f9. A highland campus upgrade
+  // has paid its former 4x cost/time, with solar construction queued behind it.
+  final districtLegacy = jsonDecode(
+    File('test/fixtures/district_v2.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
+  final districtEpoch = DateTime.fromMillisecondsSinceEpoch(
+    districtLegacy['lastWallClockMs'] as int,
+    isUtc: true,
+  );
+
   for (final native in [true, false]) {
     test(
       '${native ? 'file' : 'browser'} old save migrates without replaying paid work or awards',
@@ -70,6 +80,75 @@ void main() {
         addTearDown(afterReload.dispose);
         await afterReload.initialize(startTimer: false);
         expect(afterReload.state.toJson(), afterCompletion);
+      },
+    );
+  }
+  for (final native in [true, false]) {
+    test(
+      '${native ? 'file' : 'browser'} district-2 preserves its paid upgrade and adopts future prices',
+      () async {
+        final directory = await Directory.systemTemp.createTemp(
+          'mars-investment-migration-',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final storage = <String, String>{};
+        SaveRepository reopen() => native
+            ? FileSaveStore(directory)
+            : KeyValueSaveStore(
+                read: (key) => storage[key],
+                write: (key, value) => storage[key] = value,
+              );
+        await reopen().save(districtLegacy);
+        final controller = GameController(reopen(), now: () => districtEpoch);
+        await controller.initialize(startTimer: false);
+        addTearDown(controller.dispose);
+        expect(controller.error, isNull);
+        expect(controller.state.moneyUnits, districtLegacy['moneyUnits']);
+        expect(controller.state.research, districtLegacy['research']);
+        final original = (districtLegacy['plans'] as List)
+            .cast<Map<String, dynamic>>()
+            .firstWhere((p) => p['taskId'] == 'upgrade_campus');
+        final paid = controller.state.currentPlanFor('factory')!;
+        expect(paid.remainingMs, original['remainingMs']);
+        expect(paid.iterationDurationMs, original['iterationDurationMs']);
+        expect(
+          paid.iterationDurationMs,
+          greaterThan(controller.state.plannedDurationMs(paid)),
+        );
+        expect(
+          controller.state.cityDevelopment('earth_highland').completedPlots,
+          2,
+        );
+        final solar = controller.state.plans.firstWhere(
+          (p) => p.taskId == 'district_solar',
+        );
+        expect(
+          controller.state.plannedCost(solar),
+          806,
+        ); // Existing city, 2 plots: no opening fee.
+        expect(controller.state.toJson()['contentVersion'], 'district-3');
+        await controller.command((game) {
+          final contract = game.state.plans.firstWhere(
+            (p) => p.taskId == 'factory_contract',
+          );
+          final reason = game.reorderPlan(
+            solar.id,
+            relativeToPlanId: contract.id,
+            before: true,
+          );
+          expect(reason, isNull);
+          game.advanceBy(Duration(milliseconds: paid.remainingMs));
+          return null;
+        });
+        expect(controller.state.districtAt('earth_highland', 0)!.level, 2);
+        expect(paid.completedRuns, 1);
+        expect(solar.status, 'running');
+        final after = controller.state.toJson();
+        final resumed = GameController(reopen(), now: () => districtEpoch);
+        addTearDown(resumed.dispose);
+        await resumed.initialize(startTimer: false);
+        expect(resumed.state.toJson(), after);
+        expect(resumed.state.currentPlanFor('factory')!.id, solar.id);
       },
     );
   }

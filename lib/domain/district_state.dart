@@ -82,6 +82,18 @@ class DistrictPreview {
     required this.launchBonusDelta,
     required this.marsBonusDelta,
     required this.bonuses,
+    required this.baseCost,
+    required this.developmentCost,
+    required this.setupCost,
+    required this.baseDurationMs,
+    required this.developmentDurationMs,
+    required this.setupDurationMs,
+    required this.additionalPlots,
+    required this.developmentPercent,
+    required this.rawResearchBonusDelta,
+    required this.rawFactoryBonusDelta,
+    required this.rawLaunchBonusDelta,
+    required this.rawMarsBonusDelta,
     this.blockedReason,
   });
   final int cost,
@@ -93,7 +105,34 @@ class DistrictPreview {
       factoryBonusDelta,
       launchBonusDelta,
       marsBonusDelta;
+
+  /// Base values include the target-level multiplier. Infrastructure additions
+  /// are pre-efficiency; [durationMs] is the effective total occupation time.
+  final int baseCost, developmentCost, setupCost;
+  final int baseDurationMs, developmentDurationMs, setupDurationMs;
+  final int additionalPlots, developmentPercent;
+  final int rawResearchBonusDelta,
+      rawFactoryBonusDelta,
+      rawLaunchBonusDelta,
+      rawMarsBonusDelta;
+  int get netDeltaPerMinute => taxDeltaPerMinute - upkeepDeltaPerMinute;
   final List<String> bonuses;
   final String? blockedReason;
   bool get isValid => blockedReason == null;
+}
+
+/// Visual milestones are derived from completed districts, never rewards.
+class CityDevelopmentSummary {
+  const CityDevelopmentSummary({
+    required this.completedPlots,
+    required this.totalLevels,
+    required this.emptyPlots,
+    required this.reservedPlots,
+    required this.stageName,
+    required this.nextStageAtTotalLevels,
+  });
+  final int completedPlots, totalLevels, emptyPlots, reservedPlots;
+  int get availablePlots => emptyPlots - reservedPlots;
+  final String stageName;
+  final int? nextStageAtTotalLevels;
 }
