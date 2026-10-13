@@ -61,7 +61,7 @@ class TaskDefinition {
 }
 
 abstract final class GameContent {
-  static const version = 'district-2';
+  static const version = 'district-3';
   static const initialMoney = 900;
   static const initialPopulation = 120;
   static const baseTaxPerMinute = 30;
@@ -227,8 +227,8 @@ abstract final class GameContent {
       id: 'urban_planning',
       name: '都市基盤の計画',
       facilityId: 'lab',
-      durationSeconds: 14400,
-      cost: 4000,
+      durationSeconds: 480,
+      cost: 700,
       unique: true,
       researchBranch: '都市・産業',
       researchStage: 1,
@@ -240,8 +240,8 @@ abstract final class GameContent {
       id: 'automated_fabrication',
       name: '自動化生産の実証',
       facilityId: 'lab',
-      durationSeconds: 64800,
-      cost: 120000,
+      durationSeconds: 5400,
+      cost: 20000,
       unique: true,
       researchRequirements: ResearchRequirements(
         districtCounts: {'industry': 1},
@@ -257,7 +257,7 @@ abstract final class GameContent {
       id: 'industrial_network',
       name: '広域産業ネットワーク',
       facilityId: 'lab',
-      durationSeconds: 129600,
+      durationSeconds: 86400,
       cost: 900000,
       unique: true,
       requiredResearch: 'automated_fabrication',
@@ -271,8 +271,8 @@ abstract final class GameContent {
       id: 'reusable_launch',
       name: '再使用輸送の実証',
       facilityId: 'lab',
-      durationSeconds: 21600,
-      cost: 30000,
+      durationSeconds: 1800,
+      cost: 6000,
       unique: true,
       requiredResearch: 'urban_planning',
       researchBranch: '輸送',
@@ -285,8 +285,8 @@ abstract final class GameContent {
       id: 'orbital_logistics',
       name: '軌道補給網',
       facilityId: 'lab',
-      durationSeconds: 86400,
-      cost: 300000,
+      durationSeconds: 14400,
+      cost: 120000,
       unique: true,
       researchRequirements: ResearchRequirements(
         districtCounts: {'spaceport': 1},
@@ -302,7 +302,7 @@ abstract final class GameContent {
       id: 'intercity_logistics',
       name: '惑星間の都市連携',
       facilityId: 'lab',
-      durationSeconds: 129600,
+      durationSeconds: 86400,
       cost: 1200000,
       unique: true,
       requiredResearch: 'orbital_logistics',
@@ -316,8 +316,8 @@ abstract final class GameContent {
       id: 'closed_ecology',
       name: '閉鎖循環の実証',
       facilityId: 'lab',
-      durationSeconds: 43200,
-      cost: 60000,
+      durationSeconds: 10800,
+      cost: 40000,
       unique: true,
       researchRequirements: ResearchRequirements(marsHabitats: 1),
       requiredResearch: 'life_support',
@@ -331,7 +331,7 @@ abstract final class GameContent {
       id: 'local_resources',
       name: '現地資源利用の実証',
       facilityId: 'lab',
-      durationSeconds: 86400,
+      durationSeconds: 43200,
       cost: 600000,
       unique: true,
       researchRequirements: ResearchRequirements(
@@ -368,6 +368,14 @@ abstract final class GameContent {
   /// Efficiency grows with demonstrated research, rather than filling its
   /// final cap as soon as the first scientific city opens.
   static const efficiencyCapsByStage = [30, 30, 45, 60];
+
+  /// Provisional marginal investment prices. Upgrading saves land and shared
+  /// equipment time; expansion gains fresh terrain but develops infrastructure.
+  static const districtCostPercentByLevel = [100, 175, 250];
+  static const districtDurationPercentByLevel = [100, 80, 120];
+  static const newPlotDevelopmentPercent = 12;
+  static const cityStageThresholds = [0, 1, 8, 20];
+  static const cityStageNames = ['候補地', '拠点', '成長都市', '中核都市'];
   static const facilityResearchBranches = {
     'factory': '都市・産業',
     'launch': '輸送',
@@ -442,6 +450,8 @@ abstract final class GameContent {
       planet: 'earth',
       latitude: 35,
       longitude: 10,
+      setupCost: 1200,
+      setupDurationSeconds: 900,
       requiredResearch: 'urban_planning',
       description: '高台の研究と鉱床の製造。隣接する地区で専門都市に育てる。',
       terrain: [
@@ -513,6 +523,8 @@ abstract final class GameContent {
       planet: 'mars',
       latitude: 5,
       longitude: 150,
+      setupCost: 1600,
+      setupDurationSeconds: 2700,
       requiredResearch: 'orbital_logistics',
       description: '高台と鉱床の地域。現地研究と採取による建設網を整える。',
       terrain: [
@@ -549,6 +561,8 @@ abstract final class GameContent {
       planet: 'mars',
       latitude: -42,
       longitude: 70,
+      setupCost: 2400,
+      setupDurationSeconds: 5400,
       requiredResearch: 'intercity_logistics',
       description: 'クレーターの多い後期拠点。地下居住の立地効果を活かせる。',
       terrain: [
@@ -586,7 +600,7 @@ abstract final class GameContent {
       name: '住宅地区',
       planet: 'earth',
       cost: 350,
-      durationSeconds: 600,
+      durationSeconds: 300,
       baseTaxPerMinute: 12,
       upkeepPerMinute: 2,
       residents: 60,
@@ -597,7 +611,7 @@ abstract final class GameContent {
       name: '研究地区',
       planet: 'earth',
       cost: 1200,
-      durationSeconds: 3600,
+      durationSeconds: 600,
       upkeepPerMinute: 4,
       requiredResearch: 'urban_planning',
       description: '研究効率+4%。高台で+2%、隣接住宅で+1%、発電地区で+2%。',
@@ -607,7 +621,7 @@ abstract final class GameContent {
       name: '工業地区',
       planet: 'earth',
       cost: 1500,
-      durationSeconds: 5400,
+      durationSeconds: 720,
       upkeepPerMinute: 5,
       requiredResearch: 'urban_planning',
       description: '製造効率+4%。鉱床で+2%、宇宙港で+1%、発電地区で+2%。住宅の隣接収入は低下。',
@@ -617,7 +631,7 @@ abstract final class GameContent {
       name: '発電地区',
       planet: 'earth',
       cost: 650,
-      durationSeconds: 1200,
+      durationSeconds: 300,
       upkeepPerMinute: 1,
       description: '隣接する研究・工業・宇宙港地区の効率を+2%。高台では追加+1%。',
     ),
@@ -626,7 +640,7 @@ abstract final class GameContent {
       name: '宇宙港地区',
       planet: 'earth',
       cost: 2400,
-      durationSeconds: 7200,
+      durationSeconds: 1200,
       upkeepPerMinute: 6,
       requiredResearch: 'reusable_launch',
       description: '輸送効率+4%。海岸で+2%、工業で+1%、発電地区で+2%。',
@@ -636,7 +650,7 @@ abstract final class GameContent {
       name: '火星居住地区',
       planet: 'mars',
       cost: 700,
-      durationSeconds: 1800,
+      durationSeconds: 600,
       baseTaxPerMinute: 6,
       upkeepPerMinute: 2,
       residents: 24,
@@ -700,13 +714,15 @@ class CityDefinition {
     required this.description,
     required this.terrain,
     this.requiredResearch,
+    this.setupCost = 0,
+    this.setupDurationSeconds = 0,
     this.width = 5,
     this.height = 5,
   });
   final String id, name, planet, description;
   final double latitude, longitude;
   final String? requiredResearch;
-  final int width, height;
+  final int width, height, setupCost, setupDurationSeconds;
   final List<String> terrain;
   int get plotCount => width * height;
   String terrainAt(int index) => terrain[index];
@@ -761,20 +777,21 @@ class DistrictDefinition {
   String taskId({bool upgrade = false}) =>
       '${upgrade ? 'upgrade' : 'district'}_$id';
   int costForLevel(int level) =>
-      cost *
-      (level == 1
-          ? 1
-          : level == 2
-          ? 4
-          : 12);
+      (cost *
+              GameContent.districtCostPercentByLevel[level.clamp(1, maxLevel) -
+                  1] +
+          99) ~/
+      100;
   int durationMsForLevel(int level) =>
-      durationSeconds *
-      1000 *
-      (level == 1
-          ? 1
-          : level == 2
-          ? 4
-          : 12);
+      (durationSeconds *
+              1000 *
+              GameContent.districtDurationPercentByLevel[level.clamp(
+                    1,
+                    maxLevel,
+                  ) -
+                  1] +
+          99) ~/
+      100;
 }
 
 /// Completed physical demonstrations; these never revoke legacy research.
