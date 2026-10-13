@@ -1,6 +1,7 @@
 # 都市投資と序盤のペース
 
-2026-10-13 / content `district-3`。この記録は `district-2` の調整値を更新する。
+2026-10-13 / content `district-3` 時点の記録。後続の工業価格・住宅解放・見通し機能は
+[序盤の投資と予約の見通し](early-development.md)（district-4）を優先する。
 
 ## 確認済みの方向と実装範囲
 
