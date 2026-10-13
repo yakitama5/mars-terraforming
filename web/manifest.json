@@ -1,0 +1,35 @@
+{
+  "name": "火星開発計画 — 試遊",
+  "short_name": "火星開発計画",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b151e",
+  "theme_color": "#0b151e",
+  "description": "地球の産業を育て、設備と資金を配分して火星へ進む開発計画ゲーム。",
+  "orientation": "landscape",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/Icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/Icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/Icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/Icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
