@@ -134,10 +134,17 @@ PagesはActions方式で有効化し、github-pages環境はmainとdevelopの2�
   研究→製造→輸送→居住1棟/12人、2タブ目停止、報酬保持、オフライン再開。
   検証用ブラウザの終了待ちはcontextを先に閉じる修正で解消し、再実行で終了コード0を確認。
   実URLの [設備一覧](screenshots/pages-equipment.png)・[居住完成](screenshots/pages-habitat.png) を保存。
-- 初回から2回の同時pushでは自動run登録を確認できず、Pages有効化後に手動で配信した。
-  GitHubのPushEvent・Actions有効・workflow active・条件一致を確認したが原因未確定。
-  pushトリガー設定と実行の観測は区別し、再実行手順をgithub-pages.mdへ記録した。
-  両方のチェックとビルドが成功した場合にまとめて更新する。
+- 初回の自動run未登録は、リポジトリのActionsを一度無効化して元の設定で再有効化すると復旧した。
+  ワークフロー単位の再有効化では改善しなかった。YAML・認証方法・push条件は変更していない。
+  GitHub側のリポジトリ単位の状態不整合が疑われるが、内部原因は断定しない。
+- developの [push配信38360523899](https://github.com/yakitama5/mars-terraforming/actions/runs/38360523899)、
+  mainの [push配信38361236614](https://github.com/yakitama5/mars-terraforming/actions/runs/38361236614) が成功。
+  どちらも `event=push`・`head_sha=c8ed72c`、deploy step実行成功、公開JSONのSHA/run一致を確認。
+  両ブランチの84テスト・解析・Webビルドを再実行して成功。調査と復旧手順はgithub-pages.mdへ記録した。
+- 復旧後の公開URLでChromeの `pages_smoke.cjs` の全機能チェックがPASS。
+  保存/ロック/キャッシュ分離、時間送りの分離、両方のオフライン再開を再確認した。
+  PASS後にNodeの終了待ちが再発し、Chrome終了後に今回のNodeだけを終了したため、
+  今回は終了コード0の完走ではない。検証プロセスの後片付けには追加調査が残る。
 - GitHubは標準ActionsのNode.js 20非推奨を通知したが、Node.js 24による実行と配信は成功。
   Actionの更新とrunner環境変更時にはこのハーネスで互換性を再確認する。
 - iOS再実行は行わず直前の設備操作検証を参照。Safari/Firefox・実機iOS/AndroidのWeb試遊、

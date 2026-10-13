@@ -1,7 +1,7 @@
 # main / develop と GitHub Pages の運用
 
 更新: 2026-10-13。ユーザーがPublic化し、main/developの作成・初回push・両方の配信を承認済み。
-**main/developの作成・初回push・Pages配信・実URLでのChrome検証が完了。** 既存の非公開Sites試遊は別の配信先として残す。
+**main/developの作成・初回配信・実URLでのChrome検証に加え、両ブランチのpush自動配信も確認済み。** 既存の非公開Sites試遊は別の配信先として残す。
 
 iOS先行・Android後発は維持し、PagesはPCなどから試作を触るために使う。
 GitHub FreeではPublicリポジトリでPagesを利用できる。有料プランではPrivateリポジトリも
@@ -142,10 +142,9 @@ iOS Simulatorでの直前の操作検証は成功しており、今回の配信�
 
 ## 配信の再実行とpush起動の確認
 
-今回の2回のmain/develop同時pushでは、GitHubにPushEventが届いた一方で
-push起点のActions runは登録されなかった。Actions有効、workflow active、ブランチ条件一致、
-コミットにskip指示なしを確認したが、原因は特定できていない。
-手動起動とpush起動は区別して扱い、通常の変更をdevelopへpushする際にもrun登録を確認する。
+初回の2回のmain/develop同時pushでは、PushEventが届いてもActions runが作成されず、
+手動で配信した。その後、リポジトリのActions再有効化でpush自動起動が復旧した。
+切り分けと実pushの検証記録は次節を参照。通常はpushで更新され、手動起動は再配信に使う。
 
 配信を再実行する場合はActions画面の「Run workflow」、または次のコマンドを使う。
 どちらのブランチから起動しても、main/develop両方の最新SHAを検証して同梱する。
@@ -167,10 +166,39 @@ main/develop両方のPushEventが記録される一方、Actionsには手動実�
 秘密値の出力や保存、認証範囲の拡大は行っていない。
 
 両ワークフローの無効化→再有効化後、YAMLを変更せずdevelopへ `a37cb91` をpushしたが、
-push起点のrunは作成されなかった。次にリポジトリのActionsを無効化→有効化し、
-元の許可設定（enabled=true / allowed_actions=all）へ戻して再検証する。
-この時点では内部原因や復旧は未確定。配信の確認にはevent=pushのrunを使い、
-手動実行を自動配信の成功として扱わない。
+push起点のrunは作成されなかった。続いてリポジトリのActionsを無効化→有効化し、
+元の許可設定（enabled=true / allowed_actions=all / sha_pinning_required=false）へ戻した。
+続くdevelopへの `c8ed72c` のpushで、PagesとPrototype checksの両方が自動起動・成功した。
+ワークフローYAML、認証方法、ブランチ条件は変更していない。
+
+復旧前後の差から、リポジトリ単位のActions有効状態とイベント処理の不整合が疑われる。
+GitHub内部の登録状態は直接観測できないため、内部原因やPublic化との因果関係は断定しない。
+ワークフロー単位の再有効化では改善せず、リポジトリ単位の再有効化後に復旧した事実を残す。
+
+同じ症状が再発した場合は、まずPushEvent・実行条件・skip指示・Actions設定・pushの認証方式を
+確認する。リポジトリ全体の再有効化は、実行中のrunがないことと元の許可設定を確認してから
+Settings → Actions → Generalで実施し、元の設定へ戻す。恒常的なワークフロー処理には組み込まない。
+
+### 両ブランチの実pushによる確認
+
+手動dispatchを使わず、developへpushして配信完了を確認した後、mainをfast-forwardしてpushした。
+どちらも `event=push`、`head_sha=c8ed72cb749776384a90853e2f567c4b06c22620` を確認。
+ビルド成功だけでなく、`Deploy both channels together` の実行成功と公開JSONの一致を確認した。
+
+| pushしたブランチ | Pages run | 配信時のmain / develop | 公開JSONのrun |
+| --- | --- | --- | --- |
+| develop | [38360523899](https://github.com/yakitama5/mars-terraforming/actions/runs/38360523899) 成功 | `d69f5f5` / `c8ed72c` | `38360523899` |
+| main | [38361236614](https://github.com/yakitama5/mars-terraforming/actions/runs/38361236614) 成功 | `c8ed72c` / `c8ed72c` | `38361236614` |
+
+両runでmain/develop各ビルドの依存チェック・整形・静的解析・84テスト・Web releaseビルドが成功。
+これは復旧を確認した時点の記録であり、後続コミットの最新配信は `deployment.json` で確認する。
+
+公開URLに対するChromeの `pages_smoke.cjs` も再実行し、保存・ロック・キャッシュの分離、
+mainの時間送り非表示、developだけの加速、両方のオフライン再読み込み・操作が全項目PASS。
+今回はPASS出力後にNodeプロセスの終了待ちが再発したため、Chrome終了後に検証用Nodeだけを
+終了した。終了コード0の完走としては扱わない。後片付けの再調査は残るが、
+GitHub Actions上の検証と実際のPages配信は正常終了している。ゲームコードとYAMLは変更していない。
+iOS・Safari・Firefoxでの再検証は、今回のActions設定修正では実施していない。
 
 ## 初回pushのコミット分割
 
