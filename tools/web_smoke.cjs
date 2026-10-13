@@ -11,56 +11,61 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
   const browser = await chromium.launch({
     executablePath: process.env.CHROME_BIN,
     headless: true,
+    // Keep updater descendants from inheriting the browser's stdio pipes.
+    args: ['--disable-updater-scheduler'],
   });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-  const page = await context.newPage();
-  const errors = [];
-  const origins = new Set();
-  page.on('pageerror', error => errors.push(String(error)));
-  page.on('request', request => {
-    if (request.url().startsWith('http')) origins.add(new URL(request.url()).origin);
-  });
-  const snapshot = () => page.evaluate(storageKey => {
-    const bundle = JSON.parse(localStorage.getItem(storageKey));
-    return JSON.parse(JSON.parse(bundle.primary).payload);
-  }, key);
-  const ready = async target => {
-    await target.getByRole('button', { name: '開発 +5分' }).waitFor({ timeout: 60000 });
-    await target.waitForTimeout(400);
-  };
-  const click = async name => {
-    const locator = page.getByRole('button', { name, exact: true });
-    for (let n = 0; n < 12; n++) {
-      if (await locator.count()) {
-        const box = await locator.boundingBox();
-        if (box && box.y > 100 && box.y + box.height < 970) {
-          await locator.click();
-          await page.waitForTimeout(250);
-          return;
-        }
-        if (box && box.y < 100) {
-          await page.mouse.move(1100, 500);
-          await page.mouse.wheel(0, -450);
-          await page.waitForTimeout(200);
-          continue;
-        }
-      }
-      await page.mouse.move(1100, 700);
-      await page.mouse.wheel(0, 400);
-      await page.waitForTimeout(200);
-    }
-    throw new Error(`Cannot reach control: ${name}`);
-  };
-  const reserve = async (name, repeat) => {
-    await page.getByRole('button', { name: '計画をつくる', exact: true }).click();
-    await page.waitForTimeout(200);
-    await click(`${name}を予約`);
-    if (repeat) {
-      await page.getByText(repeat, { exact: true }).click();
-      await page.waitForTimeout(300);
-    }
-  };
+  let context;
+  let page;
+  let result;
   try {
+    context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    page = await context.newPage();
+    const errors = [];
+    const origins = new Set();
+    page.on('pageerror', error => errors.push(String(error)));
+    page.on('request', request => {
+      if (request.url().startsWith('http')) origins.add(new URL(request.url()).origin);
+    });
+    const snapshot = () => page.evaluate(storageKey => {
+      const bundle = JSON.parse(localStorage.getItem(storageKey));
+      return JSON.parse(JSON.parse(bundle.primary).payload);
+    }, key);
+    const ready = async target => {
+      await target.getByRole('button', { name: '開発 +5分' }).waitFor({ timeout: 60000 });
+      await target.waitForTimeout(400);
+    };
+    const click = async name => {
+      const locator = page.getByRole('button', { name, exact: true });
+      for (let n = 0; n < 12; n++) {
+        if (await locator.count()) {
+          const box = await locator.boundingBox();
+          if (box && box.y > 100 && box.y + box.height < 970) {
+            await locator.click();
+            await page.waitForTimeout(250);
+            return;
+          }
+          if (box && box.y < 100) {
+            await page.mouse.move(1100, 500);
+            await page.mouse.wheel(0, -450);
+            await page.waitForTimeout(200);
+            continue;
+          }
+        }
+        await page.mouse.move(1100, 700);
+        await page.mouse.wheel(0, 400);
+        await page.waitForTimeout(200);
+      }
+      throw new Error(`Cannot reach control: ${name}`);
+    };
+    const reserve = async (name, repeat) => {
+      await page.getByRole('button', { name: '計画をつくる', exact: true }).click();
+      await page.waitForTimeout(200);
+      await click(`${name}を予約`);
+      if (repeat) {
+        await page.getByText(repeat, { exact: true }).click();
+        await page.waitForTimeout(300);
+      }
+    };
     await page.goto(url);
     await ready(page);
     await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
@@ -103,7 +108,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     assert.equal(inhabited.marsHabitats, 1);
     assert.equal(inhabited.marsResidents, 12);
     await page.screenshot({ path: path.join(output, 'web-habitat.png') });
-    console.log('PASS: reservations, reorder, reload, habitation');
+    console.log('CHECK OK: reservations, reorder, reload, habitation');
 
     // The second tab must stop before loading or advancing the shared world.
     const second = await context.newPage();
@@ -112,7 +117,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await second.screenshot({ path: path.join(output, 'web-second-tab.png') });
     assert.equal(await second.getByRole('button', { name: '開発 +5分' }).count(), 0);
     await second.close();
-    console.log('PASS: second tab safely stopped');
+    console.log('CHECK OK: second tab safely stopped');
     await page.reload();
     await ready(page);
     assert.deepEqual((await snapshot()).claimedRewards, inhabited.claimedRewards);
@@ -129,18 +134,27 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await page.waitForTimeout(300);
     assert.ok(await page.getByRole('button', { name: '計画をつくる', exact: true }).isVisible());
     await context.setOffline(false);
-    console.log('PASS: offline reload');
+    console.log('CHECK OK: offline reload');
     assert.deepEqual(errors, []);
     assert.deepEqual([...origins], [new URL(url).origin]);
-    console.log(JSON.stringify({ result: 'PASS', checks: ['3D startup', 'equipment reorder', 'paid iteration preserved', 'reload keeps order', 'research/manufacture/transport/habitation', 'multi-tab lock', 'reward persistence', 'offline cold reload', 'no external resource hosts'], origins: [...origins] }, null, 2));
+    result = { result: 'PASS', checks: ['3D startup', 'equipment reorder', 'paid iteration preserved', 'reload keeps order', 'research/manufacture/transport/habitation', 'multi-tab lock', 'reward persistence', 'offline cold reload', 'no external resource hosts'], origins: [...origins] };
   } catch (error) {
-    await page.screenshot({ path: path.join(output, 'web-failure.png') }).catch(() => {});
-    console.error('PAGE', await page.locator('body').innerText().catch(() => 'unavailable'));
+    if (page) {
+      await page.screenshot({ path: path.join(output, 'web-failure.png') }).catch(() => {});
+      console.error('PAGE', await page.locator('body').innerText().catch(() => 'unavailable'));
+    }
     throw error;
   } finally {
-    // Close pages and their offline fetches before waiting for browser exit.
-    await context.setOffline(false);
-    await context.close();
-    await browser.close();
+    try {
+      // Restore networking and close the context before waiting for browser exit.
+      if (context) {
+        await context.setOffline(false);
+        await context.close();
+      }
+    } finally {
+      await browser.close();
+    }
   }
-})().catch(error => { console.error(error); process.exit(1); });
+  // Report success only after Playwright has released the browser and its pipes.
+  console.log(JSON.stringify(result, null, 2));
+})().catch(error => { console.error(error); process.exitCode = 1; });

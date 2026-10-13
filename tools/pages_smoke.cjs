@@ -6,26 +6,33 @@ const mainKey = 'mars_terraforming.save.mars-terraforming-main_normal';
 const developKey = 'mars_terraforming.save.mars-terraforming-develop_development';
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN, headless: true });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  const errors = [];
-  const page = async url => {
-    const result = await context.newPage();
-    result.on('pageerror', error => errors.push(String(error)));
-    await result.goto(url);
-    await ready(result);
-    return result;
-  };
-  const ready = async page => {
-    await page.getByRole('button', { name: '設備・進行', exact: true }).waitFor({ timeout: 60000 });
-    await page.waitForFunction(() => navigator.serviceWorker.controller?.scriptURL === new URL('offline_worker.js', document.baseURI).href, null, { timeout: 60000 });
-    await page.evaluate(() => navigator.serviceWorker.ready);
-  };
-  const snapshot = (page, key) => page.evaluate(key => {
-    const bundle = JSON.parse(localStorage.getItem(key));
-    return JSON.parse(JSON.parse(bundle.primary).payload);
-  }, key);
+  const browser = await chromium.launch({
+    executablePath: process.env.CHROME_BIN,
+    headless: true,
+    // Keep updater descendants from inheriting the browser's stdio pipes.
+    args: ['--disable-updater-scheduler'],
+  });
+  let context;
+  let result;
   try {
+    context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const errors = [];
+    const page = async url => {
+      const result = await context.newPage();
+      result.on('pageerror', error => errors.push(String(error)));
+      await result.goto(url);
+      await ready(result);
+      return result;
+    };
+    const ready = async page => {
+      await page.getByRole('button', { name: '設備・進行', exact: true }).waitFor({ timeout: 60000 });
+      await page.waitForFunction(() => navigator.serviceWorker.controller?.scriptURL === new URL('offline_worker.js', document.baseURI).href, null, { timeout: 60000 });
+      await page.evaluate(() => navigator.serviceWorker.ready);
+    };
+    const snapshot = (page, key) => page.evaluate(key => {
+      const bundle = JSON.parse(localStorage.getItem(key));
+      return JSON.parse(JSON.parse(bundle.primary).payload);
+    }, key);
     const main = await page(base);
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     const mainBefore = await snapshot(main, mainKey);
@@ -69,11 +76,18 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ result: 'PASS', main: base, develop: developUrl, checks: ['separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches }, null, 2));
+    result = { result: 'PASS', main: base, develop: developUrl, checks: ['separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
   } finally {
-    // Restore networking before closing contexts with offline fetches in flight.
-    await context.setOffline(false);
-    await context.close();
-    await browser.close();
+    try {
+      // Restore networking and close the context before waiting for browser exit.
+      if (context) {
+        await context.setOffline(false);
+        await context.close();
+      }
+    } finally {
+      await browser.close();
+    }
   }
-})().catch(error => { console.error(error); process.exit(1); });
+  // Report success only after Playwright has released the browser and its pipes.
+  console.log(JSON.stringify(result, null, 2));
+})().catch(error => { console.error(error); process.exitCode = 1; });
