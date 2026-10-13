@@ -41,13 +41,23 @@ void main() {
           sceneBuilder: (_, _, _, _) => const ColoredBox(color: Colors.black),
         ),
       );
+      await tester.tap(find.byKey(const Key('navigation-2')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('queue-life_support')),
+        150,
+        scrollable: find.descendant(
+          of: find.byKey(const Key('research-detail')),
+          matching: find.byType(Scrollable),
+        ),
+      );
       await tester.tap(find.byKey(const Key('queue-life_support')));
       await tester.pumpAndSettle();
       expect(controller.state.plans.single.taskId, 'life_support');
       await tester.tap(find.byKey(const Key('advance-time')));
       await tester.pumpAndSettle();
       expect(controller.state.research, contains('life_support'));
-      await tester.tap(find.text('計画をつくる'));
+      await tester.tap(find.byKey(const Key('operations-1')));
       await tester.pumpAndSettle();
       final factory = find.byKey(const Key('queue-factory_contract'));
       await tester.scrollUntilVisible(
@@ -70,10 +80,11 @@ void main() {
     },
   );
 
-  testWidgets(
-    'small landscape has no overflow and normal mode hides development controls',
-    (tester) async {
-      tester.view.physicalSize = const Size(740, 360);
+  for (final size in [const Size(844, 390), const Size(1280, 800)]) {
+    testWidgets('all strategy views fit ${size.width} by ${size.height}', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -88,6 +99,116 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('advance-time')), findsNothing);
+      expect(tester.takeException(), isNull);
+      for (var tab = 1; tab <= 3; tab++) {
+        await tester.tap(find.byKey(Key('navigation-$tab')));
+        await tester.pumpAndSettle();
+        if (tab == 1) {
+          expect(
+            find.byKey(const Key('confirm-district')).hitTestable(),
+            findsOneWidget,
+          );
+        }
+        if (tab == 2) {
+          expect(
+            find.byKey(const Key('queue-life_support')).hitTestable(),
+            findsOneWidget,
+          );
+          await tester.tap(find.byKey(const Key('research-fit')));
+          await tester.pumpAndSettle();
+          expect(
+            find
+                .byKey(const Key('research-node-intercity_logistics'))
+                .hitTestable(),
+            findsOneWidget,
+          );
+        }
+        expect(tester.takeException(), isNull);
+      }
+      for (var tab = 1; tab <= 3; tab++) {
+        await tester.tap(find.byKey(Key('operations-$tab')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+    });
+  }
+
+  testWidgets(
+    'city selection and plot preview do not construct until confirmed',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = GameController(MemorySave());
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MarsApp(
+          controller: controller,
+          sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
+        ),
+      );
+      await tester.ensureVisible(find.byKey(const Key('open-city')));
+      await tester.tap(find.byKey(const Key('open-city')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
+      await tester.pumpAndSettle();
+      expect(find.text('区画 1  ·  海岸'), findsOneWidget);
+      expect(find.text('建設前の見積もり'), findsOneWidget);
+      expect(find.text('立地・隣接ボーナス'), findsOneWidget);
+      expect(controller.state.plans, isEmpty);
+      await tester.ensureVisible(find.byKey(const Key('confirm-district')));
+      await tester.tap(find.byKey(const Key('confirm-district')));
+      await tester.pumpAndSettle();
+      expect(controller.state.plans.single.cityId, 'earth_delta');
+      expect(controller.state.plans.single.plotIndex, 0);
+      expect(controller.state.districtAt('earth_delta', 0), isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'research tree exposes practical requirements after prerequisite research',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = GameController(MemorySave());
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      await controller.command((engine) {
+        engine.state.research.add('urban_planning');
+        return null;
+      });
+      await tester.pumpWidget(
+        MarsApp(
+          controller: controller,
+          sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('navigation-2')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('research-node-automated_fabrication')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('必要な研究・実証条件'), findsOneWidget);
+      expect(find.text('完成するとできること'), findsOneWidget);
+      await tester.ensureVisible(
+        find.byKey(const Key('queue-automated_fabrication')),
+      );
+      await tester.tap(find.byKey(const Key('queue-automated_fabrication')));
+      await tester.pumpAndSettle();
+      expect(controller.state.plans.single.taskId, 'automated_fabrication');
+      expect(controller.state.plans.single.status, 'queued');
+      expect(controller.state.research, contains('urban_planning'));
+      expect(
+        controller.state.research,
+        isNot(contains('automated_fabrication')),
+      );
+      expect(controller.state.plans.single.stopReason, contains('実証待ち'));
       expect(tester.takeException(), isNull);
     },
   );

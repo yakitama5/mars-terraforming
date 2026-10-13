@@ -75,11 +75,18 @@ class GameController extends ChangeNotifier {
     }
   }
 
-  Future<void> advanceForDevelopment() async {
-    if (!devTools) return;
+  Future<void> advanceForDevelopment({
+    Duration duration = const Duration(minutes: 5),
+  }) async {
+    if (!devTools || duration <= Duration.zero) return;
     await command((game) {
-      game.advanceBy(const Duration(minutes: 5));
-      return '開発用セーブだけを5分進めました';
+      game.advanceBy(duration);
+      final label = duration.inDays > 0 && duration.inHours % 24 == 0
+          ? '${duration.inDays}日'
+          : duration.inHours > 0 && duration.inMinutes % 60 == 0
+          ? '${duration.inHours}時間'
+          : '${duration.inMinutes}分';
+      return '開発用セーブだけを$label進めました';
     });
   }
 
