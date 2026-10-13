@@ -95,16 +95,17 @@ driveテストは一時保存ディレクトリだけを使い、通常/開発�
 成功時は `docs/screenshots` に実際のGPU描画を含むスクリーンショットを保存する。
 Flutter test/build/driveを同じcheckoutで並列実行するとnative assets生成が競合するため直列に実行する。
 
-## GitHub Pages / main・developの準備
+## GitHub Pages / main・developの初回公開
 
 ユーザーの追加相談に合わせ、`.github/workflows/pages.yaml` と
 [運用・公開手順](github-pages.md) を追加。当初GitHub側はPRIVATE・空だったが、ユーザーがPublic化し、
 初回コミット、main/developの作成・push、両方のPages配信を承認。公開リポジトリを確認済み。
-コミット・配信の完了結果は追記する。
+初回一式を9つの意味あるコミットに分け、両ブランチを同じ履歴でpush済み。
+PagesはActions方式で有効化し、github-pages環境はmainとdevelopの2ブランチを許可。
 既存の非公開Sites試遊URLはそのまま残っている。
 
 - mainの通常版を `/mars-terraforming/`、developの時間送り付き版を
-  `/mars-terraforming/develop/` へ同梱するワークフローを準備した。
+  `/mars-terraforming/develop/` へ同梱するワークフローで公開した。
 - ビルドごとに `MARS_WEB_BASE_HREF` と `MARS_WEB_SAVE_NAMESPACE` を指定。
   namespace未指定なら既存Sitesの保存キーを維持し、ネイティブ保存は変更しない。
 - CacheStorageの削除範囲をService Workerの配信パスに限定した。
@@ -121,10 +122,24 @@ Flutter test/build/driveを同じcheckoutで並列実行するとnative assets�
 - ワークフローのYAML、Bash6本、埋込Pythonの構文検査成功。
   仮のGitHub APIと一時ディレクトリで、SHA固定・2ビルド同梱・配信記録、
   main/developどちらかのHEAD更新時に古いビルドを配信しない条件を確認。
-- GitHub Actions実行、公開URL、GitHubの環境保護設定は未検証。
-  今回はWeb配信・保存キー選択のみの変更。iOS再実行は行わず、直前の設備操作検証を参照する。
-- 次の判断: ソースと企画書を含むPublic化、およびその状態での初回push/Pages配信を行うか。
-  main/developは両方が検証成功したときにまとめて更新する初期構成。
+- [初回Actions配信](https://github.com/yakitama5/mars-terraforming/actions/runs/38349251445) 成功。
+  両ブランチの解析・テスト・releaseビルドをGitHubのLinux環境で実行し、配信まで成功。
+  配信対象は `52781db8e9d7fe21f8ef55dd136061e1fec0ca20`。
+  最新の配信対象は [deployment.json](https://yakitama5.github.io/mars-terraforming/deployment.json) に記録する。
+- 公開された [main](https://yakitama5.github.io/mars-terraforming/) と
+  [develop](https://yakitama5.github.io/mars-terraforming/develop/) でChrome実操作を実施。
+  `pages_smoke.cjs` 成功: 保存/ロック/キャッシュ分離、mainに時間送りなし、developのみ加速、
+  両方のオフライン再読み込みと操作。終了コード0。
+- 公開developで `web_smoke.cjs` 成功: 3D表示、設備順序変更、支払済み工程継続、順序保存、
+  研究→製造→輸送→居住1棟/12人、2タブ目停止、報酬保持、オフライン再開。
+  検証用ブラウザの終了待ちはcontextを先に閉じる修正で解消し、再実行で終了コード0を確認。
+  実URLの [設備一覧](screenshots/pages-equipment.png)・[居住完成](screenshots/pages-habitat.png) を保存。
+- 初回push時には自動実行が登録されず、Pages有効化後にmainから手動実行して初回配信した。
+  普段はpushを入口にし、両方のチェックとビルドが成功した場合にまとめて更新する。
+- GitHubは標準ActionsのNode.js 20非推奨を通知したが、Node.js 24による実行と配信は成功。
+  Actionの更新とrunner環境変更時にはこのハーネスで互換性を再確認する。
+- iOS再実行は行わず直前の設備操作検証を参照。Safari/Firefox・実機iOS/AndroidのWeb試遊、
+  キャッシュ済み旧版からの更新切替は未検証。次は設備一覧の情報量と↑↓操作の試遊をもとに改善する。
 
 ## 今回の設備配分・Web対応の検証
 
@@ -143,7 +158,7 @@ Flutter test/build/driveを同じcheckoutで並列実行するとnative assets�
 - [Web初期拠点](screenshots/web-initial.png)、[設備一覧](screenshots/web-equipment.png)、
   [居住完成](screenshots/web-habitat.png)、[2タブ目停止](screenshots/web-second-tab.png) を保存。
 - Web版のビルド・保存・検証・配置手順は [web-preview.md](web-preview.md)。
-  同じWebビルドをCIに追加。CI自体のGitHub上での実行は未実施。
+  同じWebビルドをCIに追加。GitHub上での初回実行結果は上のPages公開記録を参照。
 - iPhone17 Pro / iOS26.1 の `flutter drive` 成功。実GPU、設備一覧の↑操作、現在の受注継続、
   予約順変更、一覧から3D画面への復帰、居住1棟/12人、保存再開を確認。
   [iOS設備一覧](screenshots/prototype-equipment.png) などのスクリーンショットを更新。
@@ -151,7 +166,7 @@ Flutter test/build/driveを同じcheckoutで並列実行するとnative assets�
   データを消さず再起動（17秒）して単独再試行すると、Xcode build 16.7秒・テスト30秒で成功。
 - Sitesへ同じ配布物を非公開配置し、デプロイ `succeeded` を確認。URLと配置IDはweb-preview.md。
   ローカル検証サーバーは終了、SitesのURLをアプリ内ブラウザで開くよう要求済み。
-- Safari/Firefox、実機iOS、Android、ホストされたURLでの認証を含む実操作は未検証。
+- Safari/Firefox、実機iOS、Android、Sitesの認証を含む実操作は未検証。
   Web初回取得とキャッシュ完了には通信が必要。保存はoriginごとでiOSとは同期しない。
 
 ## 初回小循環の検証記録

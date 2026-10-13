@@ -5,6 +5,15 @@
 iOS先行・Android後発、横画面・日本語・完全オフラインの方針を維持しています。
 PCで操作を試せるWeb版も用意しました。UIと数値は仮仕様です。
 
+## ブラウザで遊ぶ
+
+- [main：通常版](https://yakitama5.github.io/mars-terraforming/)
+- [develop：開発 +5分付き試遊版](https://yakitama5.github.io/mars-terraforming/develop/)
+
+Chrome推奨。両方とも公開済みで、保存データは別々です。
+まずdevelopで設備の予約・順番変更を試せます。初回の読み込みとキャッシュ完了後はオフラインでも再開できます。
+ブランチへpushすると両方の最新ビルドをまとめて更新します。
+
 ## iOSで起動
 
 ```sh
@@ -39,7 +48,7 @@ Sitesの[所有者向け非公開試遊URL](https://mars-terraforming-playtest.y
 
 ## 資料と検証
 
-- [GitHub Pagesとmain/developの運用準備](docs/github-pages.md)
+- [GitHub Pagesとmain/developの運用](docs/github-pages.md)
 - [企画書](docs/game-design.md)
 - [起動・操作・検証・開発状況](docs/development.md)
 - [決定事項・仮値・保留事項](docs/decisions.md)
