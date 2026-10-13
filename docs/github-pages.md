@@ -158,6 +158,19 @@ gh run list --repo yakitama5/mars-terraforming --workflow pages.yaml
 mainから起動する場合は `--ref main` にする。配信後は `deployment.json` と
 両ブランチのSHAを比較し、以前の配信を新しい配信と取り違えない。
 
+## push自動起動の追加調査（2026-10-13）
+
+main/develop両方のPushEventが記録される一方、Actionsには手動実行しか登録されなかった。
+通常のActions有効設定に加え、実行ポリシーは0件、ワークフローはactive、
+ブランチの条件・リモートのファイル内容・コミットのskip指示なしを確認した。
+実際のGit credentialはGitHub CLIと同じOAuthユーザートークンで、GITHUB_TOKENではない。
+秘密値の出力や保存、認証範囲の拡大は行っていない。
+
+まず両ワークフローを無効化→再有効化して実行登録を更新し、
+YAMLを変更せずdevelopへこの調査記録をpushしてイベント起動を確認する。
+この時点では内部原因や復旧は未確定。配信の確認にはevent=pushのrunを使い、
+手動実行を自動配信の成功として扱わない。
+
 ## 初回pushのコミット分割
 
 元の企画書・雛形を保全し、既存の実装一式を次の9単位で記録した。
