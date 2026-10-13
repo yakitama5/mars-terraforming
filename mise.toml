@@ -1,0 +1,14 @@
+[tools]
+flutter = "3.47.7"
+
+[tasks.check]
+description = "依存方向・フォーマット・静的解析・テストを確認"
+run = "bash tools/check.sh"
+
+[tasks.play]
+description = "通常時間・通常セーブで起動"
+run = "flutter run"
+
+[tasks.demo]
+description = "独立した開発セーブで時間送りを有効化"
+run = "flutter run --dart-define=DEV_TOOLS=true"

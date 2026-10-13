@@ -1,0 +1,33 @@
+name: mars_terraforming
+description: 地球の産業から火星の居住拠点へ進む、オフライン開発計画ゲーム。
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: '3.13.5'
+  flutter: '3.47.7'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_scene: 0.24.3
+  vector_math: 2.4.0
+  path_provider: 2.1.6
+  crypto: 3.0.7
+  web: 1.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: 6.0.0
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: NotoSansJP
+      fonts:
+        - asset: assets/fonts/NotoSansJP.ttf
