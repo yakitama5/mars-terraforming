@@ -99,6 +99,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('advance-time')), findsNothing);
+      expect(
+        find.byKey(const Key('select-city-earth_delta')).hitTestable(),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
       for (var tab = 1; tab <= 3; tab++) {
         await tester.tap(find.byKey(Key('navigation-$tab')));

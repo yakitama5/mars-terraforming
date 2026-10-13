@@ -171,7 +171,9 @@ PASS出力だけでなくシェルへ戻った際の終了コード0まで確認
 iOSの再実行は行っていない。ブラウザ検証はこのMacのChromeが対象。
 修正は [4594759](https://github.com/yakitama5/mars-terraforming/commit/4594759) に記録した。
 
-## Sitesへの配置
+## 初期版のSites配置履歴
+
+都市・惑星の戦略試作の更新先はGitHub Pages。以下は初期試作の保存記録。
 
 所有者向けの非公開試遊として配置済み（2026-10-13）。
 [Web試遊URL](https://mars-terraforming-playtest.yakuran01.chatgpt.site) のデプロイ成功をSitesで確認。

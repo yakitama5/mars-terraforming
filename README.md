@@ -51,7 +51,8 @@ Web試遊は既定で開発用の別セーブと時間送りを使います。
 初回にアプリ一式を読み込んでキャッシュした後は、同じURLでオフライン再読み込み・プレイができます。
 ブラウザ保存はiOSと別で、ブラウザのサイトデータ削除やプライベートモードでは失われます。
 
-Sitesの[所有者向け非公開試遊URL](https://mars-terraforming-playtest.yakuran01.chatgpt.site)へ配置済みです。
+初期版の[所有者向けSites試遊URL](https://mars-terraforming-playtest.yakuran01.chatgpt.site)も残しています。
+今回の都市・惑星の改善版は、上記のGitHub Pagesで公開します。
 通常時間でのビルド、保存仕様、ブラウザ自動検証、配布手順は
 [Web試遊ガイド](docs/web-preview.md)を参照してください。
 

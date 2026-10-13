@@ -402,14 +402,25 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
     return ListView(
       key: const Key('planet-detail'),
-      padding: const EdgeInsets.all(18),
+      padding: _compactLandscape
+          ? const EdgeInsets.fromLTRB(14, 10, 14, 12)
+          : const EdgeInsets.all(18),
       children: [
         _nextGoal(),
-        const SizedBox(height: 20),
-        const StrategyHeading('都市を選ぶ', '惑星の都市を選んでから、地区の配置を計画します。'),
+        SizedBox(height: _compactLandscape ? 8 : 20),
+        if (_compactLandscape)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: Text(
+              '都市を選ぶ',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+          )
+        else
+          const StrategyHeading('都市を選ぶ', '惑星の都市を選んでから、地区の配置を計画します。'),
         for (final candidate in cities)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: EdgeInsets.only(bottom: _compactLandscape ? 4 : 8),
             child: Material(
               color: candidate.id == cityId
                   ? const Color(0xff223d40)
@@ -423,6 +434,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               child: ListTile(
                 key: Key('select-city-${candidate.id}'),
                 dense: true,
+                minTileHeight: _compactLandscape ? 44 : null,
                 onTap: () => _selectCity(candidate.id),
                 leading: Icon(
                   game.cityUnlocked(candidate.id)
@@ -439,12 +451,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                subtitle: Text(
-                  game.cityUnlocked(candidate.id)
-                      ? '開発可能 · ${candidate.plotCount}区画'
-                      : game.cityLockReason(candidate.id) ?? '研究が必要',
-                  style: const TextStyle(fontSize: 11, color: strategyMuted),
-                ),
+                subtitle: _compactLandscape
+                    ? null
+                    : Text(
+                        game.cityUnlocked(candidate.id)
+                            ? '開発可能 · ${candidate.plotCount}区画'
+                            : game.cityLockReason(candidate.id) ?? '研究が必要',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: strategyMuted,
+                        ),
+                      ),
                 trailing: const Icon(Icons.chevron_right, size: 18),
               ),
             ),
@@ -492,6 +509,48 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         : game.marsHabitats == 0
         ? ('最初の居住区を配置する', '火星の都市で区画を選び、居住先を建設します。', 1)
         : ('都市の能力を高める', '地形と隣接を活かし、次の研究と開発を支えます。', 1);
+    void openPlan() => setState(() {
+      tab = destination;
+      if (destination == 3) facilityTab = 2;
+      if (destination == 1 && game.marsHabitats == 0) {
+        cityId = 'mars_arcadia';
+        earth = false;
+      }
+    });
+    if (_compactLandscape) {
+      return TextButton(
+        key: const Key('next-goal'),
+        onPressed: openPlan,
+        style: TextButton.styleFrom(
+          foregroundColor: strategyMint,
+          backgroundColor: const Color(0xff203d40),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('次の目標', style: TextStyle(fontSize: 10)),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_forward, size: 18),
+          ],
+        ),
+      );
+    }
     return StrategyCard(
       selected: true,
       padding: const EdgeInsets.all(13),
@@ -519,14 +578,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           const SizedBox(height: 4),
           TextButton(
             key: const Key('next-goal'),
-            onPressed: () => setState(() {
-              tab = destination;
-              if (destination == 3) facilityTab = 2;
-              if (destination == 1 && game.marsHabitats == 0) {
-                cityId = 'mars_arcadia';
-                earth = false;
-              }
-            }),
+            onPressed: openPlan,
             child: const Text('計画を確認する →'),
           ),
         ],
