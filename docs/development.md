@@ -134,8 +134,10 @@ PagesはActions方式で有効化し、github-pages環境はmainとdevelopの2�
   研究→製造→輸送→居住1棟/12人、2タブ目停止、報酬保持、オフライン再開。
   検証用ブラウザの終了待ちはcontextを先に閉じる修正で解消し、再実行で終了コード0を確認。
   実URLの [設備一覧](screenshots/pages-equipment.png)・[居住完成](screenshots/pages-habitat.png) を保存。
-- 初回push時には自動実行が登録されず、Pages有効化後にmainから手動実行して初回配信した。
-  普段はpushを入口にし、両方のチェックとビルドが成功した場合にまとめて更新する。
+- 初回から2回の同時pushでは自動run登録を確認できず、Pages有効化後に手動で配信した。
+  GitHubのPushEvent・Actions有効・workflow active・条件一致を確認したが原因未確定。
+  pushトリガー設定と実行の観測は区別し、再実行手順をgithub-pages.mdへ記録した。
+  両方のチェックとビルドが成功した場合にまとめて更新する。
 - GitHubは標準ActionsのNode.js 20非推奨を通知したが、Node.js 24による実行と配信は成功。
   Actionの更新とrunner環境変更時にはこのハーネスで互換性を再確認する。
 - iOS再実行は行わず直前の設備操作検証を参照。Safari/Firefox・実機iOS/AndroidのWeb試遊、

@@ -140,6 +140,24 @@ node tools/web_smoke.cjs
 Safari/Firefox・実機iOS/AndroidでのPages試遊、キャッシュ済みの旧版からの更新切替は未検証。
 iOS Simulatorでの直前の操作検証は成功しており、今回の配信設定では再実行していない。
 
+## 配信の再実行とpush起動の確認
+
+今回の2回のmain/develop同時pushでは、GitHubにPushEventが届いた一方で
+push起点のActions runは登録されなかった。Actions有効、workflow active、ブランチ条件一致、
+コミットにskip指示なしを確認したが、原因は特定できていない。
+手動起動とpush起動は区別して扱い、通常の変更をdevelopへpushする際にもrun登録を確認する。
+
+配信を再実行する場合はActions画面の「Run workflow」、または次のコマンドを使う。
+どちらのブランチから起動しても、main/develop両方の最新SHAを検証して同梱する。
+
+```sh
+gh workflow run pages.yaml --repo yakitama5/mars-terraforming --ref develop
+gh run list --repo yakitama5/mars-terraforming --workflow pages.yaml
+```
+
+mainから起動する場合は `--ref main` にする。配信後は `deployment.json` と
+両ブランチのSHAを比較し、以前の配信を新しい配信と取り違えない。
+
 ## 初回pushのコミット分割
 
 元の企画書・雛形を保全し、既存の実装一式を次の9単位で記録した。
