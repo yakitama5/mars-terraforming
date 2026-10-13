@@ -136,29 +136,62 @@ void main() {
     expect(game.state.currentPlanFor('factory'), paid);
   });
 
-  test('upgrades require branch research, retain level until completion and persist', () {
-    var game = ready();
-    game.enqueueDistrict('earth_delta', 0, 'housing');
-    game.advanceBy(const Duration(minutes: 10));
-    expect(game.upgradeDistrict('earth_delta', 0), contains('前提研究'));
-    game.state.research.add('automated_fabrication');
-    final preview = game.state.districtPreview(
-      'earth_delta',
-      0,
-      'housing',
-      upgrade: true,
+  test(
+    'housing upgrades unlock early, retain level until completion and persist',
+    () {
+      var game = ready();
+      game.state.research.remove('urban_planning');
+      game.enqueueDistrict('earth_delta', 0, 'housing');
+      game.advanceBy(const Duration(minutes: 10));
+      expect(game.upgradeDistrict('earth_delta', 0), contains('前提研究'));
+      game.state.research.add('urban_planning');
+      final preview = game.state.districtPreview(
+        'earth_delta',
+        0,
+        'housing',
+        upgrade: true,
+      );
+      expect(preview.cost, 613); // 350 × 175%, rounded up to whole Cr.
+      expect(preview.taxDeltaPerMinute, 16);
+      expect(game.upgradeDistrict('earth_delta', 0), isNull);
+      expect(game.state.districtAt('earth_delta', 0)!.level, 1);
+      game = GameEngine(copy(game.state));
+      expect(game.upgradeDistrict('earth_delta', 0), contains('予約済み'));
+      game.advanceBy(Duration(milliseconds: preview.durationMs));
+      expect(game.state.districtAt('earth_delta', 0)!.level, 2);
+      expect(game.state.population, 240);
+      expect(game.state.earthLevel, 1);
+      expect(game.upgradeDistrict('earth_delta', 0), contains('前提研究'));
+    },
+  );
+
+  test('early housing does not unlock other district upgrades', () {
+    final game = ready();
+    for (final (plot, district) in [
+      (0, 'housing'),
+      (1, 'solar'),
+      (2, 'industry'),
+    ]) {
+      expect(game.enqueueDistrict('earth_delta', plot, district), isNull);
+      final paid = game.state.currentPlanFor('factory')!;
+      game.advanceBy(Duration(milliseconds: paid.remainingMs));
+    }
+    expect(game.state.research, isNot(contains('automated_fabrication')));
+    expect(
+      game.state
+          .districtPreview('earth_delta', 0, 'housing', upgrade: true)
+          .blockedReason,
+      isNull,
     );
-    expect(preview.cost, 613); // 350 × 175%, rounded up to whole Cr.
-    expect(preview.taxDeltaPerMinute, 16);
+    expect(game.upgradeDistrict('earth_delta', 1), contains('自動化生産'));
+    expect(game.upgradeDistrict('earth_delta', 2), contains('自動化生産'));
     expect(game.upgradeDistrict('earth_delta', 0), isNull);
-    expect(game.state.districtAt('earth_delta', 0)!.level, 1);
-    game = GameEngine(copy(game.state));
-    expect(game.upgradeDistrict('earth_delta', 0), contains('予約済み'));
-    game.advanceBy(Duration(milliseconds: preview.durationMs));
+    game.state.research.add('automated_fabrication');
+    expect(game.upgradeDistrict('earth_delta', 1), isNull);
+    game.advanceBy(const Duration(hours: 1));
     expect(game.state.districtAt('earth_delta', 0)!.level, 2);
-    expect(game.state.population, 240);
-    expect(game.state.earthLevel, 1);
-    expect(game.upgradeDistrict('earth_delta', 0), contains('前提研究'));
+    expect(game.state.districtAt('earth_delta', 1)!.level, 2);
+    expect(game.upgradeDistrict('earth_delta', 0), contains('広域産業'));
   });
 
   test('new efficiency affects future starts but never changes paid research duration', () {

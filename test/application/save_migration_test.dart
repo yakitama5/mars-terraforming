@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/domain/save_repository.dart';
 import 'package:mars_terraforming/infrastructure/file_save_store.dart';
@@ -126,7 +127,10 @@ void main() {
           controller.state.plannedCost(solar),
           806,
         ); // Existing city, 2 plots: no opening fee.
-        expect(controller.state.toJson()['contentVersion'], 'district-3');
+        expect(
+          controller.state.toJson()['contentVersion'],
+          GameContent.version,
+        );
         await controller.command((game) {
           final contract = game.state.plans.firstWhere(
             (p) => p.taskId == 'factory_contract',
@@ -149,6 +153,83 @@ void main() {
         await resumed.initialize(startTimer: false);
         expect(resumed.state.toJson(), after);
         expect(resumed.state.currentPlanFor('factory')!.id, solar.id);
+      },
+    );
+  }
+  // Actual district-3 engine at 9808084: a 1,500 Cr / 12 minute industry
+  // construction is already paid; a second industry plot is still queued.
+  final thirdLegacy = jsonDecode(
+    File('test/fixtures/district_v3.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
+  final thirdEpoch = DateTime.fromMillisecondsSinceEpoch(
+    thirdLegacy['lastWallClockMs'] as int,
+    isUtc: true,
+  );
+  for (final native in [true, false]) {
+    test(
+      '${native ? 'file' : 'browser'} district-3 retains paid industry and reprices only future work',
+      () async {
+        final directory = await Directory.systemTemp.createTemp(
+          'mars-district3-',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final storage = <String, String>{};
+        SaveRepository reopen() => native
+            ? FileSaveStore(directory)
+            : KeyValueSaveStore(
+                read: (key) => storage[key],
+                write: (key, value) => storage[key] = value,
+              );
+        await reopen().save(thirdLegacy);
+        final controller = GameController(reopen(), now: () => thirdEpoch);
+        await controller.initialize(startTimer: false);
+        addTearDown(controller.dispose);
+        expect(controller.error, isNull);
+        expect(controller.state.moneyUnits, thirdLegacy['moneyUnits']);
+        final paid = controller.state.currentPlanFor('factory')!;
+        expect(
+          paid.iterationDurationMs,
+          const Duration(minutes: 12).inMilliseconds,
+        );
+        expect(
+          paid.remainingMs,
+          const Duration(minutes: 11, seconds: 30).inMilliseconds,
+        );
+        final queued = controller.state.plans.last;
+        expect(queued.status, 'queued');
+        expect(controller.state.plannedCost(queued), 1200);
+        expect(
+          controller.state.toJson()['contentVersion'],
+          GameContent.version,
+        );
+        await controller.command((game) {
+          game.advanceBy(Duration(milliseconds: paid.remainingMs));
+          return null;
+        });
+        expect(paid.completedRuns, 1);
+        expect(queued.status, 'running');
+        expect(
+          queued.iterationDurationMs,
+          lessThan(const Duration(minutes: 9).inMilliseconds),
+        );
+        // Completion introduced city congestion: new base 1,200 * 112%.
+        expect(controller.state.plannedCost(queued), 1344);
+        final after = controller.state.toJson();
+        final resumed = GameController(reopen(), now: () => thirdEpoch);
+        addTearDown(resumed.dispose);
+        await resumed.initialize(startTimer: false);
+        expect(resumed.state.toJson(), after);
+        await resumed.command((game) {
+          game.advanceBy(Duration(milliseconds: queued.remainingMs));
+          return null;
+        });
+        expect(resumed.state.districts.length, 2);
+        expect(resumed.state.plans.every((p) => p.completedRuns == 1), isTrue);
+        final completed = resumed.state.toJson();
+        final again = GameController(reopen(), now: () => thirdEpoch);
+        addTearDown(again.dispose);
+        await again.initialize(startTimer: false);
+        expect(again.state.toJson(), completed);
       },
     );
   }
