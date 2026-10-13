@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../application/game_controller.dart';
 import '../domain/game_content.dart';
 import '../domain/game_state.dart';
+import 'strategy_widgets.dart';
 
 const _mint = Color(0xffa2dfc8);
 const _muted = Color(0xff98adb9);
@@ -55,7 +56,7 @@ class FacilityQueueCard extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      '$status · 維持費 ${enabled ? facility.upkeepPerMinute : 0} Cr/分',
+                      '$status · 基本維持費 ${enabled ? facility.upkeepPerMinute : 0} Cr/分',
                       style: TextStyle(
                         color: enabled ? _mint : _copper,
                         fontSize: 11,
@@ -144,6 +145,14 @@ class FacilityQueueCard extends StatelessWidget {
         ),
         const SizedBox(height: 5),
         Text(plan.definition.name, style: const TextStyle(fontSize: 13)),
+        if (plan.cityId != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              _location(plan),
+              style: const TextStyle(fontSize: 12, color: _mint),
+            ),
+          ),
         const SizedBox(height: 8),
         LinearProgressIndicator(
           value: plan.progress.clamp(0, 1),
@@ -152,7 +161,7 @@ class FacilityQueueCard extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          '${enabled ? '進行中' : plan.stopReason} · 残り ${_duration(plan.remainingMs)}',
+          '${enabled ? '進行中' : plan.stopReason} · 残り ${gameDuration(plan.remainingMs)}',
           style: TextStyle(color: enabled ? _mint : _copper, fontSize: 11),
         ),
         const SizedBox(height: 4),
@@ -201,6 +210,11 @@ class FacilityQueueCard extends StatelessWidget {
                       plan.definition.name,
                       style: const TextStyle(fontSize: 12),
                     ),
+                    if (plan.cityId != null)
+                      Text(
+                        _location(plan),
+                        style: const TextStyle(fontSize: 11, color: _mint),
+                      ),
                   ],
                 ),
               ),
@@ -269,13 +283,13 @@ class FacilityQueueCard extends StatelessWidget {
 
 String _purpose(PlannedTask plan) => plan.taskId.endsWith('_contract')
     ? '外部受注'
+    : plan.definition.unique
+    ? '研究'
+    : plan.cityId != null
+    ? '都市開発'
     : plan.taskId == 'earth_expansion'
     ? '地球開発'
     : '火星計画';
 
-String _duration(int ms) {
-  final seconds = (ms / 1000).ceil();
-  return seconds < 60
-      ? '$seconds秒'
-      : '${seconds ~/ 60}分${seconds % 60 == 0 ? '' : '${seconds % 60}秒'}';
-}
+String _location(PlannedTask plan) =>
+    '${GameContent.cities[plan.cityId]!.name} · 区画 ${plan.plotIndex! + 1} · Lv.${plan.targetLevel}';

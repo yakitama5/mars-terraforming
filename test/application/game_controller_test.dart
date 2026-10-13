@@ -9,6 +9,65 @@ import 'package:mars_terraforming/domain/save_repository.dart';
 void main() {
   final epoch = DateTime.utc(2026, 10, 13);
 
+  test(
+    'development advancement persists without changing the device clock anchor',
+    () async {
+      final store = _Repository();
+      var now = epoch;
+      final controller = GameController(store, now: () => now, devTools: true);
+      await controller.initialize(startTimer: false);
+      await controller.advanceForDevelopment(duration: const Duration(days: 1));
+      expect(
+        controller.state.simulatedMs,
+        const Duration(days: 1).inMilliseconds,
+      );
+      expect(controller.state.lastWallClockMs, epoch.millisecondsSinceEpoch);
+      expect(controller.notice, contains('1日'));
+      expect(store.data, controller.state.toJson());
+      final money = controller.state.moneyUnits;
+      controller.dispose();
+      final resumed = GameController(store, now: () => now, devTools: true);
+      addTearDown(resumed.dispose);
+      await resumed.initialize(startTimer: false);
+      expect(resumed.state.moneyUnits, money);
+      expect(resumed.state.simulatedMs, const Duration(days: 1).inMilliseconds);
+      now = epoch.add(const Duration(minutes: 1));
+      await resumed.resume();
+      expect(
+        resumed.state.simulatedMs,
+        const Duration(days: 1, minutes: 1).inMilliseconds,
+      );
+    },
+  );
+
+  test(
+    'normal mode and nonpositive development steps never skip time or save',
+    () async {
+      for (final development in [false, true]) {
+        final store = _Repository();
+        final controller = GameController(
+          store,
+          now: () => epoch,
+          devTools: development,
+        );
+        addTearDown(controller.dispose);
+        await controller.initialize(startTimer: false);
+        final before = controller.state.toJson();
+        if (!development) {
+          await controller.advanceForDevelopment(
+            duration: const Duration(days: 1),
+          );
+        }
+        await controller.advanceForDevelopment(duration: Duration.zero);
+        await controller.advanceForDevelopment(
+          duration: const Duration(minutes: -5),
+        );
+        expect(controller.state.toJson(), before);
+        expect(store.saveAttempts, 1);
+      }
+    },
+  );
+
   testWidgets(
     'failed first save cannot expose a playable world or start the clock',
     (tester) async {

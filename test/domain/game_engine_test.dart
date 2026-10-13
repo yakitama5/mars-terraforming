@@ -324,7 +324,10 @@ void main() {
   test('unsupported save versions and broken resources are rejected', () {
     final state = fresh().state;
     expect(
-      () => GameState.fromJson({...state.toJson(), 'schemaVersion': 2}),
+      () => GameState.fromJson({
+        ...state.toJson(),
+        'schemaVersion': GameState.schemaVersion + 1,
+      }),
       throwsFormatException,
     );
     expect(

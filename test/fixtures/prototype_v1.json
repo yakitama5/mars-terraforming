@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "contentVersion": "prototype-1",
+  "worldId": "world-1791849600000000",
+  "lastWallClockMs": 1791850230000,
+  "simulatedMs": 630000,
+  "moneyUnits": 549240000,
+  "earthLevel": 1,
+  "population": 120,
+  "earthKits": 0,
+  "marsKits": 0,
+  "marsHabitats": 1,
+  "marsResidents": 12,
+  "habitatChoice": "dome",
+  "nextPlanId": 6,
+  "contractRevenue": 0,
+  "research": [
+    "life_support"
+  ],
+  "achievements": [
+    "first_landing",
+    "dome_habitat"
+  ],
+  "claimedRewards": [
+    "world-1791849600000000:achievement:first_landing",
+    "world-1791849600000000:achievement:dome_habitat"
+  ],
+  "facilities": {
+    "lab": true,
+    "factory": true,
+    "launch": true,
+    "mars": true
+  },
+  "plans": [
+    {
+      "id": "plan-1",
+      "taskId": "life_support",
+      "remainingRepeats": 0,
+      "completedRuns": 1,
+      "status": "completed",
+      "stopReason": "指定回数が完了",
+      "remainingMs": 0
+    },
+    {
+      "id": "plan-2",
+      "taskId": "habitat_kit",
+      "remainingRepeats": 0,
+      "completedRuns": 1,
+      "status": "completed",
+      "stopReason": "指定回数が完了",
+      "remainingMs": 0
+    },
+    {
+      "id": "plan-3",
+      "taskId": "mars_delivery",
+      "remainingRepeats": 0,
+      "completedRuns": 1,
+      "status": "completed",
+      "stopReason": "指定回数が完了",
+      "remainingMs": 0
+    },
+    {
+      "id": "plan-4",
+      "taskId": "build_habitat",
+      "remainingRepeats": 0,
+      "completedRuns": 1,
+      "status": "completed",
+      "stopReason": "指定回数が完了",
+      "remainingMs": 0
+    },
+    {
+      "id": "plan-5",
+      "taskId": "factory_contract",
+      "remainingRepeats": 3,
+      "completedRuns": 0,
+      "status": "running",
+      "stopReason": "",
+      "remainingMs": 60000
+    }
+  ],
+  "log": [
+    "地球の小さな拠点から、火星開発を始めましょう。",
+    "[0s] 生命維持の実証を予約（1回）",
+    "[0s] 生命維持の実証を開始（-180 Cr）",
+    "[0s] 居住キット製造を予約（1回）",
+    "[0s] 火星へ輸送を予約（1回）",
+    "[0s] 火星居住区を建設を予約（1回）",
+    "[120s] 生命維持の実証が完了",
+    "[120s] 居住キット製造を開始（-260 Cr）",
+    "[300s] 居住キット製造が完了",
+    "[300s] 火星へ輸送を開始（-220 Cr）",
+    "[480s] 実績：火星への初輸送",
+    "[480s] 火星へ輸送が完了",
+    "[480s] 方針決定：ドーム居住",
+    "[480s] 火星居住区を建設を開始（-200 Cr）",
+    "[600s] 実績：ドームでの暮らし（+180 Cr）",
+    "[600s] 火星居住区を建設が完了",
+    "[600s] 外部受注・精密機器を予約（3回）",
+    "[600s] 外部受注・精密機器を開始（-40 Cr）"
+  ]
+}

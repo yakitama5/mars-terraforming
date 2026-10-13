@@ -13,9 +13,56 @@ class GameEngine {
   }
   final GameState state;
 
+  int facilityBonusCap(String facilityId) => state.facilityBonusCap(facilityId);
+
+  List<ResearchRequirementStatus> researchRequirements(String taskId) {
+    final task = GameContent.tasks[taskId];
+    if (task == null) return const [];
+    final requirements = task.researchRequirements;
+    return [
+      for (final id in task.prerequisiteIds)
+        ResearchRequirementStatus(
+          label: '研究：${GameContent.tasks[id]!.name}',
+          current: state.research.contains(id) ? 1 : 0,
+          required: 1,
+          unmetReason: '前提研究待ち：${GameContent.tasks[id]!.name}',
+        ),
+      if (requirements.marsHabitats > 0)
+        ResearchRequirementStatus(
+          label: '火星の閉鎖居住施設（従来の居住施設を含む）',
+          current: state.marsHabitats,
+          required: requirements.marsHabitats,
+          unmetReason:
+              '実証待ち：火星の閉鎖居住施設 ${state.marsHabitats}/${requirements.marsHabitats}基',
+        ),
+      for (final entry in requirements.districtCounts.entries)
+        ResearchRequirementStatus(
+          label: '完成した${GameContent.districts[entry.key]!.name}',
+          current: state.districtCount(entry.key),
+          required: entry.value,
+          unmetReason:
+              '実証待ち：${GameContent.districts[entry.key]!.name} ${state.districtCount(entry.key)}/${entry.value}地区',
+        ),
+      if (requirements.developedMarsCities > 0)
+        ResearchRequirementStatus(
+          label: '地区を整備した火星都市（従来の居住拠点を含む）',
+          current: state.developedMarsCityIds.length,
+          required: requirements.developedMarsCities,
+          unmetReason:
+              '実証待ち：火星都市の整備 ${state.developedMarsCityIds.length}/${requirements.developedMarsCities}都市',
+        ),
+    ];
+  }
+
+  List<String> researchRequirementReasons(String taskId) => [
+    for (final requirement in researchRequirements(taskId))
+      if (!requirement.isMet) requirement.unmetReason,
+  ];
+
   String? enqueue(String taskId, {int? repeats = 1}) {
     final task = GameContent.tasks[taskId];
     if (task == null) return '未対応の計画です';
+    if (task.districtId != null) return '都市の区画から建設を予約してください';
     if (repeats != null && repeats < 1) return '反復回数は1回以上を指定してください';
     if (state.activePlanCount >= GameContent.maxActivePlans) {
       return '予約は最大${GameContent.maxActivePlans}件です';
@@ -34,6 +81,53 @@ class GameEngine {
       ),
     );
     _record('${task.name}を予約（${repeats == null ? '無期限' : '$repeats回'}）');
+    _stabilize();
+    return null;
+  }
+
+  String? enqueueDistrict(String cityId, int plotIndex, String districtId) =>
+      _enqueueDistrict(cityId, plotIndex, districtId, upgrade: false);
+
+  String? upgradeDistrict(String cityId, int plotIndex) {
+    final district = state.districtAt(cityId, plotIndex);
+    if (district == null) return '増強する地区がありません';
+    return _enqueueDistrict(
+      cityId,
+      plotIndex,
+      district.districtId,
+      upgrade: true,
+    );
+  }
+
+  String? _enqueueDistrict(
+    String cityId,
+    int plotIndex,
+    String districtId, {
+    required bool upgrade,
+  }) {
+    final preview = state.districtPreview(
+      cityId,
+      plotIndex,
+      districtId,
+      upgrade: upgrade,
+    );
+    if (!preview.isValid) return preview.blockedReason;
+    if (state.activePlanCount >= GameContent.maxActivePlans) {
+      return '予約は最大${GameContent.maxActivePlans}件です';
+    }
+    final definition = GameContent.districts[districtId]!;
+    state.plans.add(
+      PlannedTask(
+        id: 'plan-${state.nextPlanId++}',
+        taskId: definition.taskId(upgrade: upgrade),
+        cityId: cityId,
+        plotIndex: plotIndex,
+        targetLevel: preview.targetLevel,
+      ),
+    );
+    _record(
+      '${GameContent.cities[cityId]!.name}の区画${plotIndex + 1}に${definition.name} Lv.${preview.targetLevel}を予約',
+    );
     _stabilize();
     return null;
   }
@@ -153,14 +247,11 @@ class GameEngine {
               !state.facilities[id]!) {
             continue;
           }
-          if (_requirementReason(
-            plan.definition,
-            includeMoney: false,
-          ).isNotEmpty) {
+          if (_requirementReason(plan, includeMoney: false).isNotEmpty) {
             continue;
           }
           final gap =
-              plan.definition.cost * GameState.moneyScale - state.moneyUnits;
+              state.plannedCost(plan) * GameState.moneyScale - state.moneyUnits;
           if (gap > 0) step = math.min(step, _ceilDiv(gap, net));
         }
       }
@@ -197,7 +288,7 @@ class GameEngine {
         } else if (plan.status == 'running') {
           plan.stopReason = '';
         } else {
-          plan.stopReason = _requirementReason(plan.definition);
+          plan.stopReason = _requirementReason(plan);
           if (plan.stopReason.isEmpty) _start(plan);
         }
       }
@@ -239,33 +330,53 @@ class GameEngine {
     return null;
   }
 
-  String _requirementReason(TaskDefinition task, {bool includeMoney = true}) {
-    if (task.requiredResearch != null &&
-        !state.research.contains(task.requiredResearch)) {
-      return '前提研究待ち：${GameContent.tasks[task.requiredResearch]!.name}';
-    }
+  String _requirementReason(PlannedTask plan, {bool includeMoney = true}) {
+    final task = plan.definition;
+    final researchReasons = researchRequirementReasons(task.id);
+    if (researchReasons.isNotEmpty) return researchReasons.join(' / ');
     if (task.requiresHabitatChoice && state.habitatChoice == null) {
       return state.achievements.contains('first_landing')
           ? '分岐待ち：居住方式を選択'
           : '火星輸送後に居住方式を選択';
     }
-    if (task.inputResource != null && _resource(task.inputResource!) < 1) {
-      return '資源不足：${GameContent.resourceNames[task.inputResource]}が1基必要';
+    if (plan.cityId != null) {
+      final cityReason = state.cityLockReason(plan.cityId!);
+      if (cityReason != null) return cityReason;
+      if (task.isDistrictUpgrade) {
+        final planet = GameContent.cities[plan.cityId]!.planet;
+        final prerequisite = planet == 'earth'
+            ? (plan.targetLevel == 2
+                  ? 'automated_fabrication'
+                  : 'industrial_network')
+            : (plan.targetLevel == 2 ? 'local_resources' : 'regional_habitats');
+        if (!state.research.contains(prerequisite)) {
+          return '前提研究待ち：${GameContent.tasks[prerequisite]!.name}';
+        }
+      }
     }
-    if (includeMoney && state.moneyUnits < task.cost * GameState.moneyScale) {
-      return '資金不足：${task.cost} Crが必要';
+    if (task.inputResource != null &&
+        _resource(task.inputResource!) < task.inputAmount) {
+      return '資源不足：${GameContent.resourceNames[task.inputResource]}が${task.inputAmount}基必要';
+    }
+    final cost = state.plannedCost(plan);
+    if (includeMoney && state.moneyUnits < cost * GameState.moneyScale) {
+      return '資金不足：$cost Crが必要';
     }
     return '';
   }
 
   void _start(PlannedTask plan) {
     final task = plan.definition;
-    state.moneyUnits -= task.cost * GameState.moneyScale;
-    if (task.inputResource != null) _changeResource(task.inputResource!, -1);
+    final cost = state.plannedCost(plan);
+    state.moneyUnits -= cost * GameState.moneyScale;
+    if (task.inputResource != null) {
+      _changeResource(task.inputResource!, -task.inputAmount);
+    }
     plan.status = 'running';
-    plan.remainingMs = task.durationMs;
+    plan.iterationDurationMs = state.plannedDurationMs(plan);
+    plan.remainingMs = plan.iterationDurationMs;
     plan.stopReason = '';
-    _record('${task.name}を開始（-${task.cost} Cr）');
+    _record('${task.name}を開始（-$cost Cr）');
   }
 
   void _complete(PlannedTask plan) {
@@ -279,14 +390,37 @@ class GameEngine {
     plan.stopReason = plan.isFinished ? '指定回数が完了' : '';
     state.moneyUnits += task.reward * GameState.moneyScale;
     if (task.id.endsWith('_contract')) state.contractRevenue += task.reward;
-    if (task.outputResource != null) _changeResource(task.outputResource!, 1);
+    if (task.outputResource != null) {
+      _changeResource(task.outputResource!, task.outputAmount);
+    }
+    if (task.unique) state.research.add(task.id);
+    if (task.districtId != null) {
+      final definition = GameContent.districts[task.districtId]!;
+      final district = DistrictState(
+        cityId: plan.cityId!,
+        plotIndex: plan.plotIndex!,
+        districtId: definition.id,
+        level: plan.targetLevel!,
+      );
+      state.districts[district.key] = district;
+      if (definition.planet == 'earth') {
+        state.population += definition.residents;
+      }
+      if (definition.id == 'mars_habitat') {
+        if (!task.isDistrictUpgrade) state.marsHabitats++;
+        state.marsResidents += definition.residents;
+        _achievement(
+          '${state.habitatChoice}_habitat',
+          reward: GameContent.achievementReward,
+        );
+      }
+    }
     switch (task.id) {
-      case 'life_support':
-        state.research.add(task.id);
       case 'earth_expansion':
         state.earthLevel++;
         state.population += GameContent.residentsPerDistrict;
       case 'mars_delivery':
+      case 'cargo_delivery':
         _achievement('first_landing', reward: 0);
       case 'build_habitat':
         state.marsHabitats++;
