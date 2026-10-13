@@ -174,6 +174,10 @@ class FacilityQueueCard extends StatelessWidget {
   );
 
   Widget _queued(PlannedTask plan, int index, List<PlannedTask> upcoming) {
+    final unlimitedBefore = upcoming
+        .take(index)
+        .where((previous) => previous.remainingRepeats == null)
+        .firstOrNull;
     final repeat = plan.remainingRepeats;
     final futureCount = repeat == null
         ? '無期限'
@@ -246,6 +250,15 @@ class FacilityQueueCard extends StatelessWidget {
               ),
             ],
           ),
+          if (unlimitedBefore != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 9, bottom: 5),
+              child: Text(
+                '先にある「${unlimitedBefore.definition.name}」の無期限反復が続く間、この予約は開始しません。↑で先に移すか、反復を終了してください。',
+                key: Key('unlimited-before-${plan.id}'),
+                style: const TextStyle(color: _copper, fontSize: 11),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 9),
             child: Text(
