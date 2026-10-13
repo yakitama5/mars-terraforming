@@ -166,8 +166,9 @@ main/develop両方のPushEventが記録される一方、Actionsには手動実�
 実際のGit credentialはGitHub CLIと同じOAuthユーザートークンで、GITHUB_TOKENではない。
 秘密値の出力や保存、認証範囲の拡大は行っていない。
 
-まず両ワークフローを無効化→再有効化して実行登録を更新し、
-YAMLを変更せずdevelopへこの調査記録をpushしてイベント起動を確認する。
+両ワークフローの無効化→再有効化後、YAMLを変更せずdevelopへ `a37cb91` をpushしたが、
+push起点のrunは作成されなかった。次にリポジトリのActionsを無効化→有効化し、
+元の許可設定（enabled=true / allowed_actions=all）へ戻して再検証する。
 この時点では内部原因や復旧は未確定。配信の確認にはevent=pushのrunを使い、
 手動実行を自動配信の成功として扱わない。
 
