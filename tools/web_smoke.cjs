@@ -34,28 +34,59 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
       await target.getByRole('button', { name: '開発 +5分' }).waitFor({ timeout: 60000 });
       await target.waitForTimeout(400);
     };
-    const click = async name => {
-      const locator = page.getByRole('button', { name, exact: true });
-      for (let n = 0; n < 12; n++) {
+    const reach = async (locator, description) => {
+      for (let n = 0; n < 16; n++) {
+        const { width, height } = page.viewportSize();
+        const scrollX = width - 150;
+        const scrollY = Math.max(150, height - 110);
         if (await locator.count()) {
           const box = await locator.boundingBox();
-          if (box && box.y > 100 && box.y + box.height < 970) {
+          if (box && box.y > 100 && box.y + box.height < height - 20) {
             await locator.click();
             await page.waitForTimeout(250);
             return;
           }
           if (box && box.y < 100) {
-            await page.mouse.move(1100, 500);
-            await page.mouse.wheel(0, -450);
+            await page.mouse.move(scrollX, scrollY);
+            await page.mouse.wheel(0, -Math.min(350, height / 2));
             await page.waitForTimeout(200);
             continue;
           }
         }
-        await page.mouse.move(1100, 700);
-        await page.mouse.wheel(0, 400);
+        await page.mouse.move(scrollX, scrollY);
+        await page.mouse.wheel(0, Math.min(300, height / 2));
         await page.waitForTimeout(200);
       }
-      throw new Error(`Cannot reach control: ${name}`);
+      throw new Error(`Cannot reach control: ${description}`);
+    };
+    const click = name => reach(
+      page.getByRole('button', { name, exact: true }), name,
+    );
+    const compareInvestment = async screenshotName => {
+      const beforeComparison = await snapshot();
+      await click('比較に保存');
+      await page.getByRole('button', { name: '惑星マップ', exact: true }).click();
+      await reach(page.getByRole('button', { name: /^高原科学都市 / }).last(), '高原科学都市');
+      await page.getByRole('button', { name: '都市開発', exact: true }).click();
+      await click('候補を比較');
+      await page.getByRole('button', { name: '比較を閉じる', exact: true }).waitFor();
+      assert.equal(await page.getByText('住宅地区 Lv.1 → 2', { exact: true }).count(), 1);
+      assert.equal(await page.getByText('住宅地区 新設 Lv.1', { exact: true }).count(), 1);
+      const { width, height } = page.viewportSize();
+      await page.screenshot({ path: path.join(output, `${screenshotName}.png`) });
+      // The entire comparison scrolls while its close action stays reachable.
+      await page.mouse.move(width / 2, height - 80);
+      await page.mouse.wheel(0, 600);
+      await page.waitForTimeout(250);
+      const close = page.getByRole('button', { name: '比較を閉じる', exact: true });
+      const closeBox = await close.boundingBox();
+      assert.ok(closeBox && closeBox.y >= 0 && closeBox.y + closeBox.height <= height);
+      await close.click();
+      await page.waitForTimeout(250);
+      assert.equal(await page.getByRole('button', { name: '比較を閉じる', exact: true }).count(), 0);
+      const afterComparison = await snapshot();
+      assert.deepEqual(afterComparison.districts, beforeComparison.districts);
+      assert.deepEqual(afterComparison.plans.map(p => p.id), beforeComparison.plans.map(p => p.id));
     };
     const reserve = async (name, repeat) => {
       await page.getByRole('button', { name: '設備・進行', exact: true }).click();
@@ -127,6 +158,26 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await page.screenshot({ path: path.join(output, 'strategy-web-city.png') });
     console.log('CHECK OK: research tree, reservations, reorder, reload, city plot habitation');
 
+    // Grow the first Earth city through the UI, then compare its upgrade with
+    // a new city's first district. No test fixture or save mutation is used.
+    await page.getByRole('button', { name: '惑星マップ', exact: true }).click();
+    await page.getByRole('checkbox', { name: '地球', exact: true }).click();
+    await page.getByRole('button', { name: '都市開発', exact: true }).click();
+    await page.getByText(/^候補地 · 完成 0\/25区画/).waitFor();
+    await click('この区画に建設を予約');
+    await page.getByRole('button', { name: '設備・進行', exact: true }).click();
+    await page.getByRole('button', { name: '稼働状況', exact: true }).click();
+    await page.getByRole('button', { name: '住宅地区を建設を前へ', exact: true }).click();
+    for (let n = 0; n < 2; n++) {
+      await page.getByRole('button', { name: '開発 +5分', exact: true }).click();
+      await page.waitForTimeout(350);
+    }
+    assert.ok((await snapshot()).districts.some(d => d.cityId === 'earth_delta' && d.plotIndex === 12));
+    await page.getByRole('button', { name: '都市開発', exact: true }).click();
+    await page.getByText(/^拠点 · 完成 1\/25区画 · 総Lv\.1/).waitFor();
+    await compareInvestment('investment-web-comparison');
+    console.log('CHECK OK: city growth and live upgrade/new-city comparison');
+
     // The second tab must stop before loading or advancing the shared world.
     const second = await context.newPage();
     await second.goto(url);
@@ -160,9 +211,10 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await page.screenshot({ path: path.join(output, 'strategy-web-small-earth.png') });
     await page.getByRole('button', { name: '都市開発', exact: true }).click();
     await page.waitForTimeout(300);
-    const action = await page.getByRole('button', { name: 'この区画に建設を予約', exact: true }).boundingBox();
+    const action = await page.getByRole('button', { name: 'この地区を強化する', exact: true }).boundingBox();
     assert.ok(action && action.y > 100 && action.y + action.height < 370, 'district action remains visible in landscape');
     await page.screenshot({ path: path.join(output, 'strategy-web-small-city.png') });
+    await compareInvestment('investment-web-small-comparison');
     await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
     await page.getByRole('button', { name: '全体表示', exact: true }).click();
     await page.waitForTimeout(300);
@@ -170,7 +222,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     console.log('CHECK OK: small landscape, pinned construction action, whole research map');
     assert.deepEqual(errors, []);
     assert.deepEqual([...origins], [new URL(url).origin]);
-    result = { result: 'PASS', checks: ['3D startup', 'small landscape and whole research map', 'equipment reorder', 'paid iteration preserved', 'reload keeps order', 'research tree/manufacture/transport/district habitation', 'multi-tab lock', 'reward persistence', 'offline cold reload', 'no external resource hosts'], origins: [...origins] };
+    result = { result: 'PASS', checks: ['3D startup', 'small landscape and whole research map', 'city stage growth', 'live investment comparison and small-screen close', 'equipment reorder', 'paid iteration preserved', 'reload keeps order', 'research tree/manufacture/transport/district habitation', 'multi-tab lock', 'reward persistence', 'offline cold reload', 'no external resource hosts'], origins: [...origins] };
   } catch (error) {
     if (page) {
       await page.screenshot({ path: path.join(output, 'web-failure.png') }).catch(() => {});
