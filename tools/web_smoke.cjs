@@ -138,6 +138,9 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     console.error('PAGE', await page.locator('body').innerText().catch(() => 'unavailable'));
     throw error;
   } finally {
+    // Close pages and their offline fetches before waiting for browser exit.
+    await context.setOffline(false);
+    await context.close();
     await browser.close();
   }
 })().catch(error => { console.error(error); process.exit(1); });
