@@ -61,7 +61,7 @@ class TaskDefinition {
 }
 
 abstract final class GameContent {
-  static const version = 'district-3';
+  static const version = 'district-4';
   static const initialMoney = 900;
   static const initialPopulation = 120;
   static const baseTaxPerMinute = 30;
@@ -232,7 +232,7 @@ abstract final class GameContent {
       unique: true,
       researchBranch: '都市・産業',
       researchStage: 1,
-      unlockSummary: '研究地区・工業地区・高原科学都市',
+      unlockSummary: '住宅Lv.2・研究地区・工業地区・高原科学都市',
       description: '住宅と産業の近接効果を活用し、研究または製造に都市を特化する。',
       science: 'ゲーム上の仮定：地区の機能集積を研究・製造の工期短縮として簡略化しています。',
     ),
@@ -249,7 +249,7 @@ abstract final class GameContent {
       requiredResearch: 'urban_planning',
       researchBranch: '都市・産業',
       researchStage: 2,
-      unlockSummary: '自動化設備受注・キット6基製造・Lv.2地区・製造効率上限45%',
+      unlockSummary: '自動化設備受注・キット6基製造・地球の他地区Lv.2・製造効率上限45%',
       description: '同じ工場で収益事業と自前の設備製造を選び分ける。',
       science: 'ゲーム上の仮定：自動化の成果を一括製造と地区増強に集約。費用・期間は仮値です。',
     ),
@@ -599,6 +599,7 @@ abstract final class GameContent {
       id: 'housing',
       name: '住宅地区',
       planet: 'earth',
+      level2Research: 'urban_planning',
       cost: 350,
       durationSeconds: 300,
       baseTaxPerMinute: 12,
@@ -620,8 +621,8 @@ abstract final class GameContent {
       id: 'industry',
       name: '工業地区',
       planet: 'earth',
-      cost: 1500,
-      durationSeconds: 720,
+      cost: 1200,
+      durationSeconds: 480,
       upkeepPerMinute: 5,
       requiredResearch: 'urban_planning',
       description: '製造効率+4%。鉱床で+2%、宇宙港で+1%、発電地区で+2%。住宅の隣接収入は低下。',
@@ -754,6 +755,7 @@ class DistrictDefinition {
     required this.durationSeconds,
     required this.description,
     this.requiredResearch,
+    this.level2Research,
     this.baseTaxPerMinute = 0,
     this.upkeepPerMinute = 0,
     this.maxLevel = 3,
@@ -761,7 +763,7 @@ class DistrictDefinition {
     this.allowedTerrain = const [],
   });
   final String id, name, planet, description;
-  final String? requiredResearch;
+  final String? requiredResearch, level2Research;
   final int cost,
       durationSeconds,
       baseTaxPerMinute,
@@ -774,6 +776,10 @@ class DistrictDefinition {
     'spaceport' => 'launch',
     _ => planet == 'earth' ? 'factory' : 'mars',
   };
+  String researchForUpgrade(int targetLevel) => targetLevel == 2
+      ? level2Research ??
+            (planet == 'earth' ? 'automated_fabrication' : 'local_resources')
+      : (planet == 'earth' ? 'industrial_network' : 'regional_habitats');
   String taskId({bool upgrade = false}) =>
       '${upgrade ? 'upgrade' : 'district'}_$id';
   int costForLevel(int level) =>

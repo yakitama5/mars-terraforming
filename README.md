@@ -4,6 +4,7 @@
 火星の複数都市へ進むFlutter / FlutterSceneの戦略試作です。
 球体の惑星、各都市25区画の配置・隣接効果、3系統の研究を操作できます。
 住宅は基本5分から。既存地区の増強と別都市への展開を「比較に保存」で比べられます。
+都市基盤研究から住宅Lv.2を選べ、設備画面の「予約の見通し」で離席後の資金・完成・停止理由を試算できます。
 iOS先行・Android後発、横画面・日本語・完全オフラインの方針を維持しています。
 PCで操作を試せるWeb版も用意しました。UIと数値は仮仕様です。
 
@@ -59,7 +60,8 @@ Web試遊は既定で開発用の別セーブと時間送りを使います。
 
 ## 資料と検証
 
-- [都市投資・序盤5分建設と最新の検証](docs/investment-pacing.md)
+- [序盤の増強選択・予約の見通しと最新の検証](docs/early-development.md)
+- [都市投資・序盤5分建設の基礎調整](docs/investment-pacing.md)
 - [GitHub Pagesとmain/developの運用](docs/github-pages.md)
 - [都市・惑星の戦略試作と改善記録](docs/strategy-prototype.md)
 - [企画書](docs/game-design.md)

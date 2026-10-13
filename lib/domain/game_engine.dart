@@ -343,12 +343,8 @@ class GameEngine {
       final cityReason = state.cityLockReason(plan.cityId!);
       if (cityReason != null) return cityReason;
       if (task.isDistrictUpgrade) {
-        final planet = GameContent.cities[plan.cityId]!.planet;
-        final prerequisite = planet == 'earth'
-            ? (plan.targetLevel == 2
-                  ? 'automated_fabrication'
-                  : 'industrial_network')
-            : (plan.targetLevel == 2 ? 'local_resources' : 'regional_habitats');
+        final prerequisite = GameContent.districts[task.districtId]!
+            .researchForUpgrade(plan.targetLevel!);
         if (!state.research.contains(prerequisite)) {
           return '前提研究待ち：${GameContent.tasks[prerequisite]!.name}';
         }

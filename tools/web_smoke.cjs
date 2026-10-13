@@ -88,6 +88,38 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
       assert.deepEqual(afterComparison.districts, beforeComparison.districts);
       assert.deepEqual(afterComparison.plans.map(p => p.id), beforeComparison.plans.map(p => p.id));
     };
+    const inspectForecast = async screenshotName => {
+      await page.getByRole('button', { name: '設備・進行', exact: true }).click();
+      await page.getByRole('button', { name: '稼働状況', exact: true }).click();
+      const beforeForecast = await snapshot();
+      // Equipment rows can leave this lazy list scrolled below its header.
+      const viewport = page.viewportSize();
+      await page.mouse.move(viewport.width / 2, viewport.height - 100);
+      await page.mouse.wheel(0, -5000);
+      await page.waitForTimeout(300);
+      await click('予約の見通し');
+      await page.getByRole('button', { name: '見通しを閉じる', exact: true }).waitFor();
+      await page.getByRole('checkbox', { name: '8時間後', exact: true }).click();
+      await page.getByRole('button', { name: '最新状態で再計算', exact: true }).click();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(output, `${screenshotName}.png`) });
+      const { width, height } = page.viewportSize();
+      await page.mouse.move(width / 2, height - 85);
+      await page.mouse.wheel(0, 650);
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: path.join(output, `${screenshotName}-equipment.png`) });
+      const close = page.getByRole('button', { name: '見通しを閉じる', exact: true });
+      const box = await close.boundingBox();
+      assert.ok(box && box.y >= 0 && box.y + box.height <= height);
+      await close.click();
+      const afterForecast = await snapshot();
+      // Real-time ticks continue, but projection must never materialize its future.
+      assert.deepEqual(afterForecast.districts, beforeForecast.districts);
+      assert.deepEqual(afterForecast.research, beforeForecast.research);
+      assert.deepEqual(afterForecast.claimedRewards, beforeForecast.claimedRewards);
+      assert.deepEqual(afterForecast.plans.map(p => p.id), beforeForecast.plans.map(p => p.id));
+      assert.ok(afterForecast.simulatedMs - beforeForecast.simulatedMs < 60000);
+    };
     const reserve = async (name, repeat) => {
       await page.getByRole('button', { name: '設備・進行', exact: true }).click();
       const section = name.includes('輸送') || name.includes('衛星') ? '輸送・居住' : '製造・受注';
@@ -125,6 +157,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     assert.equal(reordered.plans.find(plan => plan.id === contract.id).status, 'running');
     assert.equal(reordered.plans.find(plan => plan.id === contract.id).completedRuns, 0);
     await page.screenshot({ path: path.join(output, 'strategy-web-equipment.png') });
+    await inspectForecast('forecast-web-summary');
     await page.reload();
     await ready(page);
     assert.equal((await snapshot()).worldId, before.worldId);
@@ -215,6 +248,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     assert.ok(action && action.y > 100 && action.y + action.height < 370, 'district action remains visible in landscape');
     await page.screenshot({ path: path.join(output, 'strategy-web-small-city.png') });
     await compareInvestment('investment-web-small-comparison');
+    await inspectForecast('forecast-web-small-summary');
     await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
     await page.getByRole('button', { name: '全体表示', exact: true }).click();
     await page.waitForTimeout(300);
@@ -222,7 +256,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     console.log('CHECK OK: small landscape, pinned construction action, whole research map');
     assert.deepEqual(errors, []);
     assert.deepEqual([...origins], [new URL(url).origin]);
-    result = { result: 'PASS', checks: ['3D startup', 'small landscape and whole research map', 'city stage growth', 'live investment comparison and small-screen close', 'equipment reorder', 'paid iteration preserved', 'reload keeps order', 'research tree/manufacture/transport/district habitation', 'multi-tab lock', 'reward persistence', 'offline cold reload', 'no external resource hosts'], origins: [...origins] };
+    result = { result: 'PASS', checks: ['3D startup', 'small landscape and whole research map', 'city stage growth', 'live investment comparison and small-screen close', 'read-only eight-hour forecast and small-screen close', 'equipment reorder', 'paid iteration preserved', 'reload keeps order', 'research tree/manufacture/transport/district habitation', 'multi-tab lock', 'reward persistence', 'offline cold reload', 'no external resource hosts'], origins: [...origins] };
   } catch (error) {
     if (page) {
       await page.screenshot({ path: path.join(output, 'web-failure.png') }).catch(() => {});
