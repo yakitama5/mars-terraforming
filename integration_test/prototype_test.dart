@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,7 +13,7 @@ import 'package:mars_terraforming/main.dart';
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
-    'iOS: globes, research, shared queues, districts, and save/resume',
+    'iOS: globes, research, districts, investment comparison, and save/resume',
     (tester) async {
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
@@ -100,7 +101,7 @@ void main() {
       expect(controller.state.upcomingPlansFor('factory'), [kit, factoryRun]);
       await capture('strategy-ios-equipment');
       await controller.advanceForDevelopment(
-        duration: const Duration(hours: 1),
+        duration: const Duration(minutes: 20),
       );
       await tester.pump(const Duration(milliseconds: 500));
       expect(controller.state.achievements, contains('first_landing'));
@@ -129,19 +130,25 @@ void main() {
         ),
       );
       await controller.advanceForDevelopment(
-        duration: const Duration(hours: 1),
+        duration: const Duration(minutes: 15),
       );
       await tester.pump(const Duration(milliseconds: 500));
       expect(
         controller.state.districtAt('earth_delta', 0)?.districtId,
         'housing',
       );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('city-development-summary')))
+            .data,
+        contains('拠点 · 完成 1/25区画 · 総Lv.1'),
+      );
       await capture('strategy-ios-city');
 
       // A completed neighboring campus changes both tax and research speed.
       await controller.command((engine) => engine.enqueue('urban_planning'));
       await controller.advanceForDevelopment(
-        duration: const Duration(hours: 5),
+        duration: const Duration(minutes: 10),
       );
       await tester.pump(const Duration(milliseconds: 500));
       expect(controller.state.research, contains('urban_planning'));
@@ -167,7 +174,7 @@ void main() {
         ),
       );
       await controller.advanceForDevelopment(
-        duration: const Duration(hours: 2),
+        duration: const Duration(minutes: 20),
       );
       await tester.pump(const Duration(milliseconds: 500));
       expect(
@@ -178,6 +185,53 @@ void main() {
         controller.state.taxPerMinute,
         taxBefore + estimate.taxDeltaPerMinute,
       );
+
+      // Save the existing campus upgrade and inspect a new city's campus.
+      // UI comparison must not modify the world, time, or equipment queue.
+      final beforeComparison = jsonEncode(controller.state.toJson());
+      await tapKey('save-investment');
+      await tapKey('city-selector');
+      await tester.tap(find.text('高原科学都市').last);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('city-development-summary')))
+            .data,
+        contains('候補地 · 完成 0/25区画 · 総Lv.0'),
+      );
+      await tapKey('compare-investments');
+      expect(find.text('研究地区 Lv.1 → 2'), findsOneWidget);
+      expect(find.text('研究地区 新設 Lv.1'), findsOneWidget);
+      expect(find.text('0区画 · 空地を温存'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('investment-comparison-current')),
+          matching: find.text('1区画'),
+        ),
+        findsOneWidget,
+      );
+      await capture('investment-ios-comparison');
+      await tester.drag(
+        find.byKey(const Key('investment-comparison-scroll')),
+        const Offset(0, -450),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        find.byKey(const Key('close-investment-comparison')).hitTestable(),
+        findsOneWidget,
+      );
+      await capture('investment-ios-comparison-details');
+      await tapKey('close-investment-comparison');
+      expect(
+        find.byKey(const Key('investment-comparison-saved')),
+        findsNothing,
+      );
+      expect(jsonEncode(controller.state.toJson()), beforeComparison);
+      expect(
+        find.byKey(const Key('confirm-district')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
 
       // Planet selection leads into a different city's finite construction plots.
       await tapKey('navigation-0');

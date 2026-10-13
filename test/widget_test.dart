@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/domain/save_repository.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
+import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/main.dart';
 
 class MemorySave implements SaveRepository {
@@ -54,8 +56,12 @@ void main() {
       await tester.tap(find.byKey(const Key('queue-life_support')));
       await tester.pumpAndSettle();
       expect(controller.state.plans.single.taskId, 'life_support');
-      await tester.tap(find.byKey(const Key('advance-time')));
-      await tester.pumpAndSettle();
+      final researchSteps =
+          (GameContent.tasks['life_support']!.durationSeconds / 300).ceil();
+      for (var i = 0; i < researchSteps; i++) {
+        await tester.tap(find.byKey(const Key('advance-time')));
+        await tester.pumpAndSettle();
+      }
       expect(controller.state.research, contains('life_support'));
       await tester.tap(find.byKey(const Key('operations-1')));
       await tester.pumpAndSettle();
@@ -160,6 +166,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('区画 1  ·  海岸'), findsOneWidget);
       expect(find.text('建設前の見積もり'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('立地・隣接ボーナス'),
+        140,
+        scrollable: find.descendant(
+          of: find.byKey(const Key('district-detail')),
+          matching: find.byType(Scrollable),
+        ),
+      );
       expect(find.text('立地・隣接ボーナス'), findsOneWidget);
       expect(controller.state.plans, isEmpty);
       await tester.ensureVisible(find.byKey(const Key('confirm-district')));
@@ -171,6 +185,155 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  for (final size in [const Size(844, 390), const Size(1280, 800)]) {
+    testWidgets('investment comparison remains live across cities at $size', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = GameController(
+        MemorySave(),
+        now: () => DateTime.utc(2026, 10, 13),
+      );
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      controller.state.research.addAll([
+        'urban_planning',
+        'automated_fabrication',
+      ]);
+      const house = DistrictState(
+        cityId: 'earth_delta',
+        plotIndex: 0,
+        districtId: 'housing',
+      );
+      controller.state.districts[house.key] = house;
+      await tester.pumpWidget(
+        MarsApp(
+          controller: controller,
+          sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
+        ),
+      );
+      final before = jsonEncode(controller.state.toJson());
+      await tester.tap(find.byKey(const Key('navigation-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
+      await tester.pumpAndSettle();
+      Future<void> detailTap(String key) async {
+        final finder = find.byKey(Key(key));
+        await tester.scrollUntilVisible(
+          finder,
+          140,
+          scrollable: find.descendant(
+            of: find.byKey(const Key('district-detail')),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        await tester.ensureVisible(finder);
+        await tester.tap(finder);
+        await tester.pumpAndSettle();
+      }
+
+      await detailTap('save-investment');
+      // A tab change disposes the district screen but must keep the comparison.
+      await tester.tap(find.byKey(const Key('navigation-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('navigation-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('city-selector')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text(GameContent.cities['earth_highland']!.name).last,
+      );
+      await tester.pumpAndSettle();
+      await detailTap('compare-investments');
+      expect(
+        find.byKey(const Key('investment-comparison-saved')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('investment-comparison-current')),
+        findsOneWidget,
+      );
+      expect(find.text('住宅地区 Lv.1 → 2'), findsOneWidget);
+      expect(find.text('住宅地区 新設 Lv.1'), findsOneWidget);
+      expect(find.text('0区画 · 空地を温存'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('investment-comparison-current')),
+          matching: find.text('1区画'),
+        ),
+        findsOneWidget,
+      );
+      expect(jsonEncode(controller.state.toJson()), before);
+      expect(tester.takeException(), isNull);
+      // The saved placement now has a reservation. The open dialog must show it
+      // without requiring another save or charging/reserving a second time.
+      await controller.command(
+        (engine) => engine.upgradeDistrict('earth_delta', 0),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.state.plans, hasLength(1));
+      expect(find.text('この区画は建設・増強を予約済みです'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('close-investment-comparison')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('confirm-district')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(controller.state.plans, hasLength(1));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('a maximum-level district cannot save a nonexistent upgrade', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = GameController(MemorySave());
+    await controller.initialize(startTimer: false);
+    addTearDown(controller.dispose);
+    const house = DistrictState(
+      cityId: 'earth_delta',
+      plotIndex: 0,
+      districtId: 'housing',
+      level: 3,
+    );
+    controller.state.districts[house.key] = house;
+    await tester.pumpWidget(
+      MarsApp(
+        controller: controller,
+        sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('navigation-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('save-investment')),
+      120,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('district-detail')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(const Key('save-investment')))
+          .onPressed,
+      isNull,
+    );
+    expect(find.text('建設前の見積もり'), findsNothing);
+    expect(find.textContaining('Lv.3 → 4'), findsNothing);
+    expect(controller.state.plans, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'research tree exposes practical requirements after prerequisite research',

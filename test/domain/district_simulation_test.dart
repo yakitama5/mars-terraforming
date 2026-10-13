@@ -148,7 +148,7 @@ void main() {
       'housing',
       upgrade: true,
     );
-    expect(preview.cost, 1400);
+    expect(preview.cost, 613); // 350 × 175%, rounded up to whole Cr.
     expect(preview.taxDeltaPerMinute, 16);
     expect(game.upgradeDistrict('earth_delta', 0), isNull);
     expect(game.state.districtAt('earth_delta', 0)!.level, 1);
@@ -164,23 +164,23 @@ void main() {
   test('new efficiency affects future starts but never changes paid research duration', () {
     final game = ready();
     game.enqueueDistrict('earth_delta', 4, 'campus');
-    game.advanceBy(const Duration(minutes: 59));
+    game.advanceBy(const Duration(minutes: 9));
     game.state.marsHabitats = 1;
     game.enqueue('closed_ecology');
     final research = game.state.currentPlanFor('lab')!;
     expect(
       research.iterationDurationMs,
-      const Duration(hours: 12).inMilliseconds,
+      const Duration(hours: 3).inMilliseconds,
     );
     game.advanceBy(const Duration(minutes: 1));
     expect(game.state.researchBonusPercent, 6);
     expect(
       research.iterationDurationMs,
-      const Duration(hours: 12).inMilliseconds,
+      const Duration(hours: 3).inMilliseconds,
     );
     expect(
       research.remainingMs,
-      const Duration(hours: 11, minutes: 59).inMilliseconds,
+      const Duration(hours: 2, minutes: 59).inMilliseconds,
     );
     final restored = GameEngine(copy(game.state));
     expect(
@@ -352,7 +352,7 @@ void main() {
     expect(research, hasLength(10));
     expect(
       research.where((r) => r.durationSeconds >= 24 * 3600).length,
-      greaterThanOrEqualTo(4),
+      greaterThanOrEqualTo(3),
     );
     expect(GameContent.tasks['regional_habitats']!.prerequisiteIds, [
       'local_resources',

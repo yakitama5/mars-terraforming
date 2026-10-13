@@ -180,6 +180,37 @@ class GameState {
     return null;
   }
 
+  CityDevelopmentSummary cityDevelopment(String cityId) {
+    final city = GameContent.cities[cityId];
+    if (city == null) throw ArgumentError.value(cityId, 'cityId');
+    final completed = districts.values.where((d) => d.cityId == cityId);
+    final totalLevels = completed.fold(0, (sum, d) => sum + d.level);
+    final thresholds = GameContent.cityStageThresholds;
+    var stage = 0;
+    while (stage + 1 < thresholds.length &&
+        totalLevels >= thresholds[stage + 1]) {
+      stage++;
+    }
+    return CityDevelopmentSummary(
+      completedPlots: completed.length,
+      totalLevels: totalLevels,
+      emptyPlots: city.plotCount - completed.length,
+      reservedPlots: plans
+          .where(
+            (p) =>
+                !p.isFinished &&
+                p.cityId == cityId &&
+                p.definition.districtId != null &&
+                !p.definition.isDistrictUpgrade,
+          )
+          .length,
+      stageName: GameContent.cityStageNames[stage],
+      nextStageAtTotalLevels: stage + 1 < thresholds.length
+          ? thresholds[stage + 1]
+          : null,
+    );
+  }
+
   bool cityUnlocked(String cityId) => cityLockReason(cityId) == null;
   String? cityLockReason(String cityId) {
     final city = GameContent.cities[cityId];
@@ -259,17 +290,52 @@ class GameState {
       (100 + facilityBonusPercent(facilityId));
   int plannedCost(PlannedTask plan) => plan.definition.districtId == null
       ? plan.definition.cost
-      : GameContent.districts[plan.definition.districtId]!.costForLevel(
+      : _districtInvestment(
+          plan.cityId!,
+          GameContent.districts[plan.definition.districtId]!,
           plan.targetLevel!,
-        );
+          upgrade: plan.definition.isDistrictUpgrade,
+        ).cost;
   int plannedDurationMs(PlannedTask plan) => plan.definition.districtId == null
       ? effectiveDurationMs(plan.definition)
       : _scaledDuration(
-          GameContent.districts[plan.definition.districtId]!.durationMsForLevel(
+          _districtInvestment(
+            plan.cityId!,
+            GameContent.districts[plan.definition.districtId]!,
             plan.targetLevel!,
-          ),
+            upgrade: plan.definition.isDistrictUpgrade,
+          ).durationMs,
           plan.definition.facilityId,
         );
+
+  /// Quotes depend on completed plots at the time of starting work. Unpaid
+  /// reservations can be reordered; only the first completed plot opens a city.
+  /// Running iterations retain their already-paid duration and inventory.
+  _DistrictInvestment _districtInvestment(
+    String cityId,
+    DistrictDefinition definition,
+    int level, {
+    required bool upgrade,
+  }) {
+    final city = GameContent.cities[cityId];
+    final count = districts.values.where((d) => d.cityId == cityId).length;
+    final development = upgrade
+        ? 0
+        : count * GameContent.newPlotDevelopmentPercent;
+    final baseCost = definition.costForLevel(level);
+    final baseDuration = definition.durationMsForLevel(level);
+    return _DistrictInvestment(
+      baseCost: baseCost,
+      developmentCost: (baseCost * development + 99) ~/ 100,
+      setupCost: !upgrade && count == 0 ? city?.setupCost ?? 0 : 0,
+      baseDurationMs: baseDuration,
+      developmentDurationMs: (baseDuration * development + 99) ~/ 100,
+      setupDurationMs: !upgrade && count == 0
+          ? (city?.setupDurationSeconds ?? 0) * 1000
+          : 0,
+      developmentPercent: 100 + development,
+    );
+  }
 
   DistrictPreview districtPreview(
     String cityId,
@@ -318,6 +384,7 @@ class GameState {
       }
     }
     var delta = const DistrictEffects();
+    var rawDelta = const DistrictEffects();
     final bonuses = <String>[];
     if (city != null &&
         definition != null &&
@@ -334,6 +401,7 @@ class GameState {
       final beforeEffects = districtEffects;
       final afterEffects = _districtEffects(after);
       delta = afterEffects - beforeEffects;
+      rawDelta = delta;
       bonuses.add('地形：${GameContent.terrainNames[city.terrainAt(plotIndex)]}');
       for (final neighbor in city.adjacentPlots(plotIndex)) {
         final district = districtAt(cityId, neighbor);
@@ -360,14 +428,29 @@ class GameState {
         mars: change('mars', beforeEffects.mars, afterEffects.mars),
       );
     }
+    final investment = definition == null
+        ? const _DistrictInvestment()
+        : _districtInvestment(cityId, definition, level, upgrade: upgrade);
     return DistrictPreview(
-      cost: definition?.costForLevel(level) ?? 0,
+      cost: investment.cost,
       durationMs: definition == null
           ? 0
           : _scaledDuration(
-              definition.durationMsForLevel(level),
+              investment.durationMs,
               definition.planet == 'earth' ? 'factory' : 'mars',
             ),
+      baseCost: investment.baseCost,
+      developmentCost: investment.developmentCost,
+      setupCost: investment.setupCost,
+      baseDurationMs: investment.baseDurationMs,
+      developmentDurationMs: investment.developmentDurationMs,
+      setupDurationMs: investment.setupDurationMs,
+      additionalPlots: upgrade ? 0 : 1,
+      developmentPercent: investment.developmentPercent,
+      rawResearchBonusDelta: rawDelta.research,
+      rawFactoryBonusDelta: rawDelta.factory,
+      rawLaunchBonusDelta: rawDelta.launch,
+      rawMarsBonusDelta: rawDelta.mars,
       targetLevel: level,
       taxDeltaPerMinute: delta.tax,
       upkeepDeltaPerMinute: delta.upkeep,
@@ -534,9 +617,10 @@ class GameState {
   factory GameState.fromJson(Map<String, dynamic> json) {
     final legacy =
         json['schemaVersion'] == 1 && json['contentVersion'] == 'prototype-1';
-    if (!legacy &&
-        (json['schemaVersion'] != schemaVersion ||
-            json['contentVersion'] != GameContent.version)) {
+    final compatibleDistricts =
+        json['schemaVersion'] == schemaVersion &&
+        [GameContent.version, 'district-2'].contains(json['contentVersion']);
+    if (!legacy && !compatibleDistricts) {
       throw const FormatException('未対応の保存形式またはコンテンツ版です。元のデータを保持してください。');
     }
     final state = GameState._();
@@ -623,4 +707,23 @@ class GameState {
     }
     return state;
   }
+}
+
+/// Shared calculation used by both the visible preview and actual start.
+class _DistrictInvestment {
+  const _DistrictInvestment({
+    this.baseCost = 0,
+    this.developmentCost = 0,
+    this.setupCost = 0,
+    this.baseDurationMs = 0,
+    this.developmentDurationMs = 0,
+    this.setupDurationMs = 0,
+    this.developmentPercent = 100,
+  });
+  final int baseCost, developmentCost, setupCost;
+  final int baseDurationMs, developmentDurationMs, setupDurationMs;
+  final int developmentPercent;
+  int get cost => baseCost + developmentCost + setupCost;
+  int get durationMs =>
+      baseDurationMs + developmentDurationMs + setupDurationMs;
 }
