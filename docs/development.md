@@ -143,8 +143,13 @@ PagesはActions方式で有効化し、github-pages環境はmainとdevelopの2�
   両ブランチの84テスト・解析・Webビルドを再実行して成功。調査と復旧手順はgithub-pages.mdへ記録した。
 - 復旧後の公開URLでChromeの `pages_smoke.cjs` の全機能チェックがPASS。
   保存/ロック/キャッシュ分離、時間送りの分離、両方のオフライン再開を再確認した。
-  PASS後にNodeの終了待ちが再発し、Chrome終了後に今回のNodeだけを終了したため、
-  今回は終了コード0の完走ではない。検証プロセスの後片付けには追加調査が残る。
+  この時点ではPASS後にNodeの終了待ちが再発し、手動終了したため完走とは扱わなかった。
+- 後続調査で、Google UpdaterがChromeのstdioを継承してPlaywrightのcloseを遅らせる原因を確認。
+  両検証スクリプトに `--disable-updater-scheduler` を追加し、初期化失敗時もbrowserを閉じ、
+  全close後に最終PASSを出すよう修正した。Nodeの強制終了は使わない。
+  公開版のPages連続2回・開発循環1回が自然終了0、通信/初期化失敗3ケースが自然終了1。
+  全6ケースでChrome終了・タイムアウトなし・手動killなしを確認。終了待ちの残件は解消。
+  環境・実測・再確認手順は [Web検証ガイド](web-preview.md#検証プロセスの終了待ちの修正2026-10-13) に記録した。
 - GitHubは標準ActionsのNode.js 20非推奨を通知したが、Node.js 24による実行と配信は成功。
   Actionの更新とrunner環境変更時にはこのハーネスで互換性を再確認する。
 - iOS再実行は行わず直前の設備操作検証を参照。Safari/Firefox・実機iOS/AndroidのWeb試遊、

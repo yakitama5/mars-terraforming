@@ -130,6 +130,47 @@ Playwright管理下のChromiumを使う場合は `CHROME_BIN` も省略できる
 実施結果と残る確認事項は [開発・検証の引き継ぎ](development.md) に記録する。
 iOS実機・Android・別ブラウザの検証とは区別する。
 
+### 検証プロセスの終了待ちの修正（2026-10-13）
+
+原因は検証用Chromeから起動したGoogle Updaterへの標準出力・標準エラーの継承だった。
+Playwrightはブラウザの子プロセスの `close`（stdioの終了を含む）を待つ。
+Chrome本体が終了してもUpdaterが同じソケットを保持することを、NodeとUpdaterの
+ファイル記述子・ソケット識別子の一致で確認した。再現時の `browser.close()` は約110秒待った。
+[Nodeのcloseイベント](https://nodejs.org/api/child_process.html#event-close)
+
+両スクリプトのChrome起動に `--disable-updater-scheduler` を追加した。
+Chromium自身のブラウザテストでも使用する引数で、この検証プロセスでのUpdater起動を抑える。
+通常のChromeやOSの更新設定は変更しない。
+[Chromiumのテスト](https://chromium.googlesource.com/chromium/src.git/+/21b80f4fd64669a95201f9d192258355a264dfbb/chrome/test/base/in_process_browser_test.cc)
+
+context・pageの生成も `try/finally` 内へ入れ、初期化失敗時も起動したbrowserを閉じる。
+context終了処理が例外になってもbrowser終了を試みる。最終 `result: PASS` は両方のclose後に出し、
+エラー時は `process.exitCode = 1` として後片付け後に自然終了させる。
+[Playwrightの終了順序](https://playwright.dev/docs/api/class-browser#browser-close)
+
+macOS 27.0.1 / Node 26.5.0 / Playwright 1.57.0 / Chrome 154.0.8037.99 で確認。
+公開main/developを使い、独立したブラウザ・セーブで実行した。
+
+| 検証 | 結果 | 経過時間 |
+| --- | --- | --- |
+| `pages_smoke.cjs` 連続2回 | 各回とも全項目PASS、自然終了0 | 11.7秒 / 8.5秒 |
+| `web_smoke.cjs` | 開発循環・保存・オフラインがPASS、自然終了0 | 17.2秒 |
+| Pagesの接続先を利用できないURLに変更 | 最終PASSなし、自然終了1 | 1.6秒 |
+| `newContext()` / `newPage()` に例外を注入 | 最終PASSなし、各回とも自然終了1 | 各0.5秒 |
+
+別の親プロセスから子の終了コード・終了シグナル・Chrome PID消滅を検査した。
+90秒の監視上限は全6ケースで作動せず、手動kill・強制的な成功終了は使っていない。
+追加の計測実行でも `browser.close()` は約0.28秒で完了し、Nodeの通信リソースが
+なくなってから `beforeExit=0` / `exit=0` になることを確認した。
+初期化例外の注入と詳細計測は一時preloadを使い、通常スクリプトには残していない。
+
+通常の再確認は上記コマンドと [Pagesの検証手順](github-pages.md#検証の状態) を使い、
+PASS出力だけでなくシェルへ戻った際の終了コード0まで確認する。
+両スクリプトの `node --check` と `git diff --check` も成功。
+ゲーム・保存処理・配信YAMLは変更していないため、この修正ではローカルのFlutterテストや
+iOSの再実行は行っていない。ブラウザ検証はこのMacのChromeが対象。
+修正は [4594759](https://github.com/yakitama5/mars-terraforming/commit/4594759) に記録した。
+
 ## Sitesへの配置
 
 所有者向けの非公開試遊として配置済み（2026-10-13）。
