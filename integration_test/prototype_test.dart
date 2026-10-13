@@ -13,7 +13,7 @@ import 'package:mars_terraforming/main.dart';
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
-    'iOS: globes, research, districts, investment comparison, and save/resume',
+    'iOS: globes, research, districts, investment and reservation forecasts, and save/resume',
     (tester) async {
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
@@ -100,6 +100,29 @@ void main() {
       expect(factoryRun.completedRuns, 0);
       expect(controller.state.upcomingPlansFor('factory'), [kit, factoryRun]);
       await capture('strategy-ios-equipment');
+      final beforeForecast = jsonEncode(controller.state.toJson());
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('open-plan-forecast')),
+        -250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tapKey('open-plan-forecast');
+      await tapKey('forecast-horizon-480');
+      await capture('forecast-ios-summary');
+      await tester.drag(
+        find.byKey(const Key('plan-forecast-scroll')),
+        const Offset(0, -420),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        find.byKey(const Key('refresh-plan-forecast')).hitTestable(),
+        findsOneWidget,
+      );
+      await capture('forecast-ios-equipment');
+      await tapKey('refresh-plan-forecast');
+      await tapKey('close-plan-forecast');
+      expect(jsonEncode(controller.state.toJson()), beforeForecast);
+
       await controller.advanceForDevelopment(
         duration: const Duration(minutes: 20),
       );
@@ -152,6 +175,28 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 500));
       expect(controller.state.research, contains('urban_planning'));
+      // The first urban research unlocks housing improvements without automation.
+      await tapKey('plot-earth_delta-0');
+      await tapKey('confirm-district');
+      final upgrade = controller.state.districtPlanAt('earth_delta', 0)!;
+      expect(upgrade.definition.isDistrictUpgrade, isTrue);
+      await controller.command(
+        (engine) => engine.reorderPlan(
+          upgrade.id,
+          relativeToPlanId: factoryRun.id,
+          before: true,
+        ),
+      );
+      await controller.advanceForDevelopment(
+        duration: const Duration(minutes: 10),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(controller.state.districtAt('earth_delta', 0)!.level, 2);
+      expect(
+        controller.state.research,
+        isNot(contains('automated_fabrication')),
+      );
+
       await tapKey('plot-earth_delta-1');
       await tapKey('district-option-campus');
       final estimate = controller.state.districtPreview(
