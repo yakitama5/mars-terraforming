@@ -17,7 +17,7 @@ void main() {
     expect(result.state.marsHabitats, 1);
     expect(result.state.money, greaterThanOrEqualTo(0));
     expect(summary['distinctDecisionTimes'], greaterThanOrEqualTo(8));
-    expect(result.maxDecisionGapMinutes, lessThanOrEqualTo(25));
+    expect(result.maxDecisionGapMinutes, lessThanOrEqualTo(14));
     expect(result.maxDecisionGapBeforeSettlementMinutes, lessThanOrEqualTo(10));
     final firstHome = result.events.singleWhere(
       (event) => event['step'] == 'First coastal housing',
@@ -62,6 +62,24 @@ void main() {
       );
     },
   );
+
+  test('housing-first and industry-first offer different benefits in the first hour', () {
+    final report = runEarlyInvestmentVerification();
+    expect(report['status'], 'passed');
+    final tradeoffs = report['tradeoffs']! as Map<String, Object>;
+    expect(
+      tradeoffs['housingFirstHousingCompletedMinutes'],
+      lessThan(tradeoffs['industryFirstHousingCompletedMinutes']! as num),
+    );
+    expect(
+      tradeoffs['industryFirstIndustryCompletedMinutes'],
+      lessThan(tradeoffs['housingFirstIndustryCompletedMinutes']! as num),
+    );
+    expect(
+      tradeoffs['housingFirstCashAt60Minutes'],
+      greaterThan(tradeoffs['industryFirstCashAt60Minutes']! as num),
+    );
+  });
 
   final report = runInvestmentVerification();
   final scenarios = (report['scenarios']! as List<Map<String, Object>>);

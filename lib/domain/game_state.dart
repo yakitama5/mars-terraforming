@@ -376,9 +376,7 @@ class GameState {
     } else if (districtId == 'mars_habitat' && habitatChoice == null) {
       reason = '居住方式を選択してください';
     } else if (upgrade) {
-      final required = city.planet == 'earth'
-          ? (level == 2 ? 'automated_fabrication' : 'industrial_network')
-          : (level == 2 ? 'local_resources' : 'regional_habitats');
+      final required = definition.researchForUpgrade(level);
       if (!research.contains(required)) {
         reason = '前提研究：${GameContent.tasks[required]!.name}';
       }
@@ -619,7 +617,11 @@ class GameState {
         json['schemaVersion'] == 1 && json['contentVersion'] == 'prototype-1';
     final compatibleDistricts =
         json['schemaVersion'] == schemaVersion &&
-        [GameContent.version, 'district-2'].contains(json['contentVersion']);
+        [
+          GameContent.version,
+          'district-3',
+          'district-2',
+        ].contains(json['contentVersion']);
     if (!legacy && !compatibleDistricts) {
       throw const FormatException('未対応の保存形式またはコンテンツ版です。元のデータを保持してください。');
     }

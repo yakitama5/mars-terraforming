@@ -9,6 +9,7 @@ import '../rendering/base_scene.dart';
 import 'city_development.dart';
 import 'facility_queue_card.dart';
 import 'investment_comparison.dart';
+import 'plan_forecast_dialog.dart';
 import 'research_tree.dart';
 import 'strategy_widgets.dart';
 
@@ -825,6 +826,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       '共用設備の稼働計画',
       '↑↓で予約順を変更。設備を休止すると、対応する地区の効果と維持費も停止します。',
     ),
+    Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton.icon(
+        key: const Key('open-plan-forecast'),
+        onPressed: controller.busy
+            ? null
+            : () => showDialog<void>(
+                context: context,
+                builder: (_) => PlanForecastDialog(controller: controller),
+              ),
+        icon: const Icon(Icons.update, size: 18),
+        label: const Text('予約の見通し'),
+      ),
+    ),
+    const SizedBox(height: 12),
     LayoutBuilder(
       builder: (context, constraints) {
         final columns = constraints.maxWidth >= 1000 ? 2 : 1;

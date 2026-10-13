@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "contentVersion": "district-3",
+  "worldId": "world-1791849600000000",
+  "lastWallClockMs": 1791849630000,
+  "simulatedMs": 30000,
+  "moneyUnits": 209640000,
+  "earthLevel": 1,
+  "population": 120,
+  "earthKits": 0,
+  "marsKits": 0,
+  "marsHabitats": 0,
+  "marsResidents": 0,
+  "habitatChoice": null,
+  "nextPlanId": 3,
+  "contractRevenue": 0,
+  "research": [
+    "urban_planning"
+  ],
+  "achievements": [],
+  "claimedRewards": [],
+  "facilities": {
+    "lab": true,
+    "factory": true,
+    "launch": true,
+    "mars": true
+  },
+  "plans": [
+    {
+      "id": "plan-1",
+      "taskId": "district_industry",
+      "remainingRepeats": 1,
+      "completedRuns": 0,
+      "status": "running",
+      "stopReason": "",
+      "remainingMs": 690000,
+      "iterationDurationMs": 720000,
+      "cityId": "earth_delta",
+      "plotIndex": 6,
+      "targetLevel": 1
+    },
+    {
+      "id": "plan-2",
+      "taskId": "district_industry",
+      "remainingRepeats": 1,
+      "completedRuns": 0,
+      "status": "queued",
+      "stopReason": "共用設備の順番待ち",
+      "remainingMs": 0,
+      "iterationDurationMs": 0,
+      "cityId": "earth_delta",
+      "plotIndex": 7,
+      "targetLevel": 1
+    }
+  ],
+  "log": [
+    "地球の小さな拠点から、火星開発を始めましょう。",
+    "[0s] デルタ湾岸の区画7に工業地区 Lv.1を予約",
+    "[0s] 工業地区を建設を開始（-1500 Cr）",
+    "[0s] デルタ湾岸の区画8に工業地区 Lv.1を予約"
+  ],
+  "districts": []
+}

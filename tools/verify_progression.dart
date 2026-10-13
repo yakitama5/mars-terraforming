@@ -17,6 +17,7 @@ void main() {
         'onboarding': runOnboardingVerification().toJson(),
         'onboardingBaseline': runOnboardingVerification(parallelCargo: false)
             .toJson(),
+        'earlyInvestments': runEarlyInvestmentVerification(),
       }),
     );
   } catch (error) {
@@ -191,6 +192,8 @@ ProgressionVerification runProgressionVerification() {
   return ProgressionVerification(game.state, milestones);
 }
 
+enum EarlyInvestmentOrder { industryOnly, industryFirst, housingFirst }
+
 /// A public-command route through the first real-time hour. It reports when
 /// choices and completions become possible, not how long a person thinks.
 class OnboardingVerification {
@@ -243,6 +246,12 @@ class OnboardingVerification {
     'maxDecisionGapBeforeSettlementMinutes':
         maxDecisionGapBeforeSettlementMinutes,
     'completedDistricts': state.districts.length,
+    'completedLevels': state.districts.values.fold<int>(
+      0,
+      (sum, district) => sum + district.level,
+    ),
+    'coastalHousingLevel': state.districtAt('earth_delta', 0)?.level ?? 0,
+    'netPerMinute': state.netPerMinute,
     'research': state.research.toList(),
     'marsHabitats': state.marsHabitats,
     'marsResidents': state.marsResidents,
@@ -250,7 +259,15 @@ class OnboardingVerification {
   };
 }
 
-OnboardingVerification runOnboardingVerification({bool parallelCargo = true}) {
+OnboardingVerification runOnboardingVerification({
+  bool parallelCargo = true,
+  EarlyInvestmentOrder investmentOrder = EarlyInvestmentOrder.industryOnly,
+}) {
+  if (!parallelCargo && investmentOrder != EarlyInvestmentOrder.industryOnly) {
+    throw ArgumentError(
+      'Early investment comparisons use the parallel-cargo route',
+    );
+  }
   final game = GameEngine(GameState.initial(DateTime.utc(2026, 10, 13)));
   final events = <Map<String, Object>>[];
   const limit = Duration(hours: 1);
@@ -322,6 +339,16 @@ OnboardingVerification runOnboardingVerification({bool parallelCargo = true}) {
     return plan;
   }
 
+  void upgradeCoastalHousing() {
+    command(
+      game.upgradeDistrict('earth_delta', 0),
+      'Upgrade the original coastal housing',
+    );
+    final plan = game.state.plans.last;
+    prioritize(plan);
+    waitUntil(() => plan.isFinished, 'Original coastal housing upgraded');
+  }
+
   command(game.enqueue('factory_contract', repeats: null), 'Earn with factory');
   command(
     game.enqueue('launch_contract', repeats: null),
@@ -366,11 +393,17 @@ OnboardingVerification runOnboardingVerification({bool parallelCargo = true}) {
     );
   }
   waitUntil(() => actualSolar.isFinished, 'Power supports the campus');
+  if (investmentOrder == EarlyInvestmentOrder.housingFirst) {
+    upgradeCoastalHousing();
+  }
   final industry = district('earth_delta', 8, 'industry');
   if (parallelCargo) {
     waitUntil(() => industry.isFinished, 'Mineral industry demonstration');
   } else {
     waitUntil(() => habitat.isFinished, 'First Mars settlement');
+  }
+  if (investmentOrder == EarlyInvestmentOrder.industryFirst) {
+    upgradeCoastalHousing();
   }
   command(
     game.enqueue('automated_fabrication'),
@@ -401,4 +434,130 @@ OnboardingVerification runOnboardingVerification({bool parallelCargo = true}) {
     throw StateError('Onboarding reload changed progress or rewards');
   }
   return OnboardingVerification(game.state, events);
+}
+
+/// All three routes start with the same unmodified initial save and public
+/// commands. The district-3 reference is a recorded run, not a re-simulation
+/// using current prices. The two upgraded routes buy the same final facilities.
+Map<String, Object> runEarlyInvestmentVerification() {
+  final routes = {
+    for (final order in EarlyInvestmentOrder.values)
+      order.name: runOnboardingVerification(investmentOrder: order),
+  };
+  double completion(OnboardingVerification route, String step) =>
+      route.events.singleWhere(
+            (event) => event['step'] == step,
+          )['elapsedMinutes']!
+          as double;
+  void require(bool condition, String reason) {
+    if (!condition) throw StateError(reason);
+  }
+
+  final industryOnly = routes['industryOnly']!;
+  final industryFirst = routes['industryFirst']!;
+  final housingFirst = routes['housingFirst']!;
+  for (final route in routes.values) {
+    require(
+      route.state.simulatedMs == const Duration(hours: 1).inMilliseconds,
+      'Early investments must be measured at the same 60-minute horizon',
+    );
+    require(
+      route.state.districtAt('earth_delta', 8)?.districtId == 'industry',
+      'Each first-hour investment route must finish the industrial district',
+    );
+    require(
+      route.state.marsHabitats == 1 && route.state.marsResidents == 24,
+      'Investment changes must preserve the first Mars settlement',
+    );
+    require(
+      route.maxDecisionGapMinutes < 21.46,
+      'The observed first-hour gap did not improve on district-3',
+    );
+  }
+  for (final route in [industryFirst, housingFirst]) {
+    require(
+      route.state.districtAt('earth_delta', 0)?.level == 2,
+      'The chosen coastal housing upgrade was not completed',
+    );
+    require(
+      !route.state.research.contains('automated_fabrication'),
+      'The early housing choice unexpectedly needed advanced automation',
+    );
+  }
+  require(
+    completion(industryFirst, 'Mineral industry demonstration') <
+        completion(housingFirst, 'Mineral industry demonstration'),
+    'Industry-first must demonstrate manufacturing earlier',
+  );
+  require(
+    completion(housingFirst, 'Original coastal housing upgraded') <
+        completion(industryFirst, 'Original coastal housing upgraded'),
+    'Housing-first must realize its income and adjacency earlier',
+  );
+  require(
+    industryOnly.state.population < industryFirst.state.population &&
+        industryFirst.state.population == housingFirst.state.population,
+    'The two upgraded routes must buy the same additional housing capacity',
+  );
+  require(
+    industryFirst.state.netPerMinute == housingFirst.state.netPerMinute &&
+        industryFirst.state.researchBonusPercent ==
+            housingFirst.state.researchBonusPercent &&
+        industryFirst.state.factoryBonusPercent ==
+            housingFirst.state.factoryBonusPercent,
+    'Ordering identical investments must not change their final effects',
+  );
+  return {
+    'status': 'passed',
+    'measurement':
+        'Public-command routes with no injected money, research, '
+        'resources, or districts. Timing is simulated calendar time, '
+        'not measured active play time.',
+    'district3Reference': {
+      'contentVersion': 'district-3',
+      'sourceCommit': '9808084',
+      'measurement':
+          'Recorded parallel-cargo, industry-only route before this change.',
+      'industryCost': 1500,
+      'industryBaseMinutes': 12,
+      'industryCompletedMinutes': 58.76,
+      'maxDecisionGapMinutes': 21.46,
+      'finalMoney': 3037,
+      'completedDistricts': 6,
+      'firstMarsSettlementMinutes': 35,
+    },
+    'currentContentVersion': GameContent.version,
+    'currentIndustryCost': GameContent.districts['industry']!.cost,
+    'currentIndustryBaseMinutes':
+        GameContent.districts['industry']!.durationSeconds / 60,
+    'routes': {
+      for (final route in routes.entries) route.key: route.value.toJson(),
+    },
+    'tradeoffs': {
+      'industryFirstIndustryCompletedMinutes': completion(
+        industryFirst,
+        'Mineral industry demonstration',
+      ),
+      'housingFirstIndustryCompletedMinutes': completion(
+        housingFirst,
+        'Mineral industry demonstration',
+      ),
+      'industryFirstHousingCompletedMinutes': completion(
+        industryFirst,
+        'Original coastal housing upgraded',
+      ),
+      'housingFirstHousingCompletedMinutes': completion(
+        housingFirst,
+        'Original coastal housing upgraded',
+      ),
+      'industryFirstCashAt60Minutes': industryFirst.state.money,
+      'housingFirstCashAt60Minutes': housingFirst.state.money,
+      'industryFirstPopulationAt60Minutes': industryFirst.state.population,
+      'housingFirstPopulationAt60Minutes': housingFirst.state.population,
+      'explanation':
+          'Earlier housing produces revenue and research adjacency sooner; '
+          'earlier industry produces factory efficiency and its research demonstration sooner. '
+          'No route is declared globally optimal.',
+    },
+  };
 }

@@ -279,7 +279,7 @@ void main() {
       final next = again.state.districtPreview('earth_highland', 1, 'solar');
       expect(next.setupCost, 0);
       expect(next.developmentCost, 78);
-      expect(again.state.toJson()['contentVersion'], 'district-3');
+      expect(again.state.toJson()['contentVersion'], GameContent.version);
     },
   );
 
