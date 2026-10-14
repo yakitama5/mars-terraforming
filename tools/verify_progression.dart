@@ -145,6 +145,13 @@ ProgressionVerification runProgressionVerification() {
   command(game.enqueue('launch_contract', repeats: null));
   research('life_support');
   research('urban_planning');
+  for (final id in [
+    'process_design',
+    'cargo_packaging',
+    'habitat_operations',
+  ]) {
+    research(id);
+  }
   district('earth_highland', 0, 'campus');
   district('earth_highland', 1, 'solar');
   district('earth_highland', 3, 'industry');
