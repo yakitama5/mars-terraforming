@@ -246,7 +246,7 @@ void main() {
     await tester.tap(find.byKey(const Key('guide-city')));
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const Key('confirm-district')).hitTestable(),
+      find.byKey(const Key('district-option-housing')).hitTestable(),
       findsOneWidget,
     );
     expect(jsonEncode(controller.state.toJson()), before);

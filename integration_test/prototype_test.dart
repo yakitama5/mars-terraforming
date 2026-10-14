@@ -139,11 +139,12 @@ void main() {
       );
       await tapKey('choose-dome');
 
-      // Place an Earth housing district through the actual hex board and preview.
+      // Choose a district, then compare real tiles before confirming placement.
       await tapKey('navigation-1');
       await sceneReady();
+      await tapKey('district-option-housing');
       // Tap actual projected ground coordinates, not an accessibility label.
-      for (final index in [4, 12, 0]) {
+      for (final index in [4, 0, 12]) {
         final map = tester.widget<CityScene>(find.byType(CityScene));
         final geometry = CityTerrain(
           earth: map.earth,
@@ -164,7 +165,7 @@ void main() {
       }
       await capture('terrain-ios-before');
       await tapKey('confirm-district');
-      final home = controller.state.districtPlanAt('earth_delta', 0)!;
+      final home = controller.state.districtPlanAt('earth_delta', 12)!;
       expect(home.definition.districtId, 'housing');
       // Move construction ahead of the external contract's future repetitions.
       await controller.command(
@@ -179,11 +180,11 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 500));
       expect(
-        tester.widget<CityScene>(find.byType(CityScene)).plots[0].workState,
+        tester.widget<CityScene>(find.byType(CityScene)).plots[12].workState,
         SceneWorkState.building,
       );
       expect(
-        tester.widget<CityScene>(find.byType(CityScene)).plots[0].level,
+        tester.widget<CityScene>(find.byType(CityScene)).plots[12].level,
         0,
       );
       await capture('terrain-ios-construction');
@@ -192,7 +193,7 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 500));
       expect(
-        controller.state.districtAt('earth_delta', 0)?.districtId,
+        controller.state.districtAt('earth_delta', 12)?.districtId,
         'housing',
       );
       expect(
@@ -202,7 +203,7 @@ void main() {
         contains('拠点 · 完成 1/25区画 · 総Lv.1'),
       );
       expect(
-        tester.widget<CityScene>(find.byType(CityScene)).plots[0].level,
+        tester.widget<CityScene>(find.byType(CityScene)).plots[12].level,
         1,
       );
       await capture('strategy-ios-city');
@@ -216,9 +217,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       expect(controller.state.research, contains('urban_planning'));
       // The first urban research unlocks housing improvements without automation.
-      await tapKey('plot-earth_delta-0');
+      await tapKey('plot-earth_delta-12');
       await tapKey('confirm-district');
-      final upgrade = controller.state.districtPlanAt('earth_delta', 0)!;
+      final upgrade = controller.state.districtPlanAt('earth_delta', 12)!;
       expect(upgrade.definition.isDistrictUpgrade, isTrue);
       await controller.command(
         (engine) => engine.reorderPlan(
@@ -231,22 +232,23 @@ void main() {
         duration: const Duration(minutes: 10),
       );
       await tester.pump(const Duration(milliseconds: 500));
-      expect(controller.state.districtAt('earth_delta', 0)!.level, 2);
+      expect(controller.state.districtAt('earth_delta', 12)!.level, 2);
       expect(
         controller.state.research,
         isNot(contains('automated_fabrication')),
       );
 
       expect(
-        tester.widget<CityScene>(find.byType(CityScene)).plots[0].level,
+        tester.widget<CityScene>(find.byType(CityScene)).plots[12].level,
         2,
       );
       await capture('terrain-ios-upgraded');
-      await tapKey('plot-earth_delta-1');
+      await tapKey('city-change-facility');
       await tapKey('district-option-campus');
+      await tapKey('plot-earth_delta-7');
       final estimate = controller.state.districtPreview(
         'earth_delta',
-        1,
+        7,
         'campus',
       );
       final researchBefore = controller.state.researchBonusPercent;
@@ -255,7 +257,7 @@ void main() {
       expect(estimate.taxDeltaPerMinute, greaterThan(0));
       await capture('strategy-ios-adjacency');
       await tapKey('confirm-district');
-      final campus = controller.state.districtPlanAt('earth_delta', 1)!;
+      final campus = controller.state.districtPlanAt('earth_delta', 7)!;
       await controller.command(
         (engine) => engine.reorderPlan(
           campus.id,
@@ -278,7 +280,9 @@ void main() {
 
       // Save the existing campus upgrade and inspect a new city's campus.
       // UI comparison must not modify the world, time, or equipment queue.
+      await capture('district-ios-neighborhood');
       final beforeComparison = jsonEncode(controller.state.toJson());
+      await tapKey('city-open-details');
       await tapKey('save-investment');
       await tapKey('city-selector');
       await tester.tap(find.text('高原科学都市').last);
@@ -289,6 +293,8 @@ void main() {
             .data,
         contains('候補地 · 完成 0/25区画 · 総Lv.0'),
       );
+      await tapKey('plot-earth_highland-12');
+      await tapKey('city-open-details');
       await tapKey('compare-investments');
       expect(find.text('研究地区 Lv.1 → 2'), findsOneWidget);
       expect(find.text('研究地区 新設 Lv.1'), findsOneWidget);
@@ -330,6 +336,7 @@ void main() {
       await sceneReady();
       await capture('strategy-ios-mars');
       await tapKey('navigation-1');
+      await tapKey('district-option-mars_habitat');
       await tapKey('plot-mars_arcadia-12');
       await tapKey('confirm-district');
       expect(controller.state.currentPlanFor('mars')!.cityId, 'mars_arcadia');
@@ -374,7 +381,10 @@ void main() {
       final resumed = GameController(FileSaveStore(directory));
       addTearDown(resumed.dispose);
       await resumed.initialize(startTimer: false);
-      expect(resumed.state.districtAt('earth_delta', 0)?.districtId, 'housing');
+      expect(
+        resumed.state.districtAt('earth_delta', 12)?.districtId,
+        'housing',
+      );
       expect(
         resumed.state.districtAt('mars_arcadia', 12)?.districtId,
         'mars_habitat',
