@@ -298,12 +298,22 @@ class CityTerrain {
 class CityMapProjection {
   CityMapProjection({
     required this.terrain,
-    this.azimuth = .18,
-    this.elevation = .82,
-    this.zoom = 1.14,
+    this.azimuth = neighborhoodAzimuth,
+    this.elevation = neighborhoodElevation,
+    this.zoom = neighborhoodZoom,
     this.panX = 0,
     this.panZ = 0,
   });
+
+  // A close, oblique neighborhood view makes roofs, walls and streets readable.
+  // Overview is an explicit camera mode, rather than the starting composition.
+  static const neighborhoodAzimuth = .24;
+  static const neighborhoodElevation = .60;
+  static const neighborhoodZoom = 2.3;
+  static const overviewElevation = .88;
+  static const overviewZoom = .9;
+  static const minZoom = .8;
+  static const maxZoom = 3.2;
 
   final CityTerrain terrain;
   final double azimuth, elevation, zoom, panX, panZ;

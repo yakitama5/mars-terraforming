@@ -52,7 +52,11 @@ class _CitySceneState extends State<CityScene> {
   bool _loading = false;
   int _initialization = 0;
   double _panX = 0, _panZ = 0;
-  double _zoom = 1.14, _gestureZoom = 1.14, _azimuth = .18, _elevation = .82;
+  double _zoom = CityMapProjection.neighborhoodZoom;
+  double _gestureZoom = CityMapProjection.neighborhoodZoom;
+  double _azimuth = CityMapProjection.neighborhoodAzimuth;
+  double _gestureAzimuth = CityMapProjection.neighborhoodAzimuth;
+  double _elevation = CityMapProjection.neighborhoodElevation;
 
   @override
   void initState() {
@@ -78,11 +82,30 @@ class _CitySceneState extends State<CityScene> {
         return;
       }
       pending = fs.Scene()
-        ..environmentIntensity = .60
+        ..environmentIntensity = .55
         ..directionalLight = fs.DirectionalLight(
           direction: vm.Vector3(-.6, -.78, -.42),
-          intensity: 1.65,
+          color: vm.Vector3(1, .965, .90),
+          intensity: 2.0,
+          castsShadow: true,
+          cacheStaticShadows: true,
+          shadowCasterFaces: fs.ShadowCasterFaces.both,
+          shadowAmbientStrength: .25,
+          shadowCascadeCount: 1,
+          shadowMaxDistance: 40,
+          shadowMapResolution: 1024,
+          shadowSoftness: .04,
+          shadowDepthBias: .004,
+          shadowNormalBias: .012,
         );
+      // Tight contact shading grounds roofs, vegetation and walls. A half-size
+      // buffer keeps the extra passes bounded on mobile and in the Web build.
+      pending.ambientOcclusion
+        ..enabled = true
+        ..radius = .16
+        ..intensity = .65
+        ..power = 1.2
+        ..halfResolution = true;
       _models = CityModels();
       _scene = pending;
       _updateModels(landscape: true);
@@ -119,19 +142,40 @@ class _CitySceneState extends State<CityScene> {
   }
 
   void _resetView() {
-    _zoom = 1.14;
+    _zoom = CityMapProjection.neighborhoodZoom;
     _panX = 0;
     _panZ = 0;
-    _azimuth = .18;
-    _elevation = .82;
+    _azimuth = CityMapProjection.neighborhoodAzimuth;
+    _elevation = CityMapProjection.neighborhoodElevation;
+  }
+
+  void _showNeighborhood() {
+    _resetView();
+    if (widget.selectedPlot >= 0 && widget.selectedPlot < widget.plots.length) {
+      final focus = _terrain.center(widget.selectedPlot);
+      _panX = focus.x;
+      _panZ = focus.z;
+    }
+    _clampPan();
+  }
+
+  void _showOverview() {
+    _resetView();
+    _zoom = CityMapProjection.overviewZoom;
+    _elevation = CityMapProjection.overviewElevation;
   }
 
   void _setZoom(double value) {
-    _zoom = value.clamp(.8, 1.8);
-    // When the whole city is visible, keep it near the center. Zooming in
-    // gradually opens a wider pan range to inspect the edge plots.
-    final xLimit = _terrain.halfWidth * (_zoom - .8) * .45;
-    final zLimit = _terrain.halfDepth * (_zoom - .8) * .45;
+    _zoom = value.clamp(CityMapProjection.minZoom, CityMapProjection.maxZoom);
+    _clampPan();
+  }
+
+  void _clampPan() {
+    // At close range every border plot can be brought into the center. At
+    // overview scale the frame stays near the city instead of drifting away.
+    final fraction = ((_zoom - CityMapProjection.minZoom) * .9).clamp(0.0, 1.0);
+    final xLimit = _terrain.halfWidth * fraction;
+    final zLimit = _terrain.halfDepth * fraction;
     _panX = _panX.clamp(-xLimit, xLimit);
     _panZ = _panZ.clamp(-zLimit, zLimit);
   }
@@ -218,7 +262,10 @@ class _CitySceneState extends State<CityScene> {
             },
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onScaleStart: (_) => _gestureZoom = _zoom,
+              onScaleStart: (_) {
+                _gestureZoom = _zoom;
+                _gestureAzimuth = _azimuth;
+              },
               onScaleUpdate: (details) => setState(() {
                 final camera = view.camera;
                 final origin = camera.worldToScreen(vm.Vector3.zero(), size)!;
@@ -229,16 +276,11 @@ class _CitySceneState extends State<CityScene> {
                 final det = x.dx * z.dy - x.dy * z.dx;
                 if (det.abs() > .001) {
                   final delta = details.focalPointDelta;
-                  _panX = (_panX - (delta.dx * z.dy - delta.dy * z.dx) / det)
-                      .clamp(
-                        -_terrain.halfWidth * (_zoom - .8) * .45,
-                        _terrain.halfWidth * (_zoom - .8) * .45,
-                      );
-                  _panZ = (_panZ - (x.dx * delta.dy - x.dy * delta.dx) / det)
-                      .clamp(
-                        -_terrain.halfDepth * (_zoom - .8) * .45,
-                        _terrain.halfDepth * (_zoom - .8) * .45,
-                      );
+                  _panX -= (delta.dx * z.dy - delta.dy * z.dx) / det;
+                  _panZ -= (x.dx * delta.dy - x.dy * delta.dx) / det;
+                }
+                if (details.pointerCount > 1) {
+                  _azimuth = _gestureAzimuth - details.rotation;
                 }
                 _setZoom(_gestureZoom * details.scale);
               }),
@@ -275,8 +317,8 @@ class _CitySceneState extends State<CityScene> {
                     _plotTarget(plot, view, size),
                   Positioned(
                     left: 10,
-                    bottom: size.width >= 420 ? 10 : null,
-                    top: size.width < 420 ? 10 : null,
+                    bottom: size.width >= 700 ? 10 : null,
+                    top: size.width < 700 ? 10 : null,
                     child: IgnorePointer(
                       child: DecoratedBox(
                         decoration: const BoxDecoration(
@@ -288,9 +330,9 @@ class _CitySceneState extends State<CityScene> {
                             vertical: 5,
                           ),
                           child: Text(
-                            size.width < 500
+                            size.width < 700
                                 ? 'ドラッグで移動'
-                                : '区画を選択 · ドラッグで移動 · ピンチ／ホイールで拡大',
+                                : '地形を選択 · ドラッグで移動 · ピンチ／ホイールで拡大',
                             style: const TextStyle(
                               color: Color(0xffc5d0ce),
                               fontSize: 10,
@@ -303,7 +345,7 @@ class _CitySceneState extends State<CityScene> {
                   Positioned(
                     right: 10,
                     bottom: 10,
-                    child: _controls(size.width >= 700 ? 44 : 40),
+                    child: _controls(size.width >= 700 ? 40 : 36),
                   ),
                   if (_loading)
                     const Positioned(
@@ -387,61 +429,65 @@ class _CitySceneState extends State<CityScene> {
       color: const Color(0xe6102028),
       border: Border.all(color: const Color(0xff6b7b78)),
     ),
-    child: Column(
+    child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _control(
-              targetSize,
-              Icons.remove,
-              '都市地図を縮小',
-              () => setState(() => _setZoom(_zoom - .15)),
-            ),
-            _control(
-              targetSize,
-              Icons.add,
-              '都市地図を拡大',
-              () => setState(() => _setZoom(_zoom + .15)),
-            ),
-            _control(
-              targetSize,
-              Icons.fit_screen,
-              '都市全体を表示',
-              () => setState(() {
-                _resetView();
-                _setZoom(.85);
-              }),
-            ),
-          ],
+        _viewControl('市街', '選んだ区画を近くから表示', () => setState(_showNeighborhood)),
+        _viewControl('全域', '都市全体を表示', () => setState(_showOverview)),
+        _control(
+          targetSize,
+          Icons.remove,
+          '都市地図を縮小',
+          () => setState(() => _setZoom(_zoom - .25)),
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _control(
-              targetSize,
-              Icons.rotate_left,
-              '都市地図を左回転',
-              () => setState(() => _azimuth -= math.pi / 6),
-            ),
-            _control(
-              targetSize,
-              Icons.rotate_right,
-              '都市地図を右回転',
-              () => setState(() => _azimuth += math.pi / 6),
-            ),
-            _control(
-              targetSize,
-              Icons.explore_outlined,
-              '都市地図の視点を戻す',
-              () => setState(_resetView),
-            ),
+        _control(
+          targetSize,
+          Icons.add,
+          '都市地図を拡大',
+          () => setState(() => _setZoom(_zoom + .25)),
+        ),
+        PopupMenuButton<String>(
+          tooltip: '都市地図の視点操作',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 180),
+          icon: const Icon(Icons.threed_rotation, size: 19),
+          onSelected: (action) => setState(() {
+            switch (action) {
+              case 'left':
+                _azimuth -= math.pi / 6;
+              case 'right':
+                _azimuth += math.pi / 6;
+              case 'reset':
+                _resetView();
+            }
+          }),
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'left', child: Text('左へ回転')),
+            PopupMenuItem(value: 'right', child: Text('右へ回転')),
+            PopupMenuItem(value: 'reset', child: Text('中央の市街へ戻す')),
           ],
         ),
       ],
     ),
   );
+
+  Widget _viewControl(String label, String tooltip, VoidCallback action) =>
+      Tooltip(
+        message: tooltip,
+        child: TextButton(
+          onPressed: action,
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xffe4dcc3),
+            minimumSize: const Size(44, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            // ButtonStyle replaces the label style, so keep the bundled Web
+            // font from the theme when changing only its size.
+            textStyle: Theme.of(context).textTheme.labelLarge
+                ?.copyWith(fontSize: 11),
+          ),
+          child: Text(label),
+        ),
+      );
 
   Widget _control(
     double targetSize,

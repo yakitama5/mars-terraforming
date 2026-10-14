@@ -178,6 +178,8 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('open-city')));
       await tester.tap(find.byKey(const Key('open-city')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('都市全体を表示'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
       await tester.pumpAndSettle();
       // Tile-first interaction remains available: select the facility here.
@@ -249,6 +251,8 @@ void main() {
       );
       final before = jsonEncode(controller.state.toJson());
       await tester.tap(find.byKey(const Key('navigation-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('都市全体を表示'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
       await tester.pumpAndSettle();
@@ -351,6 +355,8 @@ void main() {
       ),
     );
     await tester.tap(find.byKey(const Key('navigation-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('都市全体を表示'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
     await tester.pumpAndSettle();
