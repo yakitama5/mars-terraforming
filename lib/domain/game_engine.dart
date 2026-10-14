@@ -181,6 +181,32 @@ class GameEngine {
     return null;
   }
 
+  String? assignResearchers(int count) {
+    final reason = state.staffAllocationReason(count);
+    if (reason != null) return reason;
+    if (state.researchers == count) return null;
+    state.researchers = count;
+    _record('専門職を研究$count名・工業${state.industrialWorkers}名へ配分。次の着工から適用');
+    _stabilize();
+    return null;
+  }
+
+  String? choosePartnership(String eventId, String choiceId) {
+    final reason = state.partnershipLockReason(eventId);
+    if (reason != null) return reason;
+    final event = GameContent.partnerships[eventId]!;
+    final choice = event.choices.where((c) => c.id == choiceId).firstOrNull;
+    if (choice == null) return '提案された選択肢から選んでください';
+    state.partnershipChoices[eventId] = choiceId;
+    state.claimedRewards.add('${state.worldId}:partnership:$eventId');
+    state.moneyUnits += choice.funding * GameState.moneyScale;
+    _record(
+      '${event.partner}：${choice.title}を選択${choice.funding > 0 ? '（+${choice.funding}ドル）' : ''}',
+    );
+    _stabilize();
+    return null;
+  }
+
   String? chooseHabitat(String choice) {
     if (!['dome', 'underground'].contains(choice)) return '居住方式を選んでください';
     if (state.habitatChoice != null) return 'この試作では居住方式は選択済みです';
@@ -198,7 +224,7 @@ class GameEngine {
     if (facility == null) return '設備が見つかりません';
     if (state.facilities[facilityId] == enabled) return null;
     if (enabled && state.money < facility.upkeepPerMinute) {
-      return '再開には維持費1分分の${facility.upkeepPerMinute} Crが必要です（支払は通常どおり）';
+      return '再開には維持費1分分の${facility.upkeepPerMinute}ドルが必要です（支払は通常どおり）';
     }
     state.facilities[facilityId] = enabled;
     _record('${facility.name}を${enabled ? '再開' : '休止'}');
@@ -332,6 +358,17 @@ class GameEngine {
 
   String _requirementReason(PlannedTask plan, {bool includeMoney = true}) {
     final task = plan.definition;
+    if (task.facilityId == 'lab' && state.researchers == 0) {
+      return '人員待ち：研究者1名以上が必要';
+    }
+    if (task.facilityId == 'factory' && state.industrialWorkers == 0) {
+      return '人員待ち：工業員1名以上が必要';
+    }
+    if (task.id == 'train_specialists' &&
+        state.specialistCount + GameContent.specialistTrainingCount >
+            GameContent.maxSpecialists) {
+      return '専門職は上限${GameContent.maxSpecialists}名です。育成の反復を終了してください';
+    }
     final researchReasons = researchRequirementReasons(task.id);
     if (researchReasons.isNotEmpty) return researchReasons.join(' / ');
     if (task.requiresHabitatChoice && state.habitatChoice == null) {
@@ -356,7 +393,7 @@ class GameEngine {
     }
     final cost = state.plannedCost(plan);
     if (includeMoney && state.moneyUnits < cost * GameState.moneyScale) {
-      return '資金不足：$cost Crが必要';
+      return '資金不足：$costドルが必要';
     }
     return '';
   }
@@ -369,10 +406,15 @@ class GameEngine {
       _changeResource(task.inputResource!, -task.inputAmount);
     }
     plan.status = 'running';
+    plan.iterationSpecialists = switch (task.facilityId) {
+      'lab' => state.researchers,
+      'factory' => state.industrialWorkers,
+      _ => 0,
+    };
     plan.iterationDurationMs = state.plannedDurationMs(plan);
     plan.remainingMs = plan.iterationDurationMs;
     plan.stopReason = '';
-    _record('${task.name}を開始（-$cost Cr）');
+    _record('${task.name}を開始（-$costドル）');
   }
 
   void _complete(PlannedTask plan) {
@@ -412,6 +454,8 @@ class GameEngine {
       }
     }
     switch (task.id) {
+      case 'train_specialists':
+        state.specialistCount += GameContent.specialistTrainingCount;
       case 'earth_expansion':
         state.earthLevel++;
         state.population += GameContent.residentsPerDistrict;
@@ -426,7 +470,7 @@ class GameEngine {
           reward: GameContent.achievementReward,
         );
     }
-    _record('${task.name}が完了${task.reward == 0 ? '' : '（+${task.reward} Cr）'}');
+    _record('${task.name}が完了${task.reward == 0 ? '' : '（+${task.reward}ドル）'}');
   }
 
   void _achievement(String id, {required int reward}) {
@@ -435,7 +479,7 @@ class GameEngine {
     if (state.claimedRewards.add(rewardKey)) {
       state.moneyUnits += reward * GameState.moneyScale;
       _record(
-        '実績：${GameContent.achievementNames[id]}${reward == 0 ? '' : '（+$reward Cr）'}',
+        '実績：${GameContent.achievementNames[id]}${reward == 0 ? '' : '（+$rewardドル）'}',
       );
     }
   }

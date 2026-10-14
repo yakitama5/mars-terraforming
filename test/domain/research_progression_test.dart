@@ -153,7 +153,7 @@ void main() {
 
   test('a normal funded route reaches all branches through construction and superior contracts', () {
     final result = runProgressionVerification();
-    expect(result.state.research, hasLength(10));
+    expect(result.state.research, hasLength(13));
     expect(result.state.developedMarsCityIds, hasLength(2));
     expect(result.state.marsKits, 3);
     expect(result.toJson()['status'], 'passed');

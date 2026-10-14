@@ -1,5 +1,8 @@
-/// Tuning data for the first playable prototype. Money is in credits (Cr),
-/// durations are real seconds, and operating rates are credits per real minute.
+import 'agency_state.dart';
+export 'agency_state.dart';
+
+/// Tuning data for the first playable prototype. Money is in dollars,
+/// durations are real seconds, and operating rates are dollars per real minute.
 /// Starter jobs remain short for compatibility; city investment and research
 /// branch over several real days. This does not model the finished 4–6 week game.
 class FacilityDefinition {
@@ -61,7 +64,12 @@ class TaskDefinition {
 }
 
 abstract final class GameContent {
-  static const version = 'district-4';
+  static const version = 'district-5';
+  static const initialSpecialists = 12;
+  static const baselineDepartmentStaff = 6;
+  static const maxSpecialists = 36;
+  static const specialistTrainingCount = 2;
+  static const staffEfficiencyPerPerson = 2;
   static const initialMoney = 900;
   static const initialPopulation = 120;
   static const baseTaxPerMinute = 30;
@@ -85,7 +93,7 @@ abstract final class GameContent {
       durationSeconds: 90,
       cost: 40,
       reward: 220,
-      description: '共用工場を使い、完了時に220 Crを受領。居住キット製造と設備を取り合う。',
+      description: '共用工場を使い、完了時に220ドルを受領。居住キット製造と設備を取り合う。',
     ),
     'launch_contract': TaskDefinition(
       id: 'launch_contract',
@@ -94,7 +102,7 @@ abstract final class GameContent {
       durationSeconds: 120,
       cost: 80,
       reward: 360,
-      description: '共用宇宙港を使い、完了時に360 Crを受領。自前の火星輸送はその間待機。',
+      description: '共用宇宙港を使い、完了時に360ドルを受領。自前の火星輸送はその間待機。',
     ),
     'life_support': TaskDefinition(
       id: 'life_support',
@@ -151,7 +159,7 @@ abstract final class GameContent {
       facilityId: 'factory',
       durationSeconds: 120,
       cost: 300,
-      description: '人口を60人、税収を毎分18 Cr増やす。工場を使うため、受注・製造との配分が必要。',
+      description: '人口を60人、税収を毎分18ドル増やす。工場を使うため、受注・製造との配分が必要。',
     ),
   };
 
@@ -159,6 +167,14 @@ abstract final class GameContent {
   /// existing saves; these branches add investment choices over several days.
   static final tasks = <String, TaskDefinition>{
     ..._starterTasks,
+    'train_specialists': TaskDefinition(
+      id: 'train_specialists',
+      name: '専門職を2名育成',
+      facilityId: 'lab',
+      durationSeconds: 180,
+      cost: 600,
+      description: '研究所を使い専門職を2名育成。工業へ配属後、機関運営で再配分できます。専門職は最大36名。人口そのものは増えません。',
+    ),
     for (final task in _researchTasks) task.id: task,
     'precision_contract': TaskDefinition(
       id: 'precision_contract',
@@ -223,6 +239,46 @@ abstract final class GameContent {
   };
 
   static const _researchTasks = <TaskDefinition>[
+    TaskDefinition(
+      id: 'process_design',
+      name: '工程設計',
+      facilityId: 'lab',
+      durationSeconds: 180,
+      cost: 200,
+      unique: true,
+      requiredResearch: 'urban_planning',
+      researchBranch: '都市・産業',
+      unlockSummary: '製造効率+3%（次の着工から）',
+      description: '設備配置の研究と並行して、共用工場の工程を改善する。',
+      science: 'ゲーム上の仮定：工程設計の成果を製造時間の短縮へ集約。費用と効率値は調整用です。',
+    ),
+    TaskDefinition(
+      id: 'cargo_packaging',
+      name: '輸送梱包',
+      facilityId: 'lab',
+      durationSeconds: 240,
+      cost: 300,
+      unique: true,
+      requiredResearch: 'urban_planning',
+      researchBranch: '輸送',
+      unlockSummary: '輸送効率+3%（次の着工から）',
+      description: '貨物の取り扱いを改良し、外部輸送と自前の輸送へ活かす。',
+      science: 'ゲーム上の仮定：梱包と運用改善を共用宇宙港の工期へ反映。実際の惑星間航行時間を短縮する実証ではありません。',
+    ),
+    TaskDefinition(
+      id: 'habitat_operations',
+      name: '居住運用',
+      facilityId: 'lab',
+      durationSeconds: 300,
+      cost: 450,
+      unique: true,
+      requiredResearch: 'urban_planning',
+      prerequisites: ['life_support'],
+      researchBranch: '居住・現地生産',
+      unlockSummary: '火星建設効率+3%（次の着工から）',
+      description: '居住施設の組み立てと運用を研究し、火星拠点の整備へつなぐ。',
+      science: 'ゲーム上の仮定：閉鎖居住設備の運用知見を建設効率へ集約。屋外居住を実証した技術ではありません。',
+    ),
     TaskDefinition(
       id: 'urban_planning',
       name: '都市基盤の計画',
@@ -394,10 +450,104 @@ abstract final class GameContent {
   static const efficiencyAdjacentBonus = 1;
   static const solarRidgeEfficiency = 3;
   static const researchEfficiencyBonuses = {
+    'process_design': {'factory': 3},
+    'cargo_packaging': {'launch': 3},
+    'habitat_operations': {'mars': 3},
     'industrial_network': {'factory': 10},
     'reusable_launch': {'launch': 10},
     'intercity_logistics': {'launch': 15},
     'regional_habitats': {'mars': 10},
+  };
+
+  static const agencyMetricDescriptions = {
+    'fame': '知名度：研究1件+4、完成地区1区画+2、居住・輸送実績1件+8、提携選択1件+3。上限100。提携の解禁と活動の目安に使います。独立した収益効果はありません。',
+    'technology':
+        '技術力：研究1件+6、完成地区の総レベル+1ずつ。上限100。提携解禁に使います。実際の効率は各研究・地区・人員・提携の効果で決まります。',
+    'friendship': '友好度：初期10＋選択した提携・支援の加点。上限100。宇宙支援の解禁に使います。追加の割引・自動支援はありません。',
+    'spaceContribution': '宇宙支援貢献：輸送・居住分野の研究1件+3、輸送・居住実績1件+8、火星地区総レベル×2、提携選択の加点。上限100。宇宙支援の解禁に使います。追加報酬は自動発生しません。',
+  };
+  static const partnerships = <String, PartnershipDefinition>{
+    'research_exchange': PartnershipDefinition(
+      id: 'research_exchange',
+      title: '都市技術の共同研究',
+      partner: 'アーク技術共同体（架空）',
+      description: '研究の恒久改善か、今回の開発資金かを選びます。各提案は一度だけ選択でき、後から変更できません。',
+      requiredResearch: 'urban_planning',
+      minimumDistricts: 1,
+      minimumFame: 6,
+      minimumTechnology: 6,
+      choices: [
+        PartnershipChoice(
+          id: 'technology',
+          title: '技術提携',
+          description: '研究効率+4%、製造効率+2%。設備上限内で次の着工から。',
+          friendship: 6,
+          spaceContribution: 2,
+          efficiencyBonuses: {'lab': 4, 'factory': 2},
+        ),
+        PartnershipChoice(
+          id: 'funding',
+          title: '開発資金を受ける',
+          description: '開発支援1,200ドルを一度だけ受領。',
+          funding: 1200,
+          friendship: 3,
+          spaceContribution: 1,
+        ),
+      ],
+    ),
+    'industrial_alliance': PartnershipDefinition(
+      id: 'industrial_alliance',
+      title: '工業設備の共同開発',
+      partner: 'ヘリオス工業連合（架空）',
+      description: '完成した工業地区を実証に、製造技術か設備投資の支援を選びます。',
+      requiredDistrict: 'industry',
+      minimumTechnology: 12,
+      choices: [
+        PartnershipChoice(
+          id: 'technology',
+          title: '製造技術で提携',
+          description: '製造効率+6%。設備上限内で次の着工から。',
+          friendship: 6,
+          spaceContribution: 2,
+          efficiencyBonuses: {'factory': 6},
+        ),
+        PartnershipChoice(
+          id: 'funding',
+          title: '設備資金を受ける',
+          description: '設備支援1,800ドルを一度だけ受領。',
+          funding: 1800,
+          friendship: 3,
+          spaceContribution: 1,
+        ),
+      ],
+    ),
+    'orbital_support': PartnershipDefinition(
+      id: 'orbital_support',
+      title: '火星輸送への国際支援',
+      partner: 'オーロラ宇宙協力国（架空）',
+      description: '初めての火星輸送を受け、共同技術開発か次の輸送への支援を選びます。',
+      requiredAchievement: 'first_landing',
+      minimumFriendship: 13,
+      minimumSpaceContribution: 11,
+      choices: [
+        PartnershipChoice(
+          id: 'technology',
+          title: '宇宙技術で提携',
+          description: '研究効率+4%、輸送効率+4%。設備上限内で次の着工から。',
+          friendship: 8,
+          spaceContribution: 6,
+          efficiencyBonuses: {'lab': 4, 'launch': 4},
+        ),
+        PartnershipChoice(
+          id: 'funding',
+          title: '宇宙開発資金を受ける',
+          description: '宇宙支援2,400ドルを一度だけ受領。',
+          funding: 2400,
+          friendship: 4,
+          spaceContribution: 3,
+        ),
+      ],
+    ),
   };
 
   static const terrainNames = {

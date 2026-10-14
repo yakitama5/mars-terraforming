@@ -441,7 +441,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                           color: strategyMint,
                         ),
                       ),
-                      StrategyFact('現在の資金', '${game.money} Cr'),
+                      StrategyFact('現在の資金', dollars(game.money)),
                       InvestmentEstimate(
                         game: game,
                         preview: preview,
@@ -536,11 +536,13 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   ),
                 ),
               if (preview.isValid && game.money < preview.cost)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
-                    '資金不足 · 予約後、必要な資金が貯まるまで着工を待ちます。',
-                    style: TextStyle(fontSize: 12, color: strategyCopper),
+                    '資金不足 · 予約後、必要な資金が貯まるまで着工を待ちます。'
+                    '${city.planet == 'earth' ? ' 先頭の建設が資金待ちだと、後ろの受注も停止します。受注を先にして資金を準備できます。' : ''}',
+                    key: const Key('district-funding-warning'),
+                    style: const TextStyle(fontSize: 12, color: strategyCopper),
                   ),
                 ),
               if (preview.isValid &&
@@ -579,7 +581,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   ? '資金が貯まるまで着工を待機します'
                   : city.planet == 'mars' && game.marsKits == 0
                   ? '到着キットが揃うまで着工を待機します'
-                  : '${preview.cost} Cr · ${gameDuration(preview.durationMs)}'),
+                  : '${dollars(preview.cost)} · ${gameDuration(preview.durationMs)}'),
           child: FilledButton.icon(
             key: const Key('confirm-district'),
             onPressed: !preview.isValid || widget.controller.busy

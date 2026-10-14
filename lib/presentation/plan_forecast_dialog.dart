@@ -244,12 +244,12 @@ class _PlanForecastDialogState extends State<PlanForecastDialog> {
         ),
         StrategyFact(
           '資金',
-          '${forecast.money - forecast.moneyDelta} → ${forecast.money} Cr（${signedNumber(forecast.moneyDelta)}）',
+          '${dollars(forecast.money - forecast.moneyDelta)} → ${dollars(forecast.money)}（${signedDollars(forecast.moneyDelta)}）',
           key: const Key('forecast-money'),
         ),
         StrategyFact(
           '定常収支',
-          '${signedNumber(forecast.netPerMinute)} Cr/分（税収−維持費）',
+          '${signedDollars(forecast.netPerMinute)}/分（税収−維持費）',
         ),
         const Text(
           '受注の完了収入は、上の資金見込みに含みます。',
