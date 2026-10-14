@@ -43,15 +43,17 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
       for (let n = 0; n < 16; n++) {
         const { width, height } = page.viewportSize();
         const scrollX = width - 150;
-        const scrollY = Math.max(150, height - 110);
+        const dock = await page.getByRole('button', { name: '都市開発', exact: true }).boundingBox();
+        const contentBottom = dock ? dock.y : height - 20;
+        const scrollY = Math.max(110, contentBottom - 145);
         if (await locator.count()) {
           const box = await locator.boundingBox();
-          if (box && box.y > 100 && box.y + box.height < height - 20) {
+          if (box && box.y > 55 && box.y + box.height < contentBottom - 2) {
             await locator.click();
             await page.waitForTimeout(250);
             return;
           }
-          if (box && box.y < 100) {
+          if (box && box.y < 55) {
             await page.mouse.move(scrollX, scrollY);
             await page.mouse.wheel(0, -Math.min(350, height / 2));
             await page.waitForTimeout(200);
@@ -182,7 +184,20 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await page.waitForTimeout(700);
     await page.screenshot({ path: path.join(output, 'strategy-web-mars.png') });
     await page.getByRole('button', { name: '都市開発', exact: true }).click();
+    await page.waitForTimeout(800);
+    // Use real screen coordinates on the projected ground at the corner,
+    // center and ridge; the resulting inspector must refer to that same plot.
+    for (const number of [1, 5, 13]) {
+      const target = page.getByRole('button', { name: new RegExp(`^アルカディアの区画${number}、`) });
+      const bounds = await target.boundingBox();
+      assert.ok(bounds, `Projected plot ${number} is visible`);
+      await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      await page.getByText(new RegExp(`^区画 ${number}  ·`)).waitFor();
+    }
+    await page.screenshot({ path: path.join(output, 'terrain-web-before.png') });
     await click('この区画に建設を予約');
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(output, 'terrain-web-construction.png') });
     const construction = (await snapshot()).plans.find(plan => plan.taskId === 'district_mars_habitat');
     assert.equal(construction.cityId, 'mars_arcadia');
     assert.equal(construction.plotIndex, 12);
@@ -194,6 +209,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     assert.equal(inhabited.marsResidents, 24);
     assert.equal(inhabited.districts.find(d => d.cityId === 'mars_arcadia' && d.plotIndex === 12).districtId, 'mars_habitat');
     await page.screenshot({ path: path.join(output, 'strategy-web-city.png') });
+    await page.screenshot({ path: path.join(output, 'terrain-web-completed.png') });
     console.log('CHECK OK: research tree, reservations, reorder, reload, city plot habitation');
 
     // Grow the first Earth city through the UI, then compare its upgrade with
