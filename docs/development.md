@@ -1,7 +1,8 @@
 # 開発・検証の引き継ぎ
 
-更新: 2026-10-13。最新はcontent district-4、序盤の増強選択と予約の見通し。
-最新の変更と検証は [序盤の投資と予約の見通し](early-development.md)、
+更新: 2026-10-14。最新はcontent district-5、序盤の並行開発と機関運営。
+最新の変更と検証は [序盤の並行開発と機関運営](agency-development.md) を参照。
+前段の変更と検証は [序盤の投資と予約の見通し](early-development.md)、
 20時間の方針・投資の基礎数値は [都市投資と序盤のペース](investment-pacing.md)、
 球体・六角区画・研究ツリーの初期改善は [戦略試作の記録](strategy-prototype.md) を参照。
 企画書は原本を保持。仮仕様は `decisions.md` に分けた。
