@@ -21,6 +21,20 @@ class MemorySave implements SaveRepository {
   }
 }
 
+Future<void> openDistrictDetails(WidgetTester tester) async {
+  final button = find.byKey(const Key('city-open-details'));
+  await tester.scrollUntilVisible(
+    button,
+    100,
+    scrollable: find.descendant(
+      of: find.byKey(const Key('district-inspector')),
+      matching: find.byType(Scrollable),
+    ),
+  );
+  await tester.tap(button);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets(
     'landscape planning controls and finite repetition are operable',
@@ -114,6 +128,8 @@ void main() {
         await tester.tap(find.byKey(Key('navigation-$tab')));
         await tester.pumpAndSettle();
         if (tab == 1) {
+          await tester.tap(find.byKey(const Key('district-option-housing')));
+          await tester.pumpAndSettle();
           expect(
             find.byKey(const Key('confirm-district')).hitTestable(),
             findsOneWidget,
@@ -164,18 +180,33 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
       await tester.pumpAndSettle();
+      // Tile-first interaction remains available: select the facility here.
+      await tester.tap(find.byKey(const Key('district-option-housing')));
+      await tester.pumpAndSettle();
       expect(find.text('区画 1  ·  海岸'), findsOneWidget);
+      await openDistrictDetails(tester);
       expect(find.text('建設前の見積もり'), findsOneWidget);
       await tester.scrollUntilVisible(
-        find.text('立地・隣接ボーナス'),
+        find.descendant(
+          of: find.byKey(const Key('district-detail')),
+          matching: find.text('立地・隣接ボーナス'),
+        ),
         140,
         scrollable: find.descendant(
           of: find.byKey(const Key('district-detail')),
           matching: find.byType(Scrollable),
         ),
       );
-      expect(find.text('立地・隣接ボーナス'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('district-detail')),
+          matching: find.text('立地・隣接ボーナス'),
+        ),
+        findsOneWidget,
+      );
       expect(controller.state.plans, isEmpty);
+      await tester.tap(find.byKey(const Key('close-district-details')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('confirm-district')));
       await tester.tap(find.byKey(const Key('confirm-district')));
       await tester.pumpAndSettle();
@@ -238,6 +269,7 @@ void main() {
         await tester.pumpAndSettle();
       }
 
+      await openDistrictDetails(tester);
       await detailTap('save-investment');
       // A tab change disposes the district screen but must keep the comparison.
       await tester.tap(find.byKey(const Key('navigation-0')));
@@ -250,6 +282,11 @@ void main() {
         find.text(GameContent.cities['earth_highland']!.name).last,
       );
       await tester.pumpAndSettle();
+      // The saved district type survives leaving the city screen, but a new
+      // city's target must still be explicitly selected on its map.
+      await tester.tap(find.byKey(const Key('plot-earth_highland-12')));
+      await tester.pumpAndSettle();
+      await openDistrictDetails(tester);
       await detailTap('compare-investments');
       expect(
         find.byKey(const Key('investment-comparison-saved')),
@@ -317,6 +354,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
     await tester.pumpAndSettle();
+    await openDistrictDetails(tester);
     await tester.scrollUntilVisible(
       find.byKey(const Key('save-investment')),
       120,

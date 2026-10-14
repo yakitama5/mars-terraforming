@@ -5,6 +5,7 @@ import '../domain/game_content.dart';
 import '../domain/game_state.dart';
 import '../rendering/city_scene.dart';
 import 'city_scene_data.dart';
+import 'city_facility_palette.dart';
 import 'investment_comparison.dart';
 import 'strategy_widgets.dart';
 
@@ -37,6 +38,9 @@ class CityDevelopment extends StatefulWidget {
 class _CityDevelopmentState extends State<CityDevelopment> {
   int selectedPlot = 12;
   bool showInspector = true;
+  bool choosingFacility = true;
+  bool placementMode = false;
+  bool hasPlotSelection = false;
   String? selectedDistrict;
   GameState get game => widget.controller.state;
   CityDefinition get city => GameContent.cities[widget.cityId]!;
@@ -49,13 +53,17 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.cityId != widget.cityId) {
       final previousDistrict =
-          game.districtAt(oldWidget.cityId, selectedPlot)?.districtId ??
           selectedDistrict ??
+          game.districtAt(oldWidget.cityId, selectedPlot)?.districtId ??
           widget.savedInvestment?.districtId;
       selectedPlot = 12;
+      hasPlotSelection = false;
       selectedDistrict = available.any((item) => item.id == previousDistrict)
           ? previousDistrict
           : null;
+      placementMode = selectedDistrict != null;
+      choosingFacility = selectedDistrict == null;
+      showInspector = true;
     }
   }
 
@@ -68,8 +76,18 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         if (showInspector) ...[
           const VerticalDivider(width: 1, color: strategyLine),
           SizedBox(
-            width: constraints.maxWidth > 1100 ? 350 : 296,
-            child: _detail(),
+            width: constraints.maxWidth > 1100 ? 308 : 280,
+            child: ColoredBox(
+              color: const Color(0xff102129),
+              child: choosingFacility
+                  ? CityFacilityPalette(
+                      districts: available,
+                      selectedId: selectedDistrict,
+                      onSelected: _chooseFacility,
+                      lockReason: _facilityLockReason,
+                    )
+                  : _inspector(),
+            ),
           ),
         ],
       ],
@@ -146,16 +164,14 @@ class _CityDevelopmentState extends State<CityDevelopment> {
             columns: city.width,
             rows: city.height,
             plots: scenePlotsForCity(game, city),
-            selectedPlot: selectedPlot,
-            adjacentPlots: city.adjacentPlots(selectedPlot).toSet(),
+            selectedPlot: hasPlotSelection ? selectedPlot : -1,
+            adjacentPlots: hasPlotSelection
+                ? city.adjacentPlots(selectedPlot).toSet()
+                : const {},
+            constructionMode: placementMode,
+            buildablePlots: _buildablePlots,
             renderScene: widget.renderScene,
-            onPlotSelected: (index) => setState(() {
-              selectedDistrict =
-                  game.districtAt(city.id, selectedPlot)?.districtId ??
-                  selectedDistrict;
-              selectedPlot = index;
-              showInspector = true;
-            }),
+            onPlotSelected: _selectPlot,
           ),
         ),
         Container(
@@ -175,6 +191,421 @@ class _CityDevelopmentState extends State<CityDevelopment> {
       ],
     );
   }
+
+  String? _facilityLockReason(DistrictDefinition definition) {
+    if (!game.cityUnlocked(city.id)) return game.cityLockReason(city.id);
+    final research = definition.requiredResearch;
+    if (research != null && !game.research.contains(research)) {
+      return '前提研究：${GameContent.tasks[research]!.name}';
+    }
+    if (definition.id == 'mars_habitat' && game.habitatChoice == null) {
+      return '居住方式を選択してください';
+    }
+    return null;
+  }
+
+  Set<int> get _buildablePlots => !placementMode || selectedDistrict == null
+      ? const {}
+      : {
+          for (var index = 0; index < city.plotCount; index++)
+            if (game.districtAt(city.id, index) == null &&
+                game.districtPlanAt(city.id, index) == null &&
+                game.districtPreview(city.id, index, selectedDistrict!).isValid)
+              index,
+        };
+
+  void _chooseFacility(String id) => setState(() {
+    selectedDistrict = id;
+    choosingFacility = false;
+    placementMode = true;
+    showInspector = true;
+    if (game.districtAt(city.id, selectedPlot) != null ||
+        game.districtPlanAt(city.id, selectedPlot) != null) {
+      hasPlotSelection = false;
+    }
+  });
+
+  void _selectPlot(int index) => setState(() {
+    selectedPlot = index;
+    hasPlotSelection = true;
+    showInspector = true;
+    final existing = game.districtAt(city.id, index);
+    final reserved = game.districtPlanAt(city.id, index);
+    if (existing != null || reserved != null) {
+      placementMode = false;
+      choosingFacility = false;
+    } else if (selectedDistrict != null) {
+      placementMode = true;
+      choosingFacility = false;
+    } else {
+      choosingFacility = true;
+    }
+  });
+
+  void _cancelPlacement() => setState(() {
+    placementMode = false;
+    hasPlotSelection = false;
+    choosingFacility = true;
+  });
+
+  Widget _inspector() {
+    final existing = hasPlotSelection
+        ? game.districtAt(city.id, selectedPlot)
+        : null;
+    final plan = hasPlotSelection
+        ? game.districtPlanAt(city.id, selectedPlot)
+        : null;
+    final id =
+        existing?.districtId ??
+        plan?.definition.districtId ??
+        selectedDistrict ??
+        available.first.id;
+    final definition = GameContent.districts[id]!;
+    final maxLevel = existing != null && existing.level >= definition.maxLevel;
+    final requiredResearch =
+        city.requiredResearch != null &&
+            !game.research.contains(city.requiredResearch)
+        ? city.requiredResearch
+        : definition.requiredResearch;
+    final preview = game.districtPreview(
+      city.id,
+      selectedPlot,
+      id,
+      upgrade: existing != null,
+    );
+    final terrain = GameContent.terrainNames[city.terrainAt(selectedPlot)];
+    final reason = hasPlotSelection
+        ? preview.blockedReason
+        : _facilityLockReason(definition);
+    final effects = [
+      if (preview.researchBonusDelta != 0)
+        '研究 ${signedNumber(preview.researchBonusDelta)}%',
+      if (preview.factoryBonusDelta != 0)
+        '製造 ${signedNumber(preview.factoryBonusDelta)}%',
+      if (preview.launchBonusDelta != 0)
+        '輸送 ${signedNumber(preview.launchBonusDelta)}%',
+      if (preview.marsBonusDelta != 0)
+        '火星建設 ${signedNumber(preview.marsBonusDelta)}%',
+    ];
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            key: const Key('district-inspector'),
+            padding: const EdgeInsets.all(12),
+            children: [
+              Row(
+                children: [
+                  Icon(districtIcon(id), color: strategyCopper, size: 24),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${definition.name}${existing == null ? '' : ' Lv.${existing.level}'}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                hasPlotSelection
+                    ? '区画 ${selectedPlot + 1}  ·  $terrain'
+                    : '2  地図で建設する区画を選択',
+                key: const Key('placement-step'),
+                style: const TextStyle(
+                  color: strategyMint,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (plan != null)
+                _workStatus(plan)
+              else if (maxLevel)
+                const SizedBox.shrink()
+              else if (hasPlotSelection) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: StrategyStat('投資費用', dollars(preview.cost)),
+                    ),
+                    Expanded(
+                      child: StrategyStat(
+                        '設備占有',
+                        gameDuration(preview.durationMs),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '完成後の純収支 ${signedDollars(preview.netDeltaPerMinute)}/分',
+                  style: const TextStyle(color: strategyMint, fontSize: 12),
+                ),
+                if (effects.isNotEmpty)
+                  Text(
+                    effects.join(' · '),
+                    style: const TextStyle(fontSize: 12, color: strategyMint),
+                  ),
+                const SizedBox(height: 8),
+                const Text(
+                  '立地・隣接ボーナス',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                for (final bonus in preview.bonuses)
+                  Text(
+                    bonus,
+                    style: const TextStyle(fontSize: 11, color: strategyMuted),
+                  ),
+                if (preview.isValid && game.money < preview.cost)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      '資金不足 · 予約後は資金が貯まるまで着工待ち。後続の受注も待つため、設備の順番を確認してください。',
+                      key: Key('district-funding-warning'),
+                      style: TextStyle(fontSize: 11, color: strategyCopper),
+                    ),
+                  ),
+              ] else ...[
+                Text(districtPurpose(id), style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 6),
+                Text(
+                  '基準 ${dollars(definition.cost)} · ${gameDuration(definition.durationSeconds * 1000)}',
+                  style: const TextStyle(fontSize: 12, color: strategyMuted),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  reason ??
+                      '明るい六角が配置できる空地です（${_buildablePlots.length}区画）。場所を選ぶと費用と隣接効果が分かります。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: reason == null ? strategyMint : strategyCopper,
+                  ),
+                ),
+              ],
+              if (requiredResearch != null &&
+                  !game.research.contains(requiredResearch))
+                TextButton.icon(
+                  key: const Key('district-required-research'),
+                  onPressed: () => widget.onOpenResearch(requiredResearch),
+                  icon: const Icon(Icons.account_tree_outlined, size: 16),
+                  label: const Text('必要な研究を確認'),
+                ),
+              if (id == 'mars_habitat' && game.habitatChoice == null)
+                Wrap(
+                  children: [
+                    for (final choice in [
+                      ('dome', 'ドーム居住'),
+                      ('underground', '地下居住'),
+                    ])
+                      TextButton(
+                        key: Key('choose-${choice.$1}'),
+                        onPressed:
+                            !game.achievements.contains('first_landing') ||
+                                widget.controller.busy
+                            ? null
+                            : () => widget.controller.command(
+                                (engine) => engine.chooseHabitat(choice.$1),
+                              ),
+                        child: Text(choice.$2),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.fromLTRB(10, 5, 10, 8),
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: strategyLine)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (hasPlotSelection && plan == null && reason != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Text(
+                    reason,
+                    key: const Key('district-blocked-reason'),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: strategyCopper),
+                  ),
+                ),
+              if (plan != null && widget.onOpenOperations != null)
+                OutlinedButton.icon(
+                  key: const Key('district-open-operations'),
+                  onPressed: widget.onOpenOperations,
+                  icon: const Icon(Icons.view_timeline_outlined, size: 17),
+                  label: const Text('設備・進行で確認'),
+                )
+              else
+                FilledButton.icon(
+                  key: const Key('confirm-district'),
+                  onPressed:
+                      !hasPlotSelection ||
+                          !preview.isValid ||
+                          widget.controller.busy
+                      ? null
+                      : () async {
+                          final targetCity = city.id;
+                          final targetPlot = selectedPlot;
+                          final controller = widget.controller;
+                          await controller.command(
+                            (engine) => existing == null
+                                ? engine.enqueueDistrict(
+                                    targetCity,
+                                    targetPlot,
+                                    id,
+                                  )
+                                : engine.upgradeDistrict(
+                                    targetCity,
+                                    targetPlot,
+                                  ),
+                          );
+                          if (!mounted) return;
+                          // A save conflict stops the controller and clears its
+                          // engine before the parent removes this screen.
+                          final state = controller.engine?.state;
+                          if (city.id == targetCity &&
+                              selectedPlot == targetPlot &&
+                              state?.districtPlanAt(targetCity, targetPlot) !=
+                                  null) {
+                            setState(() => placementMode = false);
+                          }
+                        },
+                  icon: const Icon(Icons.construction, size: 17),
+                  label: Text(existing == null ? 'この区画に建設を予約' : 'この地区を強化する'),
+                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      key: const Key('city-change-facility'),
+                      onPressed: () => setState(() {
+                        choosingFacility = true;
+                        placementMode = false;
+                      }),
+                      child: const Text(
+                        '施設を変更',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextButton(
+                      key: const Key('city-cancel-placement'),
+                      onPressed: _cancelPlacement,
+                      child: Text(
+                        placementMode ? '配置をやめる' : '施設一覧へ',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+                  if (hasPlotSelection)
+                    IconButton(
+                      key: const Key('city-open-details'),
+                      tooltip: '費用・効果と投資比較',
+                      onPressed: _openDetails,
+                      icon: const ExcludeSemantics(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.subject, size: 17),
+                            Text('詳細', style: TextStyle(fontSize: 10)),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _workStatus(PlannedTask plan) => Column(
+    key: const Key('district-work-status'),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        plan.stopReason.isNotEmpty
+            ? '待機・停止中 · ${plan.stopReason}'
+            : plan.status == 'running'
+            ? '建設中'
+            : '建設予約',
+        style: const TextStyle(color: strategyCopper),
+      ),
+      if (plan.status == 'running') ...[
+        const SizedBox(height: 6),
+        LinearProgressIndicator(value: plan.progress.clamp(0, 1)),
+        const SizedBox(height: 6),
+        Text('残り ${gameDuration(plan.remainingMs)}'),
+        const Text(
+          '着工費は確保済み',
+          style: TextStyle(fontSize: 11, color: strategyMuted),
+        ),
+      ],
+    ],
+  );
+
+  Future<void> _openDetails() => showDialog<void>(
+    context: context,
+    builder: (dialogContext) => Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 580, maxHeight: 760),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '費用・効果と投資比較',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: const Key('close-district-details'),
+                    tooltip: '地図へ戻る',
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: strategyLine),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: widget.controller,
+                builder: (_, _) => widget.controller.engine == null
+                    ? Padding(
+                        key: const Key('district-detail-stopped'),
+                        padding: const EdgeInsets.all(20),
+                        child: Text(
+                          widget.controller.error ??
+                              '進行を停止しています。地図へ戻って状態を確認してください。',
+                        ),
+                      )
+                    : _detail(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 
   Widget _detail() {
     final existing = game.districtAt(city.id, selectedPlot);
@@ -227,7 +658,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
               ),
               if (plan != null) ...[
                 StrategyCard(
-                  key: const Key('district-work-status'),
+                  key: const Key('district-work-status-detail'),
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -273,34 +704,16 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   ),
                 ),
                 TextButton.icon(
-                  onPressed: () => widget.onOpenResearch(
-                    city.requiredResearch ?? 'life_support',
-                  ),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onOpenResearch(
+                      city.requiredResearch ?? 'life_support',
+                    );
+                  },
                   icon: const Icon(Icons.account_tree_outlined),
                   label: const Text('必要な研究を見る'),
                 ),
                 const SizedBox(height: 12),
-              ],
-              if (existing == null && reserved == null) ...[
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final item in districts)
-                      ChoiceChip(
-                        key: Key('district-option-${item.id}'),
-                        label: Text(
-                          item.name,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        selected: selected == item.id,
-                        showCheckmark: false,
-                        onSelected: (_) =>
-                            setState(() => selectedDistrict = item.id),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
               ],
               Text(
                 '${definition.name}${existing == null
@@ -369,7 +782,10 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 key: const Key('save-investment'),
                 onPressed: maxLevel || plan != null
                     ? null
-                    : () => widget.onSaveInvestment(candidate),
+                    : () {
+                        widget.onSaveInvestment(candidate);
+                        Navigator.of(context).pop();
+                      },
                 icon: const Icon(Icons.bookmark_add_outlined, size: 18),
                 label: const Text('比較に保存'),
               ),
@@ -398,23 +814,51 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                         key: const Key('compare-investments'),
                         onPressed: maxLevel || plan != null
                             ? null
-                            : () => showDialog<void>(
-                                context: context,
-                                builder: (context) => ListenableBuilder(
-                                  listenable: widget.controller,
-                                  builder: (context, _) => InvestmentComparison(
-                                    game: widget.controller.state,
-                                    saved: saved,
-                                    current: candidate,
+                            : () {
+                                Navigator.of(context).pop();
+                                showDialog<void>(
+                                  context: context,
+                                  builder: (context) => ListenableBuilder(
+                                    listenable: widget.controller,
+                                    builder: (context, _) =>
+                                        widget.controller.engine == null
+                                        ? AlertDialog(
+                                            key: const Key(
+                                              'investment-comparison-stopped',
+                                            ),
+                                            title: const Text('進行を停止しました'),
+                                            content: Text(
+                                              widget.controller.error ??
+                                                  '保存状態を確認してください。',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                key: const Key(
+                                                  'close-investment-comparison',
+                                                ),
+                                                onPressed: () =>
+                                                    Navigator.of(context).pop(),
+                                                child: const Text('地図へ戻る'),
+                                              ),
+                                            ],
+                                          )
+                                        : InvestmentComparison(
+                                            game: widget.controller.state,
+                                            saved: saved,
+                                            current: candidate,
+                                          ),
                                   ),
-                                ),
-                              ),
+                                );
+                              },
                         icon: const Icon(Icons.compare_arrows, size: 18),
                         label: const Text('候補を比較'),
                       ),
                       TextButton(
                         key: const Key('clear-investment'),
-                        onPressed: () => widget.onSaveInvestment(null),
+                        onPressed: () {
+                          widget.onSaveInvestment(null);
+                          Navigator.of(context).pop();
+                        },
                         child: const Text('比較候補を解除'),
                       ),
                     ],
@@ -430,8 +874,10 @@ class _CityDevelopmentState extends State<CityDevelopment> {
               if (definition.requiredResearch != null &&
                   !game.research.contains(definition.requiredResearch))
                 TextButton.icon(
-                  onPressed: () =>
-                      widget.onOpenResearch(definition.requiredResearch!),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onOpenResearch(definition.requiredResearch!);
+                  },
                   icon: const Icon(Icons.account_tree_outlined, size: 17),
                   label: const Text('必要な研究を確認'),
                 ),
@@ -483,7 +929,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Text(
                     preview.blockedReason!,
-                    key: const Key('district-blocked-reason'),
+                    key: const Key('district-blocked-reason-detail'),
                     style: const TextStyle(color: strategyCopper, fontSize: 12),
                   ),
                 ),
@@ -493,7 +939,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   child: Text(
                     '資金不足 · 予約後、必要な資金が貯まるまで着工を待ちます。'
                     '${city.planet == 'earth' ? ' 先頭の建設が資金待ちだと、後ろの受注も停止します。受注を先にして資金を準備できます。' : ''}',
-                    key: const Key('district-funding-warning'),
+                    key: const Key('district-funding-warning-detail'),
                     style: const TextStyle(fontSize: 12, color: strategyCopper),
                   ),
                 ),
@@ -514,38 +960,6 @@ class _CityDevelopmentState extends State<CityDevelopment> {
               ),
             ],
           ),
-        ),
-        StrategyActionBar(
-          message:
-              preview.blockedReason ??
-              (game.money < preview.cost
-                  ? '資金が貯まるまで着工を待機します'
-                  : city.planet == 'mars' && game.marsKits == 0
-                  ? '到着キットが揃うまで着工を待機します'
-                  : '${dollars(preview.cost)} · ${gameDuration(preview.durationMs)}'),
-          child: plan != null && widget.onOpenOperations != null
-              ? OutlinedButton.icon(
-                  key: const Key('district-open-operations'),
-                  onPressed: widget.onOpenOperations,
-                  icon: const Icon(Icons.view_timeline_outlined, size: 18),
-                  label: const Text('設備・進行で確認'),
-                )
-              : FilledButton.icon(
-                  key: const Key('confirm-district'),
-                  onPressed: !preview.isValid || widget.controller.busy
-                      ? null
-                      : () => widget.controller.command(
-                          (engine) => existing == null
-                              ? engine.enqueueDistrict(
-                                  city.id,
-                                  selectedPlot,
-                                  selected,
-                                )
-                              : engine.upgradeDistrict(city.id, selectedPlot),
-                        ),
-                  icon: const Icon(Icons.construction, size: 18),
-                  label: Text(existing == null ? 'この区画に建設を予約' : 'この地区を強化する'),
-                ),
         ),
       ],
     );
