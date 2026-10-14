@@ -144,6 +144,8 @@ void main() {
       await sceneReady();
       await tapKey('district-option-housing');
       // Tap actual projected ground coordinates, not an accessibility label.
+      await tester.tap(find.byTooltip('都市全体を表示'));
+      await tester.pump(const Duration(milliseconds: 500));
       for (final index in [4, 0, 12]) {
         final map = tester.widget<CityScene>(find.byType(CityScene));
         final geometry = CityTerrain(
@@ -152,7 +154,11 @@ void main() {
           rows: map.rows,
           plots: map.plots,
         );
-        final projection = CityMapProjection(terrain: geometry);
+        final projection = CityMapProjection(
+          terrain: geometry,
+          elevation: CityMapProjection.overviewElevation,
+          zoom: CityMapProjection.overviewZoom,
+        );
         final screen =
             tester.getTopLeft(find.byType(CityScene)) +
             projection.center(index, tester.getSize(find.byType(CityScene)));
@@ -163,6 +169,8 @@ void main() {
           index,
         );
       }
+      await tester.tap(find.byTooltip('選んだ区画を近くから表示'));
+      await tester.pump(const Duration(milliseconds: 500));
       await capture('terrain-ios-before');
       await tapKey('confirm-district');
       final home = controller.state.districtPlanAt('earth_delta', 12)!;
@@ -281,6 +289,13 @@ void main() {
       // Save the existing campus upgrade and inspect a new city's campus.
       // UI comparison must not modify the world, time, or equipment queue.
       await capture('district-ios-neighborhood');
+      await tester.tap(find.byTooltip('選んだ区画を近くから表示'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tapKey('city-inspector-toggle');
+      await tester.tap(find.byTooltip('都市地図を拡大'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await capture('diorama-ios-close');
+      await tapKey('city-inspector-toggle');
       final beforeComparison = jsonEncode(controller.state.toJson());
       await tapKey('city-open-details');
       await tapKey('save-investment');

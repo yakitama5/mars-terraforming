@@ -175,6 +175,9 @@ void main() {
       }
 
       Future<void> select(int plot) async {
+        // These draft cases deliberately compare plots on the outer row.
+        await tester.tap(find.byTooltip('都市全体を表示'));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(Key('plot-${scene().cityId}-$plot')));
         await tester.pumpAndSettle();
       }
@@ -355,6 +358,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('district-option-housing')));
         await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('都市全体を表示'));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
         await tester.pumpAndSettle();
         // The detailed information remains accessible without scrolling the
@@ -455,8 +460,11 @@ void main() {
             rows: scene.rows,
             plots: scene.plots,
           );
-          final screen = CityMapProjection(terrain: terrain)
-              .center(index, tester.getSize(map));
+          final screen = CityMapProjection(
+            terrain: terrain,
+            elevation: CityMapProjection.overviewElevation,
+            zoom: CityMapProjection.overviewZoom,
+          ).center(index, tester.getSize(map));
           await tester.tapAt(tester.getTopLeft(map) + screen);
           await tester.pumpAndSettle();
           expect(current().selectedPlot, index);
@@ -475,12 +483,14 @@ void main() {
               .onPressed,
           isNull,
         );
+        await tester.tap(find.byTooltip('都市全体を表示'));
+        await tester.pumpAndSettle();
         await tapGround(4);
         expect(find.text('区画 5  ·  高台'), findsOneWidget);
         await tester.drag(map, const Offset(45, 16));
         await tester.pumpAndSettle();
         expect(current().selectedPlot, 4);
-        await tester.tap(find.byTooltip('都市地図の視点を戻す'));
+        await tester.tap(find.byTooltip('都市全体を表示'));
         await tester.pumpAndSettle();
         final narrow = tester.getSize(map).width;
         await tester.tap(find.byKey(const Key('city-inspector-toggle')));

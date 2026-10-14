@@ -168,10 +168,10 @@ class CityTerrain {
       final color = switch (plots[i].terrain) {
         'coast' => const Color(0xffb1a36a),
         'ice' => const Color(0xffb6cdd2),
-        'mineral' => earth ? const Color(0xff7d7c50) : const Color(0xff75422f),
-        'ridge' => earth ? const Color(0xff747e61) : const Color(0xff9b553b),
+        'mineral' => earth ? const Color(0xff989270) : const Color(0xff75422f),
+        'ridge' => earth ? const Color(0xff84926e) : const Color(0xff9b553b),
         'crater' => const Color(0xff714131),
-        _ => earth ? const Color(0xff6c8b3e) : const Color(0xffb05a32),
+        _ => earth ? const Color(0xff91a55b) : const Color(0xffb05a32),
       };
       weights += weight;
       red += color.r * weight;
@@ -179,7 +179,7 @@ class CityTerrain {
       blue += color.b * weight;
     }
     final wilderness = earth
-        ? const Color(0xff65843c)
+        ? const Color(0xff829c52)
         : const Color(0xffac5834);
     var base = weights > 1e-10
         ? Color.lerp(
@@ -227,47 +227,55 @@ class CityTerrain {
       ? srgb / 12.92
       : math.pow((srgb + .055) / 1.055, 2.4).toDouble();
 
+  /// Smooth normals follow the same continuous height field used for placement.
+  /// Sharing vertices also avoids the former triangle-by-triangle color bands.
+  vm.Vector3 normalAt(double x, double z) {
+    const step = .035;
+    return vm.Vector3(
+      height(x - step, z) - height(x + step, z),
+      step * 2,
+      height(x, z - step) - height(x, z + step),
+    ).normalized();
+  }
+
   fs.MeshGeometry mesh() {
     final positions = <double>[];
+    final normals = <double>[];
     final colors = <double>[];
-    // Keep the city detailed, and use a coarse apron to fill wide viewports.
-    // Plot coordinates and camera fit are intentionally unchanged.
+    final uvs = <double>[];
+    final indices = <int>[];
     final xs = _meshAxis(halfWidth);
     final zs = _meshAxis(halfDepth);
+    for (final z in zs) {
+      for (final x in xs) {
+        final normal = normalAt(x, z);
+        final color = colorAt(x, z);
+        positions.addAll([x, height(x, z), z]);
+        normals.addAll([normal.x, normal.y, normal.z]);
+        // Four world units per repeat: grain remains the same size while
+        // orbiting or changing the city's dimensions, instead of stretching.
+        uvs.addAll([x / 4, z / 4]);
+        colors.addAll([
+          linearChannel(color.r),
+          linearChannel(color.g),
+          linearChannel(color.b),
+          1,
+        ]);
+      }
+    }
     for (var iz = 0; iz < zs.length - 1; iz++) {
       for (var ix = 0; ix < xs.length - 1; ix++) {
-        final corners = [
-          surfacePoint(xs[ix], zs[iz]),
-          surfacePoint(xs[ix], zs[iz + 1]),
-          surfacePoint(xs[ix + 1], zs[iz + 1]),
-          surfacePoint(xs[ix + 1], zs[iz]),
-        ];
-        for (final triangle in const [
-          [0, 1, 2],
-          [0, 2, 3],
-        ]) {
-          final mid =
-              (corners[triangle[0]] +
-                  corners[triangle[1]] +
-                  corners[triangle[2]]) /
-              3;
-          final color = colorAt(mid.x, mid.z);
-          for (final index in triangle) {
-            final p = corners[index];
-            positions.addAll([p.x, p.y, p.z]);
-            colors.addAll([
-              linearChannel(color.r),
-              linearChannel(color.g),
-              linearChannel(color.b),
-              1,
-            ]);
-          }
-        }
+        final a = iz * xs.length + ix;
+        final b = a + xs.length;
+        indices.addAll([a, b, b + 1, a, b + 1, a + 1]);
       }
     }
     return fs.MeshGeometry.fromArrays(
       positions: Float32List.fromList(positions),
+      normals: Float32List.fromList(normals),
+      texCoords: Float32List.fromList(uvs),
       colors: Float32List.fromList(colors),
+      indices: indices,
       retainCpuData: false,
     );
   }
@@ -275,7 +283,7 @@ class CityTerrain {
   List<double> _meshAxis(double cityExtent) {
     const apron = 10.0;
     const outerStep = 1.25;
-    const innerStep = .34;
+    const innerStep = .24;
     return [
       for (var x = -cityExtent - apron; x < -cityExtent; x += outerStep) x,
       for (var x = -cityExtent; x < cityExtent; x += innerStep) x,
@@ -290,12 +298,22 @@ class CityTerrain {
 class CityMapProjection {
   CityMapProjection({
     required this.terrain,
-    this.azimuth = .18,
-    this.elevation = .82,
-    this.zoom = 1.14,
+    this.azimuth = neighborhoodAzimuth,
+    this.elevation = neighborhoodElevation,
+    this.zoom = neighborhoodZoom,
     this.panX = 0,
     this.panZ = 0,
   });
+
+  // A close, oblique neighborhood view makes roofs, walls and streets readable.
+  // Overview is an explicit camera mode, rather than the starting composition.
+  static const neighborhoodAzimuth = .24;
+  static const neighborhoodElevation = .60;
+  static const neighborhoodZoom = 2.3;
+  static const overviewElevation = .88;
+  static const overviewZoom = .9;
+  static const minZoom = .8;
+  static const maxZoom = 3.2;
 
   final CityTerrain terrain;
   final double azimuth, elevation, zoom, panX, panZ;

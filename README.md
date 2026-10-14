@@ -64,7 +64,8 @@ Web試遊は既定で開発用の別セーブと時間送りを使います。
 
 ## 資料と検証
 
-- [六角地形へ広がる街区・施設選択と最新の検証](docs/district-landscape.md)
+- [都市の箱庭景観・接写と最新の検証](docs/city-diorama.md)
+- [六角地形へ広がる街区・施設選択](docs/district-landscape.md)
 - [地域3D地形・建設反映・指令画面の初期実装](docs/terrain-command-ui.md)
 - [序盤の並行開発・人員配分・提携](docs/agency-development.md)
 - [序盤の増強選択・予約の見通しの検証](docs/early-development.md)
