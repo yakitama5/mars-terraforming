@@ -13,7 +13,7 @@ import 'package:mars_terraforming/main.dart';
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
-    'iOS: globes, research, districts, investment and reservation forecasts, and save/resume',
+    'iOS: globes, parallel development, agency staffing, partnerships, forecasts and save/resume',
     (tester) async {
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
@@ -302,6 +302,29 @@ void main() {
       await tapKey('navigation-0');
       await sceneReady();
       await capture('strategy-ios-settlement');
+      // Choose a real one-time partnership, then develop and reassign staff.
+      await tapKey('navigation-4');
+      await capture('agency-ios-overview');
+      await tapKey('staff-research-less');
+      await tapKey('confirm-staff-allocation');
+      expect(controller.state.researchers, 5);
+      await tapKey('agency-section-partnerships');
+      await tapKey('partnership-research_exchange-funding');
+      expect(
+        controller.state.partnershipChoices['research_exchange'],
+        'funding',
+      );
+      await capture('agency-ios-partnerships');
+      await tapKey('agency-section-staff');
+      await tapKey('queue-train_specialists');
+      await controller.advanceForDevelopment(
+        duration: const Duration(minutes: 5),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(controller.state.specialistCount, 14);
+      expect(controller.state.researchers, 5);
+      await tapKey('navigation-4');
+      await capture('agency-ios-staff');
       await controller.save();
       final resumed = GameController(FileSaveStore(directory));
       addTearDown(resumed.dispose);
@@ -312,6 +335,9 @@ void main() {
         'mars_habitat',
       );
       expect(resumed.state.marsResidents, 24);
+      expect(resumed.state.specialistCount, 14);
+      expect(resumed.state.researchers, 5);
+      expect(resumed.state.partnershipChoices['research_exchange'], 'funding');
       expect(resumed.state.claimedRewards, controller.state.claimedRewards);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

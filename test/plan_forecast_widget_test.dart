@@ -95,7 +95,7 @@ void main() {
           tester
               .widget<StrategyFact>(find.byKey(const Key('forecast-money')))
               .value,
-          startsWith('${controller.state.money} → '),
+          startsWith('${dollars(controller.state.money)} → '),
         );
         expect(jsonEncode(controller.state.toJson()), advanced);
         expect(repository.writes, writesAfterAdvance);

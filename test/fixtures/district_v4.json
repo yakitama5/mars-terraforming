@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 2,
+  "contentVersion": "district-4",
+  "worldId": "world-1791936000000000",
+  "lastWallClockMs": 1791936030000,
+  "simulatedMs": 30000,
+  "moneyUnits": 40440000,
+  "earthLevel": 1,
+  "population": 120,
+  "earthKits": 0,
+  "marsKits": 0,
+  "marsHabitats": 0,
+  "marsResidents": 0,
+  "habitatChoice": null,
+  "nextPlanId": 3,
+  "contractRevenue": 0,
+  "research": [],
+  "achievements": [],
+  "claimedRewards": [],
+  "facilities": {
+    "lab": true,
+    "factory": true,
+    "launch": true,
+    "mars": true
+  },
+  "plans": [
+    {
+      "id": "plan-1",
+      "taskId": "life_support",
+      "remainingRepeats": 1,
+      "completedRuns": 0,
+      "status": "running",
+      "stopReason": "",
+      "remainingMs": 90000,
+      "iterationDurationMs": 120000,
+      "cityId": null,
+      "plotIndex": null,
+      "targetLevel": null
+    },
+    {
+      "id": "plan-2",
+      "taskId": "factory_contract",
+      "remainingRepeats": 3,
+      "completedRuns": 0,
+      "status": "running",
+      "stopReason": "",
+      "remainingMs": 60000,
+      "iterationDurationMs": 90000,
+      "cityId": null,
+      "plotIndex": null,
+      "targetLevel": null
+    }
+  ],
+  "log": [
+    "地球の小さな拠点から、火星開発を始めましょう。",
+    "[0s] 生命維持の実証を予約（1回）",
+    "[0s] 生命維持の実証を開始（-180 Cr）",
+    "[0s] 外部受注・精密機器を予約（3回）",
+    "[0s] 外部受注・精密機器を開始（-40 Cr）"
+  ],
+  "districts": []
+}

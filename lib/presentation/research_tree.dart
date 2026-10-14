@@ -253,7 +253,7 @@ class _ResearchTreeState extends State<ResearchTree> {
                   ),
                 ),
                 Text(
-                  '${task.cost} Cr · ${gameDuration(game.currentTaskDurationMs(task.id))}',
+                  '${dollars(task.cost)} · ${gameDuration(game.currentTaskDurationMs(task.id))}',
                   style: const TextStyle(color: strategyMuted, fontSize: 11),
                 ),
               ],

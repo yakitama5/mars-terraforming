@@ -21,7 +21,21 @@ String gameDuration(int ms) {
       : '${seconds ~/ 60}分${seconds % 60 == 0 ? '' : '${seconds % 60}秒'}';
 }
 
-String signedNumber(int value) => value > 0 ? '+$value' : '$value';
+String formatInteger(int value) => value.toString().replaceAllMapped(
+  RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+  (match) => '${match[1]},',
+);
+String signedNumber(int value) =>
+    value > 0 ? '+${formatInteger(value)}' : formatInteger(value);
+String dollars(int value) => '${formatInteger(value)}ドル';
+String signedDollars(int value) => '${signedNumber(value)}ドル';
+String legacyCurrencyLabel(String value) => value.replaceAllMapped(
+  RegExp(r'([+-]?\d+) Cr'),
+  (match) {
+    final number = int.parse(match[1]!);
+    return match[1]!.startsWith('+') ? signedDollars(number) : dollars(number);
+  },
+);
 
 class StrategyCard extends StatelessWidget {
   const StrategyCard({

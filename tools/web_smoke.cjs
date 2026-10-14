@@ -22,9 +22,14 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     page = await context.newPage();
     const errors = [];
     const origins = new Set();
+    const externalRequests = [];
     page.on('pageerror', error => errors.push(String(error)));
     page.on('request', request => {
-      if (request.url().startsWith('http')) origins.add(new URL(request.url()).origin);
+      if (request.url().startsWith('http')) {
+        const origin = new URL(request.url()).origin;
+        origins.add(origin);
+        if (origin !== new URL(url).origin) externalRequests.push(request.url());
+      }
     });
     const snapshot = () => page.evaluate(storageKey => {
       const bundle = JSON.parse(localStorage.getItem(storageKey));
@@ -211,6 +216,44 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await compareInvestment('investment-web-comparison');
     console.log('CHECK OK: city growth and live upgrade/new-city comparison');
 
+    // Research is independently playable while the factory earns funds.
+    await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
+    await page.getByRole('button', { name: '全体表示', exact: true }).click();
+    await page.getByRole('button', { name: /^都市基盤の計画、/ }).click();
+    await click('都市基盤の計画を予約');
+    for (let n = 0; n < 2; n++) {
+      await page.getByRole('button', { name: '開発 +5分', exact: true }).click();
+      await page.waitForTimeout(250);
+    }
+    await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
+    await page.getByRole('button', { name: '全体表示', exact: true }).click();
+    await page.getByRole('button', { name: /^工程設計、/ }).click();
+    await click('工程設計を予約');
+    const parallel = await snapshot();
+    assert.equal(parallel.plans.find(p => p.taskId === 'process_design').status, 'running');
+    assert.equal(parallel.plans.find(p => p.taskId === 'factory_contract').status, 'running');
+    await page.getByRole('button', { name: '開発 +5分', exact: true }).click();
+    await page.waitForTimeout(300);
+    assert.ok((await snapshot()).research.includes('process_design'));
+    await page.getByRole('button', { name: '機関運営', exact: true }).click();
+    await page.getByRole('button', { name: '研究者を1人減らす', exact: true }).click();
+    await click('人員配分を確定');
+    assert.equal((await snapshot()).researchers, 5);
+    await page.getByRole('button', { name: '提携・支援', exact: true }).click();
+    await click('都市技術の共同研究：開発資金を受けるを選ぶ');
+    assert.equal((await snapshot()).partnershipChoices.research_exchange, 'funding');
+    await page.screenshot({ path: path.join(output, 'agency-web-partnerships.png') });
+    await page.getByRole('button', { name: '人員配分', exact: true }).click();
+    await click('専門職の育成を予約');
+    await page.getByRole('button', { name: '開発 +5分', exact: true }).click();
+    await page.waitForTimeout(300);
+    const agencySaved = await snapshot();
+    assert.equal(agencySaved.specialistCount, 14);
+    assert.equal(agencySaved.researchers, 5);
+    await page.getByRole('button', { name: '機関運営', exact: true }).click();
+    await page.screenshot({ path: path.join(output, 'agency-web-overview.png') });
+    console.log('CHECK OK: parallel applied research, one-time partnership, staffing and training');
+
     // The second tab must stop before loading or advancing the shared world.
     const second = await context.newPage();
     await second.goto(url);
@@ -221,7 +264,10 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     console.log('CHECK OK: second tab safely stopped');
     await page.reload();
     await ready(page);
-    assert.deepEqual((await snapshot()).claimedRewards, inhabited.claimedRewards);
+    assert.deepEqual((await snapshot()).claimedRewards, agencySaved.claimedRewards);
+    assert.deepEqual((await snapshot()).partnershipChoices, agencySaved.partnershipChoices);
+    assert.equal((await snapshot()).specialistCount, 14);
+    assert.equal((await snapshot()).researchers, 5);
     assert.equal((await snapshot()).marsResidents, 24);
 
     // A complete cold reload without network must use local assets and saves.
@@ -231,6 +277,8 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     const offline = await snapshot();
     assert.equal(offline.worldId, inhabited.worldId);
     assert.equal(offline.marsResidents, 24);
+    assert.deepEqual(offline.partnershipChoices, agencySaved.partnershipChoices);
+    assert.equal(offline.specialistCount, 14);
     await page.getByRole('button', { name: '設備・進行', exact: true }).click();
     await page.waitForTimeout(300);
     assert.ok(await page.getByRole('button', { name: '都市開発', exact: true }).isVisible());
@@ -253,10 +301,18 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await page.getByRole('button', { name: '全体表示', exact: true }).click();
     await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(output, 'strategy-web-small-research.png') });
+    await page.getByRole('button', { name: '機関運営', exact: true }).click();
+    await page.getByRole('button', { name: '人員配分', exact: true }).click();
+    await page.screenshot({ path: path.join(output, 'agency-web-small-overview.png') });
+    await page.getByRole('button', { name: '提携・支援', exact: true }).click();
+    await page.mouse.move(700, 260);
+    await page.mouse.wheel(0, 450);
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: path.join(output, 'agency-web-small-partnerships.png') });
     console.log('CHECK OK: small landscape, pinned construction action, whole research map');
     assert.deepEqual(errors, []);
-    assert.deepEqual([...origins], [new URL(url).origin]);
-    result = { result: 'PASS', checks: ['3D startup', 'small landscape and whole research map', 'city stage growth', 'live investment comparison and small-screen close', 'read-only eight-hour forecast and small-screen close', 'equipment reorder', 'paid iteration preserved', 'reload keeps order', 'research tree/manufacture/transport/district habitation', 'multi-tab lock', 'reward persistence', 'offline cold reload', 'no external resource hosts'], origins: [...origins] };
+    assert.deepEqual([...origins], [new URL(url).origin], `Unexpected external resources: ${externalRequests.join(', ')}`);
+    result = { result: 'PASS', checks: ['parallel applied research', 'one-time partnership persists offline', 'staff allocation and training', 'agency on small landscape', '3D startup', 'small landscape and whole research map', 'city stage growth', 'live investment comparison and small-screen close', 'read-only eight-hour forecast and small-screen close', 'equipment reorder', 'paid iteration preserved', 'reload keeps order', 'research tree/manufacture/transport/district habitation', 'multi-tab lock', 'reward persistence', 'offline cold reload', 'no external resource hosts'], origins: [...origins] };
   } catch (error) {
     if (page) {
       await page.screenshot({ path: path.join(output, 'web-failure.png') }).catch(() => {});

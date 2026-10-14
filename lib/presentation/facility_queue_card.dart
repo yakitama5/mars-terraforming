@@ -56,7 +56,7 @@ class FacilityQueueCard extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      '$status · 基本維持費 ${enabled ? facility.upkeepPerMinute : 0} Cr/分',
+                      '$status · 基本維持費 ${dollars(enabled ? facility.upkeepPerMinute : 0)}/分',
                       style: TextStyle(
                         color: enabled ? _mint : _copper,
                         fontSize: 11,

@@ -81,6 +81,112 @@ void main() {
     );
   });
 
+  test('both partnership strategies keep meaningful first-hour decisions within six minutes', () {
+    for (final choice in ['funding', 'technology']) {
+      final route = runParallelStrategyVerification(partnershipChoice: choice);
+      expect(route.state.simulatedMs, const Duration(hours: 1).inMilliseconds);
+      expect(route.state.money, greaterThanOrEqualTo(0));
+      expect(route.maxDecisionGapMinutes, lessThanOrEqualTo(6));
+      expect(
+        route.state.research,
+        containsAll([
+          'life_support',
+          'urban_planning',
+          'process_design',
+          'cargo_packaging',
+          'habitat_operations',
+        ]),
+      );
+      expect(route.state.specialistCount, 16);
+      expect(route.state.researchers, 8);
+      expect(route.state.industrialWorkers, 8);
+      expect(route.state.districtAt('earth_delta', 0)?.level, 2);
+      expect(route.state.marsResidents, greaterThanOrEqualTo(24));
+      expect(
+        route.state.plans.where(
+          (plan) =>
+              plan.taskId == 'train_specialists' && plan.status == 'completed',
+        ),
+        hasLength(2),
+      );
+      expect(
+        route.state.plans.where(
+          (plan) => plan.taskId == 'district_mars_habitat',
+        ),
+        hasLength(2),
+      );
+      final parallel = route.events.where(
+        (event) => event.containsKey('parallelWork'),
+      );
+      expect(parallel, isNotEmpty);
+      expect(
+        parallel.any(
+          (event) => (event['parallelWork']! as Map).containsKey('factory'),
+        ),
+        isTrue,
+      );
+      expect(
+        parallel.any(
+          (event) => (event['parallelWork']! as Map).containsKey('mars'),
+        ),
+        isTrue,
+      );
+      expect(
+        route.events
+            .where((event) => event['kind'] == 'completion')
+            .any((event) => '${event['step']}'.contains('contract')),
+        isFalse,
+      );
+    }
+  });
+
+  test('cash and technology choices retain different benefits without disguising unfinished work', () {
+    final funding = runParallelStrategyVerification();
+    final technology = runParallelStrategyVerification(
+      partnershipChoice: 'technology',
+    );
+    expect(funding.state.money, greaterThan(technology.state.money));
+    expect(funding.state.districtAt('earth_delta', 8)?.districtId, 'industry');
+    expect(technology.state.districtAt('earth_delta', 8), isNull);
+    expect(
+      technology.state.plans
+          .singleWhere((plan) => plan.taskId == 'district_industry')
+          .status,
+      'running',
+    );
+    expect(
+      technology.state.researchBonusPercent,
+      greaterThan(funding.state.researchBonusPercent),
+    );
+    expect(
+      technology.state.launchBonusPercent,
+      greaterThan(funding.state.launchBonusPercent),
+    );
+    expect(funding.state.partnershipChoices.values, everyElement('funding'));
+    expect(
+      technology.state.partnershipChoices.values,
+      everyElement('technology'),
+    );
+    expect(funding.state.partnershipChoices, hasLength(3));
+    expect(technology.state.partnershipChoices, hasLength(2));
+  });
+
+  test('decision opportunities and actual development completions are reported separately', () {
+    final report = runParallelStrategyComparison();
+    final routes = report['routes']! as Map<String, Object>;
+    final technology = routes['technology']! as Map<String, Object>;
+    expect(
+      technology['maxMeaningfulCompletionGapMinutes'],
+      greaterThan(technology['maxDecisionGapMinutes']! as num),
+    );
+    expect(technology['unfinishedDevelopment'], isNotEmpty);
+    expect(report['measurement'], contains('no state is injected'));
+    expect(
+      report['measurement'],
+      contains('do not isolate partnership effects'),
+    );
+  });
+
   final report = runInvestmentVerification();
   final scenarios = (report['scenarios']! as List<Map<String, Object>>);
   Map<String, Object> scenario(String name) =>

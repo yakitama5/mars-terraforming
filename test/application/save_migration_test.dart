@@ -233,4 +233,96 @@ void main() {
       },
     );
   }
+  // Actual pre-agency world: both departments have already paid for work.
+  final fourthLegacy = jsonDecode(
+    File('test/fixtures/district_v4.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
+  final fourthEpoch = DateTime.fromMillisecondsSinceEpoch(
+    fourthLegacy['lastWallClockMs'] as int,
+    isUtc: true,
+  );
+  for (final native in [true, false]) {
+    test(
+      '${native ? 'file' : 'browser'} district-4 assigns baseline staff without changing paid work',
+      () async {
+        final directory = await Directory.systemTemp.createTemp(
+          'mars-agency-migration-',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final storage = <String, String>{};
+        SaveRepository reopen() => native
+            ? FileSaveStore(directory)
+            : KeyValueSaveStore(
+                read: (key) => storage[key],
+                write: (key, value) => storage[key] = value,
+              );
+        await reopen().save(fourthLegacy);
+        final controller = GameController(reopen(), now: () => fourthEpoch);
+        await controller.initialize(startTimer: false);
+        addTearDown(controller.dispose);
+        expect(controller.error, isNull);
+        expect(controller.state.moneyUnits, fourthLegacy['moneyUnits']);
+        expect(controller.state.specialistCount, 12);
+        expect(controller.state.researchers, 6);
+        expect(controller.state.industrialWorkers, 6);
+        expect(controller.state.reservedResearchers, 6);
+        expect(controller.state.reservedIndustrialWorkers, 6);
+        expect(controller.state.partnershipChoices, isEmpty);
+        expect(
+          controller.state.currentPlanFor('lab')!.iterationDurationMs,
+          120000,
+        );
+        expect(controller.state.currentPlanFor('lab')!.remainingMs, 90000);
+        expect(
+          controller.state.currentPlanFor('factory')!.iterationDurationMs,
+          90000,
+        );
+        expect(controller.state.currentPlanFor('factory')!.remainingMs, 60000);
+        final original = controller.state.toJson();
+        await controller.command((game) => game.assignResearchers(8));
+        expect(controller.state.toJson(), original);
+        await controller.command((game) {
+          game.advanceBy(const Duration(seconds: 90));
+          return null;
+        });
+        expect(controller.state.reservedResearchers, 0);
+        expect(controller.state.reservedIndustrialWorkers, 6);
+        expect(controller.state.research, contains('life_support'));
+        await controller.command((game) => game.assignResearchers(4));
+        expect(controller.state.researchers, 4);
+        expect(controller.state.industrialWorkers, 8);
+        expect(
+          controller.state.currentPlanFor('factory')!.iterationSpecialists,
+          6,
+        );
+        expect(
+          controller.state.currentPlanFor('factory')!.iterationDurationMs,
+          90000,
+        );
+        final before = controller.state.toJson();
+        final resumed = GameController(reopen(), now: () => fourthEpoch);
+        addTearDown(resumed.dispose);
+        await resumed.initialize(startTimer: false);
+        expect(resumed.state.toJson(), before);
+        expect(resumed.state.partnershipChoices, isEmpty);
+        await resumed.command((game) {
+          game.advanceBy(const Duration(seconds: 60));
+          return null;
+        });
+        expect(
+          resumed.state.currentPlanFor('factory')!.iterationSpecialists,
+          8,
+        );
+        expect(
+          resumed.state.currentPlanFor('factory')!.iterationDurationMs,
+          lessThan(90000),
+        );
+        final next = resumed.state.toJson();
+        final again = GameController(reopen(), now: () => fourthEpoch);
+        addTearDown(again.dispose);
+        await again.initialize(startTimer: false);
+        expect(again.state.toJson(), next);
+      },
+    );
+  }
 }

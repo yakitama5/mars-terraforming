@@ -35,14 +35,24 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     }, key);
     const main = await page(base);
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
+    await main.getByRole('button', { name: '機関運営', exact: true }).click();
+    await main.getByRole('button', { name: '研究者を1人増やす', exact: true }).click();
+    await main.getByRole('button', { name: '人員配分を確定', exact: true }).click();
+    await main.waitForTimeout(300);
     const mainBefore = await snapshot(main, mainKey);
+    assert.equal(mainBefore.contentVersion, 'district-5');
+    assert.equal(mainBefore.researchers, 7);
+    assert.equal(mainBefore.specialistCount, 12);
     const firstCaches = await main.evaluate(() => caches.keys());
     const mainPrefix = `mars-terraforming:${encodeURIComponent(new URL(base).pathname)}:`;
     assert.ok(firstCaches.some(key => key.startsWith(mainPrefix)));
     const developUrl = new URL('develop/', base).href;
     const develop = await page(developUrl);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
+    await develop.getByRole('button', { name: '機関運営', exact: true }).click();
     const devBefore = await snapshot(develop, developKey);
+    assert.equal(devBefore.contentVersion, 'district-5');
+    assert.equal(devBefore.researchers, 6);
     assert.notEqual(mainBefore.worldId, devBefore.worldId);
     await develop.getByRole('button', { name: '開発 +5分' }).click();
     await develop.waitForTimeout(300);
@@ -71,12 +81,19 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     await ready(develop);
     assert.equal((await snapshot(develop, developKey)).worldId, devBefore.worldId);
     assert.ok((await snapshot(develop, developKey)).simulatedMs >= devAfter.simulatedMs);
+    assert.equal((await snapshot(main, mainKey)).researchers, 7);
+    assert.equal((await snapshot(develop, developKey)).researchers, 6);
+    for (const target of [main, develop]) {
+      await target.getByRole('button', { name: '機関運営', exact: true }).click();
+      await target.getByRole('button', { name: '提携・支援', exact: true }).click();
+      await target.getByRole('button', { name: '人員配分', exact: true }).click();
+    }
     await main.getByRole('button', { name: '設備・進行' }).click();
     await develop.getByRole('button', { name: '設備・進行' }).click();
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
     assert.deepEqual(errors, []);
-    result = { result: 'PASS', main: base, develop: developUrl, checks: ['separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
+    result = { result: 'PASS', main: base, develop: developUrl, checks: ['district-5 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
   } finally {
     try {
       // Restore networking and close the context before waiting for browser exit.

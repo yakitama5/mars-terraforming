@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'game_content.dart';
 import 'district_state.dart';
 export 'district_state.dart';
+export 'agency_state.dart';
 
 class PlannedTask {
   PlannedTask({
@@ -21,6 +22,9 @@ class PlannedTask {
 
   /// Frozen when an iteration pays, including legacy iterations on migration.
   int iterationDurationMs = 0;
+
+  /// Staff remain committed until this paid iteration completes, even paused.
+  int iterationSpecialists = 0;
 
   /// Null means an explicitly selected unlimited repeat. Zero means finished.
   int? remainingRepeats;
@@ -58,6 +62,7 @@ class PlannedTask {
     'stopReason': stopReason,
     'remainingMs': remainingMs,
     'iterationDurationMs': iterationDurationMs,
+    'iterationSpecialists': iterationSpecialists,
     'cityId': cityId,
     'plotIndex': plotIndex,
     'targetLevel': targetLevel,
@@ -82,6 +87,12 @@ class PlannedTask {
     plan.iterationDurationMs =
         json['iterationDurationMs'] as int? ??
         (plan.status == 'running' ? plan.definition.durationMs : 0);
+    plan.iterationSpecialists =
+        json['iterationSpecialists'] as int? ??
+        (plan.status == 'running' &&
+                ['lab', 'factory'].contains(plan.definition.facilityId)
+            ? GameContent.baselineDepartmentStaff
+            : 0);
     if (![
           'queued',
           'running',
@@ -91,6 +102,10 @@ class PlannedTask {
         plan.completedRuns < 0 ||
         plan.remainingMs < 0 ||
         plan.iterationDurationMs < 0 ||
+        plan.iterationSpecialists < 0 ||
+        plan.iterationSpecialists > GameContent.maxSpecialists ||
+        (!['lab', 'factory'].contains(plan.definition.facilityId) &&
+            plan.iterationSpecialists != 0) ||
         (plan.status == 'running' &&
             plan.remainingMs > plan.iterationDurationMs) ||
         (plan.remainingRepeats != null && plan.remainingRepeats! < 0) ||
@@ -148,6 +163,14 @@ class GameState {
   int marsHabitats = 0;
   int marsResidents = 0;
   String? habitatChoice;
+  int specialistCount = GameContent.initialSpecialists;
+  int researchers = GameContent.baselineDepartmentStaff;
+  final Map<String, String> partnershipChoices = {};
+  int get industrialWorkers => specialistCount - researchers;
+  int get reservedResearchers =>
+      currentPlanFor('lab')?.iterationSpecialists ?? 0;
+  int get reservedIndustrialWorkers =>
+      currentPlanFor('factory')?.iterationSpecialists ?? 0;
   int nextPlanId = 1;
   int contractRevenue = 0;
   final Set<String> research = {};
@@ -167,6 +190,117 @@ class GameState {
     state.log.add('地球の小さな拠点から、火星開発を始めましょう。');
     return state;
   }
+  String? staffAllocationReason(int count) {
+    if (count < 0 || count > specialistCount) return '専門職の総数内で配分してください';
+    if (count < reservedResearchers) {
+      return '支払済みの研究に$reservedResearchers名を確保中です。完了まで減らせません';
+    }
+    if (specialistCount - count < reservedIndustrialWorkers) {
+      return '支払済みの製造・建設に$reservedIndustrialWorkers名を確保中です。完了まで減らせません';
+    }
+    return null;
+  }
+
+  int staffEfficiencyBonusFor(String facilityId, int researchCount) {
+    if (researchCount < 0 || researchCount > specialistCount) {
+      throw ArgumentError.value(researchCount, 'researchCount');
+    }
+    final assigned = switch (facilityId) {
+      'lab' => researchCount,
+      'factory' => specialistCount - researchCount,
+      _ => GameContent.baselineDepartmentStaff,
+    };
+    return (assigned - GameContent.baselineDepartmentStaff) *
+        GameContent.staffEfficiencyPerPerson;
+  }
+
+  int staffEfficiencyBonus(String facilityId) =>
+      staffEfficiencyBonusFor(facilityId, researchers);
+  Iterable<PartnershipChoice> get chosenPartnerships sync* {
+    for (final entry in partnershipChoices.entries) {
+      yield GameContent.partnerships[entry.key]!.choices.firstWhere(
+        (c) => c.id == entry.value,
+      );
+    }
+  }
+
+  int partnershipEfficiencyBonus(String facilityId) => chosenPartnerships.fold(
+    0,
+    (sum, choice) => sum + (choice.efficiencyBonuses[facilityId] ?? 0),
+  );
+  AgencyStatus get agencyStatus {
+    final levels = districts.values.fold(0, (sum, d) => sum + d.level);
+    final marsLevels = districts.values
+        .where((d) => GameContent.cities[d.cityId]!.planet == 'mars')
+        .fold(0, (sum, d) => sum + d.level);
+    final spaceResearch = research
+        .where(
+          (id) =>
+              ['輸送', '居住・現地生産'].contains(GameContent.tasks[id]?.researchBranch),
+        )
+        .length;
+    return AgencyStatus(
+      fame: math.min(
+        100,
+        research.length * 4 +
+            districts.length * 2 +
+            achievements.length * 8 +
+            partnershipChoices.length * 3,
+      ),
+      technology: math.min(100, research.length * 6 + levels),
+      friendship: math.min(
+        100,
+        10 + chosenPartnerships.fold(0, (sum, c) => sum + c.friendship),
+      ),
+      spaceContribution: math.min(
+        100,
+        spaceResearch * 3 +
+            achievements.length * 8 +
+            marsLevels * 2 +
+            chosenPartnerships.fold(0, (sum, c) => sum + c.spaceContribution),
+      ),
+    );
+  }
+
+  String? partnershipLockReason(String id) {
+    final event = GameContent.partnerships[id];
+    if (event == null) return '未対応の提携です';
+    if (partnershipChoices.containsKey(id) ||
+        claimedRewards.contains('$worldId:partnership:$id')) {
+      return 'この提案は選択済みです';
+    }
+    if (event.requiredResearch != null &&
+        !research.contains(event.requiredResearch)) {
+      return '必要研究：${GameContent.tasks[event.requiredResearch]!.name}';
+    }
+    if (districts.length < event.minimumDistricts) {
+      return '完成地区 ${districts.length}/${event.minimumDistricts}区画';
+    }
+    if (event.requiredDistrict != null &&
+        districtCount(event.requiredDistrict!) == 0) {
+      return '必要な実証：${GameContent.districts[event.requiredDistrict]!.name}1区画';
+    }
+    if (event.requiredAchievement != null &&
+        !achievements.contains(event.requiredAchievement)) {
+      return '必要実績：${GameContent.achievementNames[event.requiredAchievement]}';
+    }
+    final status = agencyStatus;
+    for (final (label, current, required) in [
+      ('知名度', status.fame, event.minimumFame),
+      ('技術力', status.technology, event.minimumTechnology),
+      ('友好度', status.friendship, event.minimumFriendship),
+      ('宇宙支援貢献', status.spaceContribution, event.minimumSpaceContribution),
+    ]) {
+      if (current < required) return '$label $current/$required';
+    }
+    return null;
+  }
+
+  List<PartnershipDefinition> get availablePartnerships => [
+    for (final event in GameContent.partnerships.values)
+      if (partnershipLockReason(event.id) == null) event,
+  ];
+
   DistrictState? districtAt(String cityId, int plotIndex) =>
       districts['$cityId:$plotIndex'];
   PlannedTask? districtPlanAt(String cityId, int plotIndex) {
@@ -250,7 +384,10 @@ class GameState {
   );
   int _cappedEfficiency(String facilityId, int raw) => math.min(
     facilityBonusCap(facilityId),
-    raw + researchEfficiencyBonus(facilityId),
+    raw +
+        researchEfficiencyBonus(facilityId) +
+        staffEfficiencyBonus(facilityId) +
+        partnershipEfficiencyBonus(facilityId),
   );
   int get researchBonusPercent =>
       _cappedEfficiency('lab', districtEffects.research);
@@ -601,6 +738,9 @@ class GameState {
     'marsHabitats': marsHabitats,
     'marsResidents': marsResidents,
     'habitatChoice': habitatChoice,
+    'specialistCount': specialistCount,
+    'researchers': researchers,
+    'partnershipChoices': Map<String, String>.of(partnershipChoices),
     'nextPlanId': nextPlanId,
     'contractRevenue': contractRevenue,
     'research': research.toList(),
@@ -619,6 +759,7 @@ class GameState {
         json['schemaVersion'] == schemaVersion &&
         [
           GameContent.version,
+          'district-4',
           'district-3',
           'district-2',
         ].contains(json['contentVersion']);
@@ -637,6 +778,14 @@ class GameState {
     state.marsHabitats = json['marsHabitats'] as int;
     state.marsResidents = json['marsResidents'] as int;
     state.habitatChoice = json['habitatChoice'] as String?;
+    final currentAgency = json['contentVersion'] == GameContent.version;
+    if (currentAgency) {
+      state.specialistCount = json['specialistCount'] as int;
+      state.researchers = json['researchers'] as int;
+      state.partnershipChoices.addAll(
+        Map<String, String>.from(json['partnershipChoices'] as Map),
+      );
+    }
     state.nextPlanId = json['nextPlanId'] as int;
     state.contractRevenue = json['contractRevenue'] as int;
     state.research.addAll((json['research'] as List).cast<String>());
@@ -666,6 +815,24 @@ class GameState {
           throw const FormatException('同じ区画に地区が重複しています');
         }
         state.districts[district.key] = district;
+      }
+    }
+    if (state.specialistCount < GameContent.initialSpecialists ||
+        state.specialistCount > GameContent.maxSpecialists ||
+        state.researchers < 0 ||
+        state.researchers > state.specialistCount ||
+        state.researchers < state.reservedResearchers ||
+        state.industrialWorkers < state.reservedIndustrialWorkers) {
+      throw const FormatException('専門職の配分・確保人数が不正です');
+    }
+    for (final entry in state.partnershipChoices.entries) {
+      final event = GameContent.partnerships[entry.key];
+      if (event == null ||
+          !event.choices.any((choice) => choice.id == entry.value) ||
+          !state.claimedRewards.contains(
+            '${state.worldId}:partnership:${entry.key}',
+          )) {
+        throw const FormatException('提携の選択・受領記録が不正です');
       }
     }
     final targets = <String>{};

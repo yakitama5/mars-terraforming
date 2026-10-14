@@ -7,6 +7,8 @@ import '../domain/game_content.dart';
 import '../domain/game_state.dart';
 import '../rendering/base_scene.dart';
 import 'city_development.dart';
+import 'agency_management.dart';
+import 'early_development_guide.dart';
 import 'facility_queue_card.dart';
 import 'investment_comparison.dart';
 import 'plan_forecast_dialog.dart';
@@ -25,6 +27,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool earth = true;
   int tab = 0;
   int facilityTab = 0;
+  int agencySection = 0;
   String cityId = 'earth_delta';
   String researchId = 'life_support';
   InvestmentCandidate? savedInvestment;
@@ -105,7 +108,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     ),
                     detail: _researchDetails(),
                   ),
-                  _ => _facilities(),
+                  3 => _facilities(),
+                  _ => AgencyManagement(
+                    controller: controller,
+                    section: agencySection,
+                    onSectionChanged: (section) =>
+                        setState(() => agencySection = section),
+                    onOpenOperations: () => setState(() {
+                      facilityTab = 0;
+                      tab = 3;
+                    }),
+                  ),
                 },
               ),
               _footer(),
@@ -139,9 +152,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(width: 24),
             Text(
-              '${game.money} Cr',
+              dollars(game.money),
               key: const Key('money'),
-              semanticsLabel: '資金 ${game.money} クレジット',
+              semanticsLabel: '資金 ${dollars(game.money)}',
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
@@ -152,8 +165,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             Expanded(
               child: Text(
                 wide
-                    ? '税収 +${game.taxPerMinute}  −  維持費 ${game.upkeepPerMinute}  =  ${signedNumber(game.netPerMinute)} Cr/分'
-                    : '収支 ${signedNumber(game.netPerMinute)} Cr/分',
+                    ? '税収 ${dollars(game.taxPerMinute)} − 維持費 ${dollars(game.upkeepPerMinute)} = ${signedDollars(game.netPerMinute)}/分'
+                    : '収支 ${signedDollars(game.netPerMinute)}/分',
                 style: TextStyle(
                   color: game.netPerMinute < 0 ? strategyCopper : strategyMuted,
                   fontSize: 12,
@@ -209,6 +222,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           (Icons.location_city_outlined, '都市開発'),
           (Icons.account_tree_outlined, '研究ツリー'),
           (Icons.view_timeline_outlined, '設備・進行'),
+          (Icons.groups_outlined, '機関運営'),
         ].indexed)
           Expanded(
             child: Padding(
@@ -377,7 +391,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     ),
                     _tag(
                       earth
-                          ? '税収 ${game.taxPerMinute} Cr/分'
+                          ? '税収 ${dollars(game.taxPerMinute)}/分'
                           : '居住施設 ${game.marsHabitats}',
                     ),
                   ],
@@ -514,100 +528,34 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _nextGoal() {
-    final (
-      title,
-      description,
-      destination,
-    ) = !game.research.contains('life_support')
-        ? ('生命維持を実証する', '最初の研究で居住キットの製造を解放。', 2)
-        : !game.achievements.contains('first_landing')
-        ? ('火星へ最初の設備を届ける', '工場で製造し、宇宙港から輸送します。', 3)
-        : game.habitatChoice == null
-        ? ('火星の居住方式を選ぶ', 'ドームか地下居住か。建設前の方針を決めます。', 3)
-        : game.marsHabitats == 0
-        ? ('最初の居住区を配置する', '火星の都市で区画を選び、居住先を建設します。', 1)
-        : ('都市の能力を高める', '地形と隣接を活かし、次の研究と開発を支えます。', 1);
-    void openPlan() => setState(() {
-      tab = destination;
-      if (destination == 3) facilityTab = 2;
-      if (destination == 1 && game.marsHabitats == 0) {
-        cityId = 'mars_arcadia';
-        earth = false;
-      }
-    });
-    if (_compactLandscape) {
-      return TextButton(
-        key: const Key('next-goal'),
-        onPressed: openPlan,
-        style: TextButton.styleFrom(
-          foregroundColor: strategyMint,
-          backgroundColor: const Color(0xff203d40),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('次の目標', style: TextStyle(fontSize: 10)),
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.arrow_forward, size: 18),
-          ],
-        ),
-      );
-    }
-    return StrategyCard(
-      selected: true,
-      padding: const EdgeInsets.all(13),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '次の目標',
-            style: TextStyle(
-              color: strategyMint,
-              fontSize: 11,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            description,
-            style: const TextStyle(fontSize: 12, color: strategyMuted),
-          ),
-          const SizedBox(height: 4),
-          TextButton(
-            key: const Key('next-goal'),
-            onPressed: openPlan,
-            child: const Text('計画を確認する →'),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _nextGoal() => EarlyDevelopmentGuide(
+    controller: controller,
+    compact: _compactLandscape,
+    onResearch: (id) => setState(() {
+      researchId = id;
+      tab = 2;
+    }),
+    onCity: (id) => setState(() {
+      cityId = id;
+      earth = GameContent.cities[id]!.planet == 'earth';
+      tab = 1;
+    }),
+    onOperations: (section) => setState(() {
+      facilityTab = section;
+      tab = 3;
+    }),
+    onAgency: (section) => setState(() {
+      agencySection = section;
+      tab = 4;
+    }),
+  );
 
   Widget _researchDetails() {
     final task = GameContent.tasks[researchId]!;
     final requirements = controller.engine!.researchRequirements(task.id);
+    final activePlan = game.plans
+        .where((plan) => plan.taskId == task.id && !plan.isFinished)
+        .firstOrNull;
     final status = researchStatus(
       game,
       task,
@@ -643,10 +591,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    StrategyFact('研究費', '${task.cost} Cr'),
+                    StrategyFact('研究費', dollars(task.cost)),
                     StrategyFact(
-                      '研究期間',
-                      gameDuration(game.currentTaskDurationMs(task.id)),
+                      activePlan?.status == 'running' ? '残り時間' : '研究期間',
+                      gameDuration(
+                        activePlan?.status == 'running'
+                            ? activePlan!.remainingMs
+                            : game.currentTaskDurationMs(task.id),
+                      ),
                     ),
                     StrategyFact(
                       '使用設備',
@@ -654,12 +606,32 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     ),
                     StrategyFact(
                       '研究効率',
-                      '+${game.researchBonusPercent}% / 上限 ${game.facilityBonusCap('lab')}%',
+                      '${signedNumber(game.researchBonusPercent)}% / 上限 ${game.facilityBonusCap('lab')}%',
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                key: const Key('research-parallel-city'),
+                onPressed: () => setState(() {
+                  cityId = 'earth_delta';
+                  earth = true;
+                  tab = 1;
+                }),
+                icon: const Icon(Icons.location_city_outlined, size: 17),
+                label: const Text('研究と並行して地球の地区を計画'),
+              ),
+              TextButton.icon(
+                key: const Key('research-agency'),
+                onPressed: () => setState(() {
+                  agencySection = 0;
+                  tab = 4;
+                }),
+                icon: const Icon(Icons.groups_outlined, size: 17),
+                label: const Text('研究者の配分・提携支援を確認'),
+              ),
+              const SizedBox(height: 8),
               const Text(
                 '必要な研究・実証条件',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
@@ -919,7 +891,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               spacing: 22,
               runSpacing: 10,
               children: [
-                StrategyStat('開始費用', '${task.cost} Cr'),
+                StrategyStat('開始費用', dollars(task.cost)),
                 StrategyStat(
                   '1回の所要時間',
                   gameDuration(game.currentTaskDurationMs(id)),
@@ -927,7 +899,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 if (task.reward > 0)
                   StrategyStat(
                     '完成時の受取',
-                    '${task.reward} Cr',
+                    dollars(task.reward),
                     color: strategyCopper,
                   ),
                 if (task.outputResource != null)
@@ -976,7 +948,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: Text(
-                '${task.name}\n1回 ${task.cost} Cr · ${gameDuration(game.currentTaskDurationMs(id))}',
+                '${task.name}\n1回 ${dollars(task.cost)} · ${gameDuration(game.currentTaskDurationMs(id))}',
                 style: const TextStyle(color: strategyMuted, fontSize: 13),
               ),
             ),
@@ -1082,7 +1054,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     for (final entry in game.log.reversed)
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text('· $entry', style: const TextStyle(fontSize: 13)),
+        child: Text(
+          '· ${legacyCurrencyLabel(entry)}',
+          style: const TextStyle(fontSize: 13),
+        ),
       ),
   ];
 

@@ -18,6 +18,7 @@ void main() {
         'onboardingBaseline': runOnboardingVerification(parallelCargo: false)
             .toJson(),
         'earlyInvestments': runEarlyInvestmentVerification(),
+        'parallelStrategy': runParallelStrategyComparison(),
       }),
     );
   } catch (error) {
@@ -145,6 +146,13 @@ ProgressionVerification runProgressionVerification() {
   command(game.enqueue('launch_contract', repeats: null));
   research('life_support');
   research('urban_planning');
+  for (final id in [
+    'process_design',
+    'cargo_packaging',
+    'habitat_operations',
+  ]) {
+    research(id);
+  }
   district('earth_highland', 0, 'campus');
   district('earth_highland', 1, 'solar');
   district('earth_highland', 3, 'industry');
@@ -558,6 +566,394 @@ Map<String, Object> runEarlyInvestmentVerification() {
           'Earlier housing produces revenue and research adjacency sooner; '
           'earlier industry produces factory efficiency and its research demonstration sooner. '
           'No route is declared globally optimal.',
+    },
+  };
+}
+
+/// React to actual research, construction, training and milestone completions.
+/// External contracts fund the route but their automatic repeats are never
+/// recorded as player decisions or meaningful development completions.
+OnboardingVerification runParallelStrategyVerification({
+  String partnershipChoice = 'funding',
+}) {
+  if (!['funding', 'technology'].contains(partnershipChoice)) {
+    throw ArgumentError.value(partnershipChoice, 'partnershipChoice');
+  }
+  final technologyPath = partnershipChoice == 'technology';
+  final game = GameEngine(GameState.initial(DateTime.utc(2026, 10, 14)));
+  final events = <Map<String, Object>>[];
+  final projects = <String, PlannedTask>{};
+  final reported = <String>{};
+  const horizon = Duration(hours: 1);
+  var shiftedIdleResearchers = false;
+  var allocatedFirstCohort = false;
+  var allocatedSecondCohort = false;
+
+  void record(String kind, String step) {
+    final lab = game.state.currentPlanFor('lab');
+    final factory = game.state.currentPlanFor('factory');
+    final mars = game.state.currentPlanFor('mars');
+    events.add({
+      'kind': kind,
+      'step': step,
+      'elapsedMinutes': game.state.simulatedMs / Duration.millisecondsPerMinute,
+      'money': game.state.money,
+      'researchers': game.state.researchers,
+      'industrialWorkers': game.state.industrialWorkers,
+      'completedDistricts': game.state.districts.length,
+      if (lab != null &&
+          (factory?.definition.districtId != null ||
+              mars?.definition.districtId != null))
+        'parallelWork': {
+          'lab': lab.taskId,
+          if (factory?.definition.districtId != null)
+            'factory': factory!.taskId,
+          if (mars?.definition.districtId != null) 'mars': mars!.taskId,
+        },
+    });
+  }
+
+  void command(String? error, String step) {
+    if (error != null) throw StateError('$step: $error');
+    record('decision', step);
+  }
+
+  void prioritize(PlannedTask plan) {
+    final others = game.state
+        .upcomingPlansFor(plan.definition.facilityId)
+        .where((other) => other.id != plan.id)
+        .toList();
+    if (others.isNotEmpty) {
+      command(
+        game.reorderPlan(
+          plan.id,
+          relativeToPlanId: others.first.id,
+          before: true,
+        ),
+        'Prioritize ${plan.taskId} over future work',
+      );
+    }
+  }
+
+  void track(String key, String? error, String action, {bool first = false}) {
+    command(error, action);
+    final plan = game.state.plans.last;
+    projects[key] = plan;
+    if (first) prioritize(plan);
+  }
+
+  bool done(String key) => projects[key]?.status == 'completed';
+  bool booked(String key) => projects.containsKey(key);
+  void task(String key, String id, {bool first = false}) =>
+      track(key, game.enqueue(id), 'Reserve $id', first: first);
+  void district(String key, String city, int plot, String type) => track(
+    key,
+    game.enqueueDistrict(city, plot, type),
+    'Develop $city:$plot:$type',
+    first: true,
+  );
+  void moveResearchers(int count, String reason) {
+    if (game.state.researchers != count) {
+      command(game.assignResearchers(count), reason);
+    }
+  }
+
+  command(
+    game.enqueue('factory_contract', repeats: null),
+    'Fund development with the factory',
+  );
+  command(
+    game.enqueue('launch_contract', repeats: null),
+    'Fund development with launch services',
+  );
+  task('Life support', 'life_support');
+  district('First coastal housing', 'earth_delta', 0, 'housing');
+
+  var iterations = 0;
+  while (game.state.simulatedMs < horizon.inMilliseconds) {
+    if (++iterations > 5000) {
+      throw StateError('Parallel strategy did not converge');
+    }
+    for (final project in projects.entries.toList()) {
+      if (done(project.key) && reported.add(project.key)) {
+        record('completion', project.key);
+      }
+    }
+    for (final offer in game.state.availablePartnerships.toList()) {
+      command(
+        game.choosePartnership(offer.id, partnershipChoice),
+        'Choose $partnershipChoice for ${offer.id}',
+      );
+    }
+    if (done('Life support') &&
+        !booked('Urban planning') &&
+        game.state.money >= GameContent.tasks['urban_planning']!.cost + 200) {
+      task('Urban planning', 'urban_planning');
+    }
+    if (done('First coastal housing') && !booked('Second coastal housing')) {
+      district('Second coastal housing', 'earth_delta', 5, 'housing');
+    }
+    if (done('Urban planning') && !booked('Campus adjoining both houses')) {
+      district('Campus adjoining both houses', 'earth_delta', 1, 'campus');
+      task('First habitat kit', 'habitat_kit', first: true);
+    }
+    if (done('First habitat kit') && !booked('First Mars delivery')) {
+      task('First Mars delivery', 'mars_delivery', first: true);
+    }
+    if (done('First Mars delivery') && !booked('First Mars settlement')) {
+      command(game.chooseHabitat('dome'), 'Choose dome habitation on plains');
+      district('First Mars settlement', 'mars_arcadia', 2, 'mars_habitat');
+    }
+    if (projects['First Mars settlement']?.status == 'running' &&
+        !shiftedIdleResearchers &&
+        game.state.currentPlanFor('lab') == null) {
+      // The factory retains all staff already committed to its paid work.
+      // Move only idle researchers to prepare the following construction.
+      moveResearchers(
+        4,
+        'Assign two idle researchers to upcoming construction',
+      );
+      shiftedIdleResearchers = true;
+    }
+    if (done('Campus adjoining both houses') &&
+        !booked('Power supports the campus')) {
+      district('Power supports the campus', 'earth_delta', 2, 'solar');
+    }
+    // Funding permits industry first; technology partnerships make early
+    // housing revenue valuable. Do not block the factory's income behind an
+    // unaffordable industry reservation in the cash-constrained route.
+    if ((technologyPath
+            ? done('Original coastal housing upgraded') &&
+                  game.state.money >=
+                      game.state
+                          .districtPreview('earth_delta', 8, 'industry')
+                          .cost
+            : done('Power supports the campus')) &&
+        !booked('Mineral industry demonstration')) {
+      district('Mineral industry demonstration', 'earth_delta', 8, 'industry');
+    }
+    if ((technologyPath
+            ? done('Power supports the campus')
+            : done('Mineral industry demonstration')) &&
+        !booked('Original coastal housing upgraded')) {
+      track(
+        'Original coastal housing upgraded',
+        game.upgradeDistrict('earth_delta', 0),
+        'Upgrade coastal housing while extending the Mars supply line',
+        first: true,
+      );
+      task('Second habitat kit', 'habitat_kit', first: true);
+    }
+    if (done('Second habitat kit') && !booked('Second Mars delivery')) {
+      task('Second Mars delivery', 'mars_delivery', first: true);
+    }
+    if (done('Second Mars delivery') && !booked('Second Mars settlement')) {
+      district('Second Mars settlement', 'mars_arcadia', 3, 'mars_habitat');
+    }
+
+    if (done('First specialist cohort') && !allocatedFirstCohort) {
+      final reason = game.state.staffAllocationReason(6);
+      if (reason == null) {
+        moveResearchers(
+          6,
+          'Assign the first cohort: six researchers and eight industrial workers',
+        );
+        allocatedFirstCohort = true;
+      }
+    }
+    if (done('Second specialist cohort') && !allocatedSecondCohort) {
+      final reason = game.state.staffAllocationReason(8);
+      if (reason == null) {
+        moveResearchers(
+          8,
+          'Assign the second cohort: eight researchers and eight industrial workers',
+        );
+        allocatedSecondCohort = true;
+      }
+    }
+    if (game.state.currentPlanFor('lab') == null) {
+      if (technologyPath) {
+        // With no grants, invest in inexpensive useful research before staff.
+        // Each decision is made when work or financing actually permits it.
+        if (done('Campus adjoining both houses') &&
+            !booked('Process design') &&
+            game.state.money >=
+                GameContent.tasks['process_design']!.cost + 100) {
+          task('Process design', 'process_design');
+        } else if (done('Process design') &&
+            !booked('Cargo packaging') &&
+            game.state.money >=
+                GameContent.tasks['cargo_packaging']!.cost + 100) {
+          task('Cargo packaging', 'cargo_packaging');
+        } else if (done('Cargo packaging') &&
+            !booked('First specialist cohort') &&
+            game.state.money >=
+                GameContent.tasks['train_specialists']!.cost + 100) {
+          task('First specialist cohort', 'train_specialists');
+        } else if (allocatedFirstCohort &&
+            !booked('Habitat operations') &&
+            game.state.money >=
+                GameContent.tasks['habitat_operations']!.cost + 100) {
+          task('Habitat operations', 'habitat_operations');
+        } else if (done('Habitat operations') &&
+            !booked('Second specialist cohort') &&
+            game.state.money >=
+                GameContent.tasks['train_specialists']!.cost + 100) {
+          task('Second specialist cohort', 'train_specialists');
+        } else if (allocatedSecondCohort &&
+            done('Original coastal housing upgraded') &&
+            !booked('Next transport project')) {
+          task('Next transport project', 'reusable_launch');
+        }
+      } else if (shiftedIdleResearchers &&
+          !booked('First specialist cohort') &&
+          game.state.money >=
+              GameContent.tasks['train_specialists']!.cost + 200) {
+        task('First specialist cohort', 'train_specialists');
+      } else if (done('First Mars settlement') &&
+          allocatedFirstCohort &&
+          !booked('Process design')) {
+        task('Process design', 'process_design');
+      } else if (done('Process design') && !booked('Cargo packaging')) {
+        task('Cargo packaging', 'cargo_packaging');
+      } else if (done('Cargo packaging') && !booked('Habitat operations')) {
+        task('Habitat operations', 'habitat_operations');
+      } else if (done('Habitat operations') &&
+          !booked('Second specialist cohort') &&
+          game.state.money >=
+              GameContent.tasks['train_specialists']!.cost + 200) {
+        task('Second specialist cohort', 'train_specialists');
+      } else if (allocatedSecondCohort &&
+          done('Original coastal housing upgraded') &&
+          !booked('Next transport project')) {
+        task('Next transport project', 'reusable_launch');
+      }
+    }
+    // Every wait ends at a real job completion. Contract repeats provide income
+    // but do not become decisions unless a concrete new plan is chosen there.
+    final running = game.state.plans.where(
+      (plan) =>
+          plan.status == 'running' &&
+          game.state.facilities[plan.definition.facilityId] == true,
+    );
+    if (running.isEmpty) {
+      throw StateError('Parallel strategy has no running work');
+    }
+    final step = min(
+      horizon.inMilliseconds - game.state.simulatedMs,
+      running.map((plan) => plan.remainingMs).reduce(min),
+    );
+    game.advanceBy(Duration(milliseconds: step));
+  }
+  for (final project in projects.entries) {
+    if (done(project.key) && reported.add(project.key)) {
+      record('completion', project.key);
+    }
+  }
+  record('checkpoint', '60-minute transition to reserved work');
+  if (!done('First Mars settlement') ||
+      !(technologyPath
+          ? booked('Mineral industry demonstration')
+          : done('Mineral industry demonstration')) ||
+      !done('Original coastal housing upgraded') ||
+      !done('Second specialist cohort') ||
+      !allocatedSecondCohort ||
+      !game.state.research.containsAll([
+        'process_design',
+        'cargo_packaging',
+        'habitat_operations',
+      ]) ||
+      !booked('Second Mars settlement') ||
+      game.state.partnershipChoices.length != (technologyPath ? 2 : 3)) {
+    throw StateError(
+      'Parallel strategy missed its first-hour objectives: ${jsonEncode(events)}',
+    );
+  }
+  final snapshot = jsonEncode(game.state.toJson());
+  final loaded = GameEngine(
+    GameState.fromJson(jsonDecode(snapshot) as Map<String, dynamic>),
+  );
+  if (jsonEncode(loaded.state.toJson()) != snapshot) {
+    throw StateError('Reload duplicated or lost staff, support or development');
+  }
+  final result = OnboardingVerification(game.state, events);
+  if (result.maxDecisionGapMinutes > 6) {
+    throw StateError('Parallel strategy left a decision gap over six minutes');
+  }
+  return result;
+}
+
+Map<String, Object> runParallelStrategyComparison() {
+  double completionGap(OnboardingVerification route) {
+    final times = [
+      0.0,
+      ...route.events
+          .where((event) => event['kind'] == 'completion')
+          .map((event) => event['elapsedMinutes']! as double),
+      60.0,
+    ]..sort();
+    var longest = 0.0;
+    for (var i = 1; i < times.length; i++) {
+      longest = max(longest, times[i] - times[i - 1]);
+    }
+    return longest;
+  }
+
+  final routes = {
+    for (final choice in ['funding', 'technology'])
+      choice: runParallelStrategyVerification(partnershipChoice: choice),
+  };
+  return {
+    'status': 'passed',
+    'measurement':
+        'Public commands from the initial save. Funding is earned '
+        'only by explicit milestone choices; no state is injected. Decisions '
+        'and meaningful completions exclude automatic contract repetitions. '
+        'The routes adapt their order to available funds, so outcomes do not '
+        'isolate partnership effects or prove an optimal choice. '
+        'This does not measure a person’s active play time.',
+    'district4Reference': {
+      'sourceCommit': 'f385948',
+      'maxDecisionGapMinutes': 13.54,
+    },
+    'routes': {
+      for (final route in routes.entries)
+        route.key: {
+          ...route.value.toJson(),
+          'investmentPolicy': route.key == 'funding'
+              ? 'Industry before housing upgrade; early staff training.'
+              : 'Housing upgrade before industry; inexpensive applied research '
+                    'before training; preserve external factory income until '
+                    'industry is affordable.',
+          'unfinishedDevelopment': route.value.state.plans
+              .where(
+                (plan) =>
+                    !plan.isFinished && !plan.taskId.endsWith('_contract'),
+              )
+              .map(
+                (plan) => {
+                  'task': plan.taskId,
+                  'status': plan.status,
+                  'stopReason': plan.stopReason,
+                },
+              )
+              .toList(),
+          'maxMeaningfulCompletionGapMinutes': completionGap(route.value),
+          'meaningfulCompletionCount': route.value.events
+              .where((event) => event['kind'] == 'completion')
+              .length,
+          'specialists': route.value.state.specialistCount,
+          'researchers': route.value.state.researchers,
+          'industrialWorkers': route.value.state.industrialWorkers,
+          'partnershipChoices': route.value.state.partnershipChoices,
+          'researchEfficiency': route.value.state.researchBonusPercent,
+          'factoryEfficiency': route.value.state.factoryBonusPercent,
+          'launchEfficiency': route.value.state.launchBonusPercent,
+          'marsEfficiency': route.value.state.marsBonusPercent,
+          'parallelWorkWitnesses': route.value.events
+              .where((event) => event.containsKey('parallelWork'))
+              .toList(),
+        },
     },
   };
 }
