@@ -93,7 +93,11 @@ void main() {
         final terrain = terrainFor(city);
         for (final size in [const Size(480, 260), const Size(960, 640)]) {
           for (final view in [
-            (azimuth: .18, elevation: .82, zoom: 1.14),
+            (
+              azimuth: CityMapProjection.neighborhoodAzimuth,
+              elevation: CityMapProjection.overviewElevation,
+              zoom: CityMapProjection.overviewZoom,
+            ),
             (azimuth: -.9, elevation: .85, zoom: .9),
             (azimuth: 2.2, elevation: 1.12, zoom: 1.0),
           ]) {
@@ -148,6 +152,42 @@ void main() {
       },
     );
   }
+
+  test(
+    'neighborhood view enlarges streets while every edge remains inspectable',
+    () {
+      for (final city in GameContent.cities.values) {
+        final terrain = terrainFor(city);
+        for (final size in [const Size(480, 260), const Size(960, 640)]) {
+          final neighborhood = CityMapProjection(terrain: terrain);
+          final overview = CityMapProjection(
+            terrain: terrain,
+            elevation: CityMapProjection.overviewElevation,
+            zoom: CityMapProjection.overviewZoom,
+          );
+          final closeBounds = neighborhood.polygon(12, size).getBounds();
+          final fullBounds = overview.polygon(12, size).getBounds();
+          expect(closeBounds.width, greaterThan(fullBounds.width * 1.8));
+          for (final index in [7, 8, 12, 13, 17]) {
+            final position = neighborhood.center(index, size);
+            expect(neighborhood.pickPlot(position, size), index);
+          }
+          for (var index = 0; index < city.plotCount; index++) {
+            final focus = terrain.center(index);
+            final closeup = CityMapProjection(
+              terrain: terrain,
+              zoom: CityMapProjection.maxZoom,
+              panX: focus.x,
+              panZ: focus.z,
+            );
+            final position = closeup.center(index, size);
+            expect((Offset.zero & size).contains(position), isTrue);
+            expect(closeup.pickPlot(position, size), index);
+          }
+        }
+      }
+    },
+  );
 
   test(
     'development border removes shared edges and joins into closed outlines',
