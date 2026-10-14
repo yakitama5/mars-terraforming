@@ -1,7 +1,8 @@
 # 開発・検証の引き継ぎ
 
-更新: 2026-10-14。最新はcontent district-5、序盤の並行開発と機関運営。
-最新の変更と検証は [序盤の並行開発と機関運営](agency-development.md) を参照。
+更新: 2026-10-14。最新は地形上の都市開発と指令画面。進行データはcontent district-5を維持。
+最新の変更と検証は [地形と指令UI](terrain-command-ui.md) を参照。
+序盤の数値・機関運営は [並行開発と機関運営](agency-development.md) を参照。
 前段の変更と検証は [序盤の投資と予約の見通し](early-development.md)、
 20時間の方針・投資の基礎数値は [都市投資と序盤のペース](investment-pacing.md)、
 球体・六角区画・研究ツリーの初期改善は [戦略試作の記録](strategy-prototype.md) を参照。
