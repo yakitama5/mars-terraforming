@@ -42,7 +42,7 @@ class StrategyCard extends StatelessWidget {
     super.key,
     required this.child,
     this.selected = false,
-    this.padding = const EdgeInsets.all(16),
+    this.padding = const EdgeInsets.all(12),
   });
   final Widget child;
   final bool selected;
@@ -54,7 +54,7 @@ class StrategyCard extends StatelessWidget {
     decoration: BoxDecoration(
       color: selected ? const Color(0xff203d40) : strategyPanel,
       border: Border.all(color: selected ? strategyMint : strategyLine),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(2),
     ),
     child: child,
   );
@@ -67,15 +67,15 @@ class StrategyHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.only(bottom: 10),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
-          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 3),
         Text(
           subtitle,
           style: const TextStyle(color: strategyMuted, fontSize: 12),
@@ -168,7 +168,7 @@ class StrategySplit extends StatelessWidget {
           const VerticalDivider(width: 1, color: strategyLine),
           SizedBox(
             width: constraints.maxWidth > 1100 ? 360 : 310,
-            child: detail,
+            child: ColoredBox(color: const Color(0xff102129), child: detail),
           ),
         ],
       );

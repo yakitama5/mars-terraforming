@@ -232,6 +232,8 @@ void main() {
           ),
         );
         await tester.ensureVisible(finder);
+        await tester.pumpAndSettle();
+        expect(finder.hitTestable(), findsOneWidget);
         await tester.tap(finder);
         await tester.pumpAndSettle();
       }
