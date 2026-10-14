@@ -7,6 +7,7 @@ import '../domain/game_content.dart';
 import '../domain/game_state.dart';
 import '../rendering/base_scene.dart';
 import 'city_development.dart';
+import 'command_hud.dart';
 import 'agency_management.dart';
 import 'early_development_guide.dart';
 import 'facility_queue_card.dart';
@@ -16,8 +17,14 @@ import 'research_tree.dart';
 import 'strategy_widgets.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.controller, this.sceneBuilder});
+  const GameScreen({
+    super.key,
+    required this.controller,
+    this.sceneBuilder,
+    this.renderScene = true,
+  });
   final GameController controller;
+  final bool renderScene;
   final Widget Function(bool, int, int, bool)? sceneBuilder;
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -78,7 +85,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           child: Column(
             children: [
               _header(),
-              _navigation(),
               Expanded(
                 child: switch (tab) {
                   0 => StrategySplit(
@@ -87,6 +93,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ),
                   1 => CityDevelopment(
                     controller: controller,
+                    renderScene:
+                        widget.renderScene && widget.sceneBuilder == null,
+                    onOpenGlobe: () => setState(() => tab = 0),
+                    onOpenOperations: () => setState(() {
+                      facilityTab = 0;
+                      tab = 3;
+                    }),
                     cityId: cityId,
                     onCityChanged: _selectCity,
                     savedInvestment: savedInvestment,
@@ -121,6 +134,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ),
                 },
               ),
+              _navigation(),
               _footer(),
             ],
           ),
@@ -129,94 +143,40 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     },
   );
 
-  Widget _header() => LayoutBuilder(
-    builder: (context, constraints) {
-      final wide = constraints.maxWidth >= 1050;
-      return Container(
-        padding: EdgeInsets.symmetric(horizontal: wide ? 22 : 16, vertical: 9),
-        decoration: const BoxDecoration(
-          color: Color(0xff10202a),
-          border: Border(bottom: BorderSide(color: strategyLine)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.public, color: strategyCopper, size: 25),
-            const SizedBox(width: 10),
-            Text(
-              '火星開発計画',
-              style: TextStyle(
-                fontSize: wide ? 19 : 16,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1,
-              ),
-            ),
-            const SizedBox(width: 24),
-            Text(
-              dollars(game.money),
-              key: const Key('money'),
-              semanticsLabel: '資金 ${dollars(game.money)}',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: strategyMint,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                wide
-                    ? '税収 ${dollars(game.taxPerMinute)} − 維持費 ${dollars(game.upkeepPerMinute)} = ${signedDollars(game.netPerMinute)}/分'
-                    : '収支 ${signedDollars(game.netPerMinute)}/分',
-                style: TextStyle(
-                  color: game.netPerMinute < 0 ? strategyCopper : strategyMuted,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            if (controller.devTools) ...[
-              TextButton.icon(
-                key: const Key('advance-time'),
-                onPressed: controller.busy
-                    ? null
-                    : () => controller.advanceForDevelopment(),
-                icon: const Icon(Icons.fast_forward, size: 16),
-                label: const Text('開発 +5分', style: TextStyle(fontSize: 11)),
-              ),
-              PopupMenuButton<Duration>(
-                key: const Key('development-time-menu'),
-                tooltip: '開発用の時間送り',
-                icon: const Icon(Icons.more_time, size: 20),
-                onSelected: (duration) =>
-                    controller.advanceForDevelopment(duration: duration),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
-                    value: Duration(hours: 1),
-                    child: Text('開発 +1時間'),
-                  ),
-                  PopupMenuItem(
-                    value: Duration(days: 1),
-                    child: Text('開発 +1日'),
-                  ),
-                ],
-              ),
-            ] else if (wide)
-              const Text(
-                '端末内で自動保存',
-                style: TextStyle(color: strategyMuted, fontSize: 11),
-              ),
-          ],
-        ),
-      );
-    },
+  Widget _header() => CommandHud(
+    game: game,
+    devTools: controller.devTools,
+    busy: controller.busy,
+    onAdvance: () => controller.advanceForDevelopment(),
+    onAdvanceDuration: (duration) =>
+        controller.advanceForDevelopment(duration: duration),
   );
 
   Widget _navigation() => Container(
+    key: const Key('strategy-command-dock'),
+    height: _compactLandscape ? 46 : 56,
     decoration: const BoxDecoration(
-      border: Border(bottom: BorderSide(color: strategyLine)),
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Color(0xff1c3039), Color(0xff101c24)],
+      ),
+      border: Border(top: BorderSide(color: strategyLine)),
     ),
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
     child: Row(
       children: [
+        if (MediaQuery.sizeOf(context).width >= 1100)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 22),
+            child: Text(
+              '開発指令',
+              style: TextStyle(
+                fontSize: 12,
+                color: strategyCopper,
+                letterSpacing: 3,
+              ),
+            ),
+          ),
         for (final (index, entry) in [
           (Icons.public, '惑星マップ'),
           (Icons.location_city_outlined, '都市開発'),
@@ -225,30 +185,40 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           (Icons.groups_outlined, '機関運営'),
         ].indexed)
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: TextButton.icon(
-                key: Key('navigation-$index'),
-                onPressed: () => setState(() => tab = index),
-                style: TextButton.styleFrom(
-                  foregroundColor: tab == index ? strategyMint : strategyMuted,
-                  backgroundColor: tab == index
-                      ? const Color(0xff20383d)
+            child: Semantics(
+              selected: tab == index,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: tab == index
+                      ? const Color(0xff28403f)
                       : Colors.transparent,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 11,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(7),
+                  border: Border(
+                    top: BorderSide(
+                      color: tab == index ? strategyCopper : Colors.transparent,
+                      width: 2,
+                    ),
+                    right: const BorderSide(color: strategyLine),
                   ),
                 ),
-                icon: Icon(entry.$1, size: 18),
-                label: Text(
-                  entry.$2,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+                child: SizedBox.expand(
+                  child: TextButton.icon(
+                    key: Key('navigation-$index'),
+                    onPressed: () => setState(() => tab = index),
+                    style: TextButton.styleFrom(
+                      foregroundColor: tab == index
+                          ? const Color(0xfff0d8ad)
+                          : strategyMuted,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      shape: const RoundedRectangleBorder(),
+                    ),
+                    icon: Icon(entry.$1, size: 19),
+                    label: Text(
+                      entry.$2,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -278,50 +248,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     return placed;
   }
 
-  Widget _world() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _world() => Stack(
+    key: const Key('planet-command-map'),
     children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18, 9, 18, 0),
-        child: Row(
-          children: [
-            for (final item in [('地球', true), ('火星', false)])
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  label: Text(item.$1),
-                  selected: earth == item.$2,
-                  showCheckmark: false,
-                  onSelected: (_) => setState(() {
-                    earth = item.$2;
-                    cityId = GameContent.cities.values
-                        .firstWhere(
-                          (city) => city.planet == (earth ? 'earth' : 'mars'),
-                        )
-                        .id;
-                  }),
-                ),
-              ),
-            const Spacer(),
-            const Text(
-              '全球 → 都市 → 区画',
-              style: TextStyle(fontSize: 11, color: strategyMuted),
-            ),
-          ],
-        ),
-      ),
-      Expanded(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child:
-                  widget.sceneBuilder?.call(
-                    earth,
-                    game.earthLevel,
-                    game.marsHabitats,
-                    game.marsKits > 0,
-                  ) ??
-                  BaseScene(
+      Positioned.fill(
+        child:
+            widget.sceneBuilder?.call(
+              earth,
+              game.earthLevel,
+              game.marsHabitats,
+              game.marsKits > 0,
+            ) ??
+            (widget.renderScene
+                ? BaseScene(
                     earth: earth,
                     earthLevel: game.earthLevel,
                     marsHabitats: game.marsHabitats,
@@ -341,64 +280,100 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     ],
                     selectedCityId: cityId,
                     onCitySelected: _selectCity,
-                  ),
-            ),
-            Positioned(
-              left: 20,
-              top: 12,
+                  )
+                : const ColoredBox(color: Color(0xff0b151e))),
+      ),
+      Positioned(
+        left: 18,
+        top: 12,
+        right: 12,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
               child: IgnorePointer(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      earth ? '地球' : '火星',
+                      earth ? '地球圏' : '火星圏',
                       style: TextStyle(
-                        fontSize: _compactLandscape ? 18 : 27,
+                        fontSize: _compactLandscape ? 19 : 28,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 4,
+                        shadows: const [Shadow(blurRadius: 5)],
                       ),
                     ),
-                    if (!_compactLandscape)
-                      Text(
-                        earth ? '産業と研究を育てる母星' : '閉鎖居住から、新しい都市へ',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: strategyMuted,
-                        ),
+                    Text(
+                      '全球 / ${GameContent.cities[cityId]!.name}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: strategyMuted,
                       ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              left: 18,
-              right: 18,
-              bottom: 12,
-              child: IgnorePointer(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    _tag(
-                      earth
-                          ? '人口 ${game.population} 人'
-                          : '居住者 ${game.marsResidents} 人',
-                    ),
-                    _tag(
-                      earth
-                          ? '輸送待ちキット ${game.earthKits}'
-                          : '到着キット ${game.marsKits}',
-                    ),
-                    _tag(
-                      earth
-                          ? '税収 ${dollars(game.taxPerMinute)}/分'
-                          : '居住施設 ${game.marsHabitats}',
                     ),
                   ],
                 ),
               ),
             ),
+            for (final item in [('地球', true), ('火星', false)])
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minWidth: 66,
+                    minHeight: 44,
+                  ),
+                  child: ChoiceChip(
+                    label: SizedBox(
+                      width: 32,
+                      child: Text(
+                        item.$1,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                      ),
+                    ),
+                    selected: earth == item.$2,
+                    showCheckmark: false,
+                    onSelected: (_) => setState(() {
+                      earth = item.$2;
+                      cityId = GameContent.cities.values
+                          .firstWhere(
+                            (city) => city.planet == (earth ? 'earth' : 'mars'),
+                          )
+                          .id;
+                    }),
+                  ),
+                ),
+              ),
           ],
+        ),
+      ),
+      Positioned(
+        left: 18,
+        right: 18,
+        bottom: 12,
+        child: IgnorePointer(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _tag(
+                earth
+                    ? '人口 ${formatInteger(game.population)} 人'
+                    : '居住者 ${formatInteger(game.marsResidents)} 人',
+              ),
+              _tag(
+                earth ? '輸送待ちキット ${game.earthKits}' : '到着キット ${game.marsKits}',
+              ),
+              _tag(
+                earth
+                    ? '税収 ${dollars(game.taxPerMinute)}/分'
+                    : '居住施設 ${game.marsHabitats}',
+              ),
+            ],
+          ),
         ),
       ),
     ],
@@ -408,7 +383,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     decoration: BoxDecoration(
       color: const Color(0xe9142630),
       border: Border.all(color: strategyLine),
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(2),
     ),
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -438,55 +413,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ),
           )
         else
-          const StrategyHeading('都市を選ぶ', '惑星の都市を選んでから、地区の配置を計画します。'),
-        for (final candidate in cities)
-          Padding(
-            padding: EdgeInsets.only(bottom: _compactLandscape ? 4 : 8),
-            child: Material(
-              color: candidate.id == cityId
-                  ? const Color(0xff223d40)
-                  : strategyPanel,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-                side: BorderSide(
-                  color: candidate.id == cityId ? strategyMint : strategyLine,
-                ),
-              ),
-              child: ListTile(
-                key: Key('select-city-${candidate.id}'),
-                dense: true,
-                minTileHeight: _compactLandscape ? 44 : null,
-                onTap: () => _selectCity(candidate.id),
-                leading: Icon(
-                  game.cityUnlocked(candidate.id)
-                      ? Icons.location_city
-                      : Icons.lock_outline,
-                  color: game.cityUnlocked(candidate.id)
-                      ? strategyMint
-                      : strategyMuted,
-                ),
-                title: Text(
-                  candidate.name,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                subtitle: _compactLandscape
-                    ? null
-                    : Text(
-                        game.cityUnlocked(candidate.id)
-                            ? '${game.cityDevelopment(candidate.id).stageName} · 完成 ${game.cityDevelopment(candidate.id).completedPlots}/${candidate.plotCount} · 総Lv.${game.cityDevelopment(candidate.id).totalLevels}'
-                            : game.cityLockReason(candidate.id) ?? '研究が必要',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: strategyMuted,
-                        ),
-                      ),
-                trailing: const Icon(Icons.chevron_right, size: 18),
-              ),
-            ),
-          ),
+          const StrategyHeading('都市一覧', '都市を選び、地形と施設を見ながら開発を指揮します。'),
+        for (final candidate in cities) _cityCommandRow(candidate),
         const SizedBox(height: 14),
         Text(
           city.name,
@@ -525,6 +453,73 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _cityCommandRow(CityDefinition city) {
+    final selected = city.id == cityId;
+    final unlocked = game.cityUnlocked(city.id);
+    final development = game.cityDevelopment(city.id);
+    return Material(
+      color: selected ? const Color(0xff243d3e) : const Color(0xff12252d),
+      child: InkWell(
+        key: Key('select-city-${city.id}'),
+        onTap: () => _selectCity(city.id),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: selected ? strategyCopper : Colors.transparent,
+                width: 3,
+              ),
+              bottom: const BorderSide(color: strategyLine),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                unlocked ? Icons.location_city : Icons.lock_outline,
+                size: 18,
+                color: unlocked ? strategyMint : strategyMuted,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      city.name,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (!_compactLandscape)
+                      Text(
+                        unlocked
+                            ? '${development.stageName} · 総Lv.${development.totalLevels}'
+                            : game.cityLockReason(city.id) ?? '研究が必要',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: strategyMuted,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (unlocked)
+                Text(
+                  '${development.completedPlots}/${city.plotCount}',
+                  style: const TextStyle(fontSize: 12, color: strategyMuted),
+                ),
+              const SizedBox(width: 6),
+              const Icon(Icons.chevron_right, size: 16, color: strategyMuted),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1063,7 +1058,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   Widget _footer() => Container(
     width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
     decoration: const BoxDecoration(
       color: Color(0xff10202a),
       border: Border(top: BorderSide(color: strategyLine)),
