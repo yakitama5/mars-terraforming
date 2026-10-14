@@ -183,7 +183,7 @@ class InvestmentComparison extends StatelessWidget {
               )
             else if (game.money < preview.cost)
               Text(
-                '資金待ち · あと ${preview.cost - game.money} Cr',
+                '資金待ち · あと ${dollars(preview.cost - game.money)}',
                 style: const TextStyle(color: strategyCopper, fontSize: 12),
               )
             else if (city.planet == 'mars' && game.marsKits == 0)
@@ -222,7 +222,7 @@ class InvestmentEstimate extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        StrategyFact('投資費合計', '${preview.cost} Cr'),
+        StrategyFact('投資費合計', dollars(preview.cost)),
         StrategyFact('設備占有', '${gameDuration(preview.durationMs)} · 予約待ちを除く'),
         StrategyFact(
           '土地の追加',
@@ -230,12 +230,12 @@ class InvestmentEstimate extends StatelessWidget {
         ),
         StrategyFact(
           '純収支の変化',
-          '${signedNumber(preview.netDeltaPerMinute)} Cr/分',
+          '${signedDollars(preview.netDeltaPerMinute)}/分',
           color: preview.netDeltaPerMinute >= 0 ? strategyMint : strategyCopper,
         ),
         StrategyFact(
           '税収 / 維持費',
-          '${signedNumber(preview.taxDeltaPerMinute)} / ${signedNumber(preview.upkeepDeltaPerMinute)} Cr/分',
+          '${signedDollars(preview.taxDeltaPerMinute)} / ${signedDollars(preview.upkeepDeltaPerMinute)} 毎分',
         ),
         const SizedBox(height: 6),
         const Text(
@@ -269,16 +269,16 @@ class InvestmentEstimate extends StatelessWidget {
           '費用・工期の内訳',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
         ),
-        StrategyFact('本体', '${preview.baseCost} Cr'),
-        StrategyFact('都市整備負荷', '+${preview.developmentCost} Cr'),
-        StrategyFact('初回開拓', '+${preview.setupCost} Cr'),
+        StrategyFact('本体', dollars(preview.baseCost)),
+        StrategyFact('都市整備負荷', '+${dollars(preview.developmentCost)}'),
+        StrategyFact('初回開拓', '+${dollars(preview.setupCost)}'),
         Text(
           '素工期：本体 ${gameDuration(preview.baseDurationMs)} ＋ 都市整備 ${gameDuration(preview.developmentDurationMs)} ＋ 初回開拓 ${gameDuration(preview.setupDurationMs)}',
           style: const TextStyle(fontSize: 11, color: strategyMuted),
         ),
         StrategyFact(
           '建設設備',
-          '${GameContent.facilities[facilityId]!.name} · 効率 +${game.facilityBonusPercent(facilityId)}%',
+          '${GameContent.facilities[facilityId]!.name} · 効率 ${signedNumber(game.facilityBonusPercent(facilityId))}%',
         ),
         if (city.planet == 'mars')
           StrategyFact('必要資材', '到着キット 1基 / 在庫 ${game.marsKits}基'),
