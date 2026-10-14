@@ -24,6 +24,13 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     const origins = new Set();
     const externalRequests = [];
     page.on('pageerror', error => errors.push(String(error)));
+    page.on('console', message => {
+      const text = message.text();
+      if (/pipeline failed|shader.*(?:error|failed)|skipping a draw|GL_INVALID|WebGL.*(?:error|failed)/i.test(text)) {
+        errors.push(text);
+        console.error('RENDER ERROR:', text);
+      }
+    });
     page.on('request', request => {
       if (request.url().startsWith('http')) {
         const origin = new URL(request.url()).origin;
@@ -328,7 +335,40 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await page.getByRole('button', { name: '地図を広く表示', exact: true }).click();
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(output, 'district-web-neighborhood.png') });
-    console.log('CHECK OK: facility-first placement, cancel without mutation, five-district neighborhood');
+    // Optional isolated fixture for repeated visual checks; never a user save.
+    if (process.env.MARS_VISUAL_STATE) {
+      fs.writeFileSync(process.env.MARS_VISUAL_STATE, JSON.stringify({
+        key, saved: await page.evaluate(storageKey => localStorage.getItem(storageKey), key),
+      }));
+    }
+    const beforeCamera = await snapshot();
+    await page.getByRole('button', { name: '都市地図を拡大', exact: true }).click();
+    await page.getByRole('button', { name: '都市地図を拡大', exact: true }).click();
+    await page.mouse.move(160, 30);
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: path.join(output, 'diorama-web-close.png') });
+    await page.getByRole('button', { name: '全域', exact: true }).click();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(output, 'diorama-web-overview.png') });
+    await page.getByRole('button', { name: '区画の詳細を表示', exact: true }).click();
+    await chooseFacility('住宅地区');
+    await ground('デルタ湾岸', 1);
+    await page.getByRole('button', { name: '市街', exact: true }).click();
+    await page.getByText(/^区画 1  ·/).waitFor();
+    // The same border plot stays reachable after focusing and orbiting.
+    await ground('デルタ湾岸', 1);
+    await page.getByRole('button', { name: '都市地図の視点操作', exact: true }).click();
+    await page.getByRole('menuitem', { name: '左へ回転', exact: true }).click();
+    await ground('デルタ湾岸', 1);
+    await page.mouse.move(160, 30);
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: path.join(output, 'diorama-web-coast.png') });
+    const afterCamera = await snapshot();
+    assert.deepEqual(afterCamera.districts, beforeCamera.districts);
+    assert.deepEqual(afterCamera.plans.map(p => p.id), beforeCamera.plans.map(p => p.id));
+    await page.getByRole('button', { name: '全域', exact: true }).click();
+    await page.getByRole('button', { name: '地図を広く表示', exact: true }).click();
+    console.log('CHECK OK: facility-first placement, five districts, closeup/overview/edge focus/orbit without mutation');
 
     // The second tab must stop before loading or advancing the shared world.
     const second = await context.newPage();
