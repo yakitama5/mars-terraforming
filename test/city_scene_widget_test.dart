@@ -5,16 +5,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/domain/save_repository.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
+import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/main.dart';
 import 'package:mars_terraforming/rendering/city_scene.dart';
 
 class _MemoryStore implements SaveRepository {
   Map<String, dynamic>? data;
+  bool conflict = false;
   @override
   Future<SaveLoadResult> load() async =>
       SaveLoadResult(data: data, recovered: false, generation: 1);
   @override
   Future<void> save(Map<String, dynamic> snapshot) async {
+    if (conflict) throw const SaveConflictException('別のタブで更新されました');
     data = jsonDecode(jsonEncode(snapshot)) as Map<String, dynamic>;
   }
 }
@@ -124,6 +128,303 @@ void main() {
     },
   );
 
+  testWidgets(
+    'placement is an uncommitted draft across cancel, occupied plots and cities',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = GameController(
+        _MemoryStore(),
+        now: () => DateTime.utc(2026, 10, 14),
+      );
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      controller.state.research.addAll([
+        'urban_planning',
+        'automated_fabrication',
+      ]);
+      const house = DistrictState(
+        cityId: 'earth_delta',
+        plotIndex: 0,
+        districtId: 'housing',
+      );
+      controller.state.districts[house.key] = house;
+      await controller.command(
+        (engine) => engine.enqueueDistrict('earth_delta', 1, 'housing'),
+      );
+      await tester.pumpWidget(
+        MarsApp(controller: controller, renderScene: false),
+      );
+      await tester.tap(find.byKey(const Key('navigation-1')));
+      await tester.pumpAndSettle();
+      CityScene scene() => tester.widget<CityScene>(find.byType(CityScene));
+      Future<void> choose(String id) async {
+        final button = find.byKey(Key('district-option-$id'));
+        await tester.scrollUntilVisible(
+          button,
+          80,
+          scrollable: find.descendant(
+            of: find.byKey(const Key('city-facility-palette')),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> select(int plot) async {
+        await tester.tap(find.byKey(Key('plot-${scene().cityId}-$plot')));
+        await tester.pumpAndSettle();
+      }
+
+      final before = jsonEncode(controller.state.toJson());
+      await choose('solar');
+      expect(scene().constructionMode, isTrue);
+      expect(scene().buildablePlots, isNot(contains(0)));
+      expect(scene().buildablePlots, isNot(contains(1)));
+      expect(scene().buildablePlots, hasLength(23));
+      await select(2);
+      final firstQuote = controller.state.districtPreview(
+        'earth_delta',
+        2,
+        'solar',
+      );
+      expect(find.text('${firstQuote.cost}ドル'), findsWidgets);
+      await select(3);
+      expect(scene().selectedPlot, 3);
+      expect(jsonEncode(controller.state.toJson()), before);
+      expect(scene().plots[2].districtId, isNull);
+      await tester.tap(find.byKey(const Key('city-cancel-placement')));
+      await tester.pumpAndSettle();
+      expect(scene().constructionMode, isFalse);
+      expect(scene().selectedPlot, -1);
+      expect(scene().buildablePlots, isEmpty);
+      await choose('solar');
+      await select(0);
+      expect(scene().constructionMode, isFalse);
+      expect(find.text('住宅地区 Lv.1'), findsOneWidget);
+      expect(find.text('この地区を強化する'), findsOneWidget);
+      await select(1);
+      expect(find.byKey(const Key('district-work-status')), findsOneWidget);
+      expect(find.byKey(const Key('district-open-operations')), findsOneWidget);
+      expect(find.byKey(const Key('confirm-district')), findsNothing);
+      expect(jsonEncode(controller.state.toJson()), before);
+      await tester.tap(find.byKey(const Key('city-selector')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text(GameContent.cities['earth_highland']!.name).last,
+      );
+      await tester.pumpAndSettle();
+      expect(scene().cityId, 'earth_highland');
+      expect(scene().selectedPlot, -1);
+      expect(scene().constructionMode, isTrue);
+      expect(find.text(GameContent.districts['solar']!.name), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('confirm-district')))
+            .onPressed,
+        isNull,
+      );
+      expect(jsonEncode(controller.state.toJson()), before);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'locked city links directly to its required research before spending',
+    (tester) async {
+      tester.view.physicalSize = const Size(844, 390);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = GameController(
+        _MemoryStore(),
+        now: () => DateTime.utc(2026, 10, 14),
+      );
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MarsApp(controller: controller, renderScene: false),
+      );
+      await tester.tap(find.byKey(const Key('navigation-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('district-option-housing')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('city-selector')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text(GameContent.cities['earth_highland']!.name).last,
+      );
+      await tester.pumpAndSettle();
+      final before = jsonEncode(controller.state.toJson());
+      final scene = tester.widget<CityScene>(find.byType(CityScene));
+      expect(scene.buildablePlots, isEmpty);
+      final link = find.byKey(const Key('district-required-research'));
+      await tester.scrollUntilVisible(
+        link,
+        80,
+        scrollable: find.descendant(
+          of: find.byKey(const Key('district-inspector')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('confirm-district')))
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(link);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('queue-urban_planning')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(jsonEncode(controller.state.toJson()), before);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'unresearched upgrade keeps its reason above the fixed action on small landscape',
+    (tester) async {
+      tester.view.physicalSize = const Size(844, 390);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = GameController(
+        _MemoryStore(),
+        now: () => DateTime.utc(2026, 10, 14),
+      );
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      controller.state.research.add('urban_planning');
+      const campus = DistrictState(
+        cityId: 'earth_delta',
+        plotIndex: 7,
+        districtId: 'campus',
+      );
+      controller.state.districts[campus.key] = campus;
+      await tester.pumpWidget(
+        MarsApp(controller: controller, renderScene: false),
+      );
+      await tester.tap(find.byKey(const Key('navigation-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('plot-earth_delta-7')));
+      await tester.pumpAndSettle();
+      final reason = find.byKey(const Key('district-blocked-reason'));
+      final action = find.byKey(const Key('confirm-district'));
+      expect(reason.hitTestable(), findsOneWidget);
+      expect(action.hitTestable(), findsOneWidget);
+      expect(
+        tester.widget<Text>(reason).data,
+        '前提研究：${GameContent.tasks['automated_fabrication']!.name}',
+      );
+      expect(
+        tester.getBottomLeft(reason).dy,
+        lessThan(tester.getTopLeft(action).dy),
+      );
+      expect(tester.widget<FilledButton>(action).onPressed, isNull);
+      expect(controller.state.plans, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final stage in ['construction', 'details', 'comparison']) {
+    testWidgets(
+      'save conflict safely stops $stage without replacing committed data',
+      (tester) async {
+        tester.view.physicalSize = const Size(844, 390);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final store = _MemoryStore();
+        final controller = GameController(
+          store,
+          now: () => DateTime.utc(2026, 10, 14),
+        );
+        await controller.initialize(startTimer: false);
+        addTearDown(controller.dispose);
+        final savedBefore = jsonEncode(store.data);
+        await tester.pumpWidget(
+          MarsApp(controller: controller, renderScene: false),
+        );
+        await tester.tap(find.byKey(const Key('navigation-1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('district-option-housing')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('plot-earth_delta-0')));
+        await tester.pumpAndSettle();
+        // The detailed information remains accessible without scrolling the
+        // narrow inspector, even when its adjacency lines extend below the fold.
+        final details = find.byKey(const Key('city-open-details'));
+        expect(details.hitTestable(), findsOneWidget);
+        if (stage == 'construction') {
+          store.conflict = true;
+          await tester.tap(find.byKey(const Key('confirm-district')));
+          await tester.pumpAndSettle();
+        } else {
+          await tester.tap(details);
+          await tester.pumpAndSettle();
+          Future<void> tapDetail(String key) async {
+            final target = find.byKey(Key(key));
+            await tester.scrollUntilVisible(
+              target.hitTestable(),
+              80,
+              scrollable: find.descendant(
+                of: find.byKey(const Key('district-detail')),
+                matching: find.byType(Scrollable),
+              ),
+            );
+            await tester.ensureVisible(target);
+            await tester.pumpAndSettle();
+            expect(target.hitTestable(), findsOneWidget);
+            await tester.tap(target);
+            await tester.pumpAndSettle();
+          }
+
+          if (stage == 'comparison') {
+            await tapDetail('save-investment');
+            await tester.tap(find.byKey(const Key('plot-earth_delta-1')));
+            await tester.pumpAndSettle();
+            await tester.tap(details);
+            await tester.pumpAndSettle();
+            await tapDetail('compare-investments');
+          }
+          store.conflict = true;
+          await controller.save();
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(
+              Key(
+                stage == 'details'
+                    ? 'district-detail-stopped'
+                    : 'investment-comparison-stopped',
+              ),
+            ),
+            findsOneWidget,
+          );
+          final close = find.byKey(
+            Key(
+              stage == 'details'
+                  ? 'close-district-details'
+                  : 'close-investment-comparison',
+            ),
+          );
+          expect(close.hitTestable(), findsOneWidget);
+          await tester.tap(close);
+          await tester.pumpAndSettle();
+        }
+        expect(controller.engine, isNull);
+        expect(controller.error, contains('保存内容の競合'));
+        expect(jsonEncode(store.data), savedBefore);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final size in [const Size(844, 390), const Size(1280, 800)]) {
     testWidgets(
       'terrain selection, pan, expanded map and paid construction at $size',
@@ -162,6 +463,18 @@ void main() {
         }
 
         final before = jsonEncode(controller.state.toJson());
+        expect(current().constructionMode, isFalse);
+        expect(current().selectedPlot, -1);
+        await tester.tap(find.byKey(const Key('district-option-housing')));
+        await tester.pumpAndSettle();
+        expect(current().constructionMode, isTrue);
+        expect(current().buildablePlots, hasLength(25));
+        expect(
+          tester
+              .widget<FilledButton>(find.byKey(const Key('confirm-district')))
+              .onPressed,
+          isNull,
+        );
         await tapGround(4);
         expect(find.text('区画 5  ·  高台'), findsOneWidget);
         await tester.drag(map, const Offset(45, 16));
