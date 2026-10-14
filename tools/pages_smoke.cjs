@@ -1,4 +1,4 @@
-// Run against a local server containing both GitHub Pages output directories.
+// Run against the published Pages site or a local server containing both paths.
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 const base = process.env.MARS_PAGES_TEST_URL || 'http://127.0.0.1:8766/mars-terraforming/';
@@ -43,12 +43,31 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     assert.equal(mainBefore.contentVersion, 'district-5');
     assert.equal(mainBefore.researchers, 7);
     assert.equal(mainBefore.specialistCount, 12);
+    // Both releases expose the new map placement, including normal-time main.
+    const inspectPlacement = async (target, saveKey) => {
+      const before = await snapshot(target, saveKey);
+      await target.getByRole('button', { name: '都市開発', exact: true }).click();
+      await target.getByRole('button', { name: '住宅地区を選ぶ', exact: true }).click();
+      const tile = target.getByRole('button', { name: /^デルタ湾岸の区画13、/ });
+      await tile.waitFor();
+      const bounds = await tile.boundingBox();
+      assert.ok(bounds);
+      await target.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      await target.getByText(/^区画 13  ·/).waitFor();
+      await target.getByRole('button', { name: '配置をやめる', exact: true }).click();
+      await target.getByRole('button', { name: '住宅地区を選ぶ', exact: true }).waitFor();
+      const after = await snapshot(target, saveKey);
+      assert.deepEqual(after.districts, before.districts);
+      assert.deepEqual(after.plans.map(p => p.id), before.plans.map(p => p.id));
+    };
+    await inspectPlacement(main, mainKey);
     const firstCaches = await main.evaluate(() => caches.keys());
     const mainPrefix = `mars-terraforming:${encodeURIComponent(new URL(base).pathname)}:`;
     assert.ok(firstCaches.some(key => key.startsWith(mainPrefix)));
     const developUrl = new URL('develop/', base).href;
     const develop = await page(developUrl);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
+    await inspectPlacement(develop, developKey);
     await develop.getByRole('button', { name: '機関運営', exact: true }).click();
     const devBefore = await snapshot(develop, developKey);
     assert.equal(devBefore.contentVersion, 'district-5');
@@ -93,7 +112,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
     assert.deepEqual(errors, []);
-    result = { result: 'PASS', main: base, develop: developUrl, checks: ['district-5 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
+    result = { result: 'PASS', main: base, develop: developUrl, checks: ['facility-first map placement and cancel on both branches', 'district-5 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
   } finally {
     try {
       // Restore networking and close the context before waiting for browser exit.
