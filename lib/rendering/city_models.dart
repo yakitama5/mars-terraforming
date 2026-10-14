@@ -7,6 +7,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'city_geometry.dart';
 import 'city_snapshot.dart';
+import 'city_surface.dart';
 import 'planet_models.dart';
 
 /// Districts grow across the terrain instead of standing on display plinths.
@@ -14,24 +15,33 @@ import 'planet_models.dart';
 /// tanks and rockets reuse the globe's primitive buffers.
 class CityModels {
   final p = PlanetModels();
-  final glass = PlanetModels.material(.055, .21, .24, metallic: .18);
-  final greenhouseGlass = PlanetModels.material(.12, .26, .13, metallic: .1);
+  final surface = CitySurface();
+  final glass = PlanetModels.material(.075, .27, .33, metallic: .32)
+    ..roughnessFactor = .28;
+  final greenhouseGlass = PlanetModels.material(.12, .28, .18, metallic: .18)
+    ..roughnessFactor = .32;
   final tank = PlanetModels.material(.43, .50, .45, metallic: .2);
-  static const walls = Color(0xffd4cdb5);
-  static const warmWalls = Color(0xffbcb496);
-  static const roof = Color(0xff557478);
-  static const windows = Color(0xff315963);
-  static const paving = Color(0xff948d74);
-  static const asphalt = Color(0xff5d6058);
+  static const walls = Color(0xffe6d8b9);
+  static const warmWalls = Color(0xffd4bc92);
+  static const roof = Color(0xff527780);
+  static const windows = Color(0xff284a58);
+  static const paving = Color(0xffb7ae95);
+  static const asphalt = Color(0xff62645d);
   static const stripe = Color(0xffbab696);
   static const orange = Color(0xffcf833d);
   static const steel = Color(0xff889491);
 
   fs.Node landscape(CityTerrain terrain, {String? cityId}) {
     final root = fs.Node(name: '連続した地域の地形');
-    root.add(
-      fs.Node(mesh: fs.Mesh(terrain.mesh(), PlanetModels.material(1, 1, 1))),
-    );
+    root.add(fs.Node(mesh: fs.Mesh(terrain.mesh(), surface.ground)));
+    if (terrain.hasCoast) {
+      root.add(
+        fs.Node(
+          name: '海岸の水面',
+          mesh: fs.Mesh(surface.waterGeometry(terrain), surface.water),
+        )..shadowCastingMode = fs.ShadowCastingMode.off,
+      );
+    }
     final surroundings = _CityMesh();
     _surroundings(
       surroundings,
@@ -40,6 +50,7 @@ class CityModels {
     );
     if (cityId == 'earth_delta') _headquarters(root, surroundings, terrain);
     surroundings.attach(root, '周辺景観と区画外の既存市街');
+    _cacheShadows(root);
     return root;
   }
 
@@ -74,7 +85,18 @@ class CityModels {
     // Updating a completed/paid district also updates its ground cover. Trees
     // are retained on a reservation, and cleared only when construction starts.
     mesh.attach(root, '街区・道路・自然物の共通メッシュ');
+    _cacheShadows(root);
     return root;
+  }
+
+  /// This tree never animates or changes mesh while mounted. CityScene removes
+  /// and rebuilds it when completion/level changes, invalidating cached shadows.
+  /// The flag is per node, so setting it only on the group would do nothing.
+  void _cacheShadows(fs.Node node) {
+    if (node.mesh != null) node.shadowStatic = true;
+    for (final child in node.children) {
+      _cacheShadows(child);
+    }
   }
 
   void _nature(
@@ -228,23 +250,78 @@ class CityModels {
     Color color = const Color(0xff4d783e),
   }) {
     final y = terrain.height(x, z);
+    final seed = (x * 171 + z * 293).round();
     mesh.box(
-      vm.Vector3(x, y + .10 * scale, z),
-      vm.Vector3(.033 * scale, .20 * scale, .033 * scale),
-      const Color(0xff786348),
+      vm.Vector3(x, y + .14 * scale, z),
+      vm.Vector3(.040 * scale, .28 * scale, .040 * scale),
+      const Color(0xff766049),
     );
-    mesh.cone(
-      vm.Vector3(x, y + .055 * scale, z),
-      .115 * scale,
-      .32 * scale,
-      color,
-    );
-    mesh.cone(
-      vm.Vector3(x, y + .21 * scale, z),
-      .079 * scale,
-      .23 * scale,
-      color,
-    );
+    if (_noise(seed) > .34) {
+      // Broadleaf clusters produce an irregular canopy rather than toy cones.
+      for (var i = 0; i < 5; i++) {
+        final angle = i * 2.4 + _noise(seed) * 2;
+        final distance = i == 0 ? 0.0 : .075 * scale;
+        final leafColor = Color.lerp(
+          color,
+          const Color(0xffb1b86a),
+          .05 + _noise(seed + i * 13) * .28,
+        )!;
+        mesh.crown(
+          vm.Vector3(
+            x + math.cos(angle) * distance,
+            y + (.28 + _noise(seed + i * 7) * .11) * scale,
+            z + math.sin(angle) * distance,
+          ),
+          vm.Vector3(
+            .22 * scale,
+            (.22 + _noise(seed + i) * .07) * scale,
+            .21 * scale,
+          ),
+          leafColor,
+          seed + i,
+        );
+      }
+    } else {
+      for (var tier = 0; tier < 3; tier++) {
+        mesh.cone(
+          vm.Vector3(x, y + (.095 + tier * .095) * scale, z),
+          (.14 - tier * .031) * scale,
+          (.32 - tier * .045) * scale,
+          Color.lerp(color, const Color(0xff8b9e52), tier * .10)!,
+        );
+      }
+    }
+  }
+
+  void _pavedLot(
+    _CityMesh mesh,
+    CityTerrain terrain,
+    double x,
+    double z,
+    double width,
+    double depth, {
+    Color color = paving,
+  }) {
+    const divisions = 4;
+    for (var row = 0; row < divisions; row++) {
+      for (var column = 0; column < divisions; column++) {
+        final x0 = x - width / 2 + width * column / divisions;
+        final z0 = z - depth / 2 + depth * row / divisions;
+        final x1 = x0 + width / divisions;
+        final z1 = z0 + depth / divisions;
+        mesh.quad(
+          terrain.surfacePoint(x0, z0, offset: .022),
+          terrain.surfacePoint(x0, z1, offset: .022),
+          terrain.surfacePoint(x1, z1, offset: .022),
+          terrain.surfacePoint(x1, z0, offset: .022),
+          Color.lerp(
+            color,
+            const Color(0xffd8cfb5),
+            _noise((x * 37 + z * 79).round() + row * 4 + column) * .13,
+          )!,
+        );
+      }
+    }
   }
 
   void _road(
@@ -260,17 +337,176 @@ class CityModels {
     final dx = bx - ax, dz = bz - az;
     final length = math.sqrt(dx * dx + dz * dz);
     if (length < .001) return;
-    final sx = -dz / length * width / 2, sz = dx / length * width / 2;
-    final steps = (length / .20).ceil();
-    for (var i = 0; i < steps; i++) {
-      final x0 = ax + dx * i / steps, z0 = az + dz * i / steps;
-      final x1 = ax + dx * (i + 1) / steps, z1 = az + dz * (i + 1) / steps;
-      mesh.quad(
-        terrain.surfacePoint(x0 - sx, z0 - sz, offset: .021),
-        terrain.surfacePoint(x0 + sx, z0 + sz, offset: .021),
-        terrain.surfacePoint(x1 + sx, z1 + sz, offset: .021),
-        terrain.surfacePoint(x1 - sx, z1 - sz, offset: .021),
-        color,
+    final steps = (length / .15).ceil();
+    void strip(double stripWidth, Color stripColor, double elevation) {
+      final sx = -dz / length * stripWidth / 2;
+      final sz = dx / length * stripWidth / 2;
+      for (var i = 0; i < steps; i++) {
+        final x0 = ax + dx * i / steps, z0 = az + dz * i / steps;
+        final x1 = ax + dx * (i + 1) / steps;
+        final z1 = az + dz * (i + 1) / steps;
+        mesh.quad(
+          terrain.surfacePoint(x0 - sx, z0 - sz, offset: elevation),
+          terrain.surfacePoint(x0 + sx, z0 + sz, offset: elevation),
+          terrain.surfacePoint(x1 + sx, z1 + sz, offset: elevation),
+          terrain.surfacePoint(x1 - sx, z1 - sz, offset: elevation),
+          stripColor,
+        );
+      }
+    }
+
+    if (color == asphalt && width >= .08) {
+      strip(width + .056, const Color(0xffbcb49c), .025);
+    }
+    strip(width, color, .029);
+    if (color == asphalt && width >= .105 && width < .30) {
+      // Fine broken center lines, with enough spacing to read at close range.
+      final sx = -dz / length * .005, sz = dx / length * .005;
+      for (var i = 0; i < steps; i += 2) {
+        final x0 = ax + dx * (i + .20) / steps;
+        final z0 = az + dz * (i + .20) / steps;
+        final x1 = ax + dx * (i + .85) / steps;
+        final z1 = az + dz * (i + .85) / steps;
+        mesh.quad(
+          terrain.surfacePoint(x0 - sx, z0 - sz, offset: .033),
+          terrain.surfacePoint(x0 + sx, z0 + sz, offset: .033),
+          terrain.surfacePoint(x1 + sx, z1 + sz, offset: .033),
+          terrain.surfacePoint(x1 - sx, z1 - sz, offset: .033),
+          stripe,
+        );
+      }
+    }
+  }
+
+  void _streetLamp(_CityMesh mesh, CityTerrain terrain, double x, double z) {
+    final y = terrain.height(x, z);
+    mesh.box(
+      vm.Vector3(x, y + .115, z),
+      vm.Vector3(.012, .23, .012),
+      const Color(0xff626e67),
+    );
+    mesh.box(
+      vm.Vector3(x + .023, y + .233, z),
+      vm.Vector3(.059, .013, .013),
+      steel,
+    );
+    mesh.box(
+      vm.Vector3(x + .042, y + .227, z),
+      vm.Vector3(.030, .009, .024),
+      const Color(0xffefe2ad),
+    );
+  }
+
+  void _garden(_CityMesh mesh, CityTerrain terrain, double x, double z) {
+    final y = terrain.height(x, z);
+    _pavedLot(mesh, terrain, x, z, .24, .22);
+    mesh.box(
+      vm.Vector3(x, y + .035, z),
+      vm.Vector3(.185, .055, .15),
+      const Color(0xffa89875),
+    );
+    mesh.box(
+      vm.Vector3(x, y + .066, z),
+      vm.Vector3(.175, .014, .14),
+      const Color(0xff4e6739),
+    );
+    for (var i = 0; i < 5; i++) {
+      mesh.crown(
+        vm.Vector3(x - .065 + i * .032, y + .09, z - .022),
+        vm.Vector3(.061, .065, .064),
+        i.isEven ? const Color(0xff7d9950) : const Color(0xff59773c),
+        i,
+      );
+      mesh.box(
+        vm.Vector3(x - .061 + i * .030, y + .087, z + .046),
+        vm.Vector3(.016, .018, .017),
+        i.isEven ? const Color(0xffd8b557) : const Color(0xffaa6b50),
+      );
+    }
+    // A small park seat makes the courtyard readable at the closest view.
+    mesh.box(
+      vm.Vector3(x, y + .045, z + .105),
+      vm.Vector3(.10, .012, .036),
+      const Color(0xff956e49),
+    );
+    mesh.box(
+      vm.Vector3(x, y + .069, z + .123),
+      vm.Vector3(.10, .048, .008),
+      const Color(0xff956e49),
+    );
+  }
+
+  void _car(
+    _CityMesh mesh,
+    CityTerrain terrain,
+    double x,
+    double z, {
+    Color color = const Color(0xffd8d7c5),
+  }) {
+    final y = terrain.height(x, z) + .036;
+    mesh.box(vm.Vector3(x, y + .025, z), vm.Vector3(.115, .034, .055), color);
+    mesh.box(
+      vm.Vector3(x - .008, y + .047, z),
+      vm.Vector3(.064, .024, .049),
+      windows,
+    );
+    mesh.box(
+      vm.Vector3(x - .008, y + .061, z),
+      vm.Vector3(.048, .007, .049),
+      color,
+    );
+    for (final dx in [-.034, .034]) {
+      for (final dz in [-.03, .03]) {
+        mesh.box(
+          vm.Vector3(x + dx, y + .015, z + dz),
+          vm.Vector3(.025, .025, .013),
+          const Color(0xff373e39),
+        );
+      }
+    }
+    for (final dz in [-.018, .018]) {
+      mesh.box(
+        vm.Vector3(x + .059, y + .029, z + dz),
+        vm.Vector3(.003, .011, .012),
+        const Color(0xffece2bc),
+      );
+    }
+  }
+
+  /// Exterior pressure ribs preserve the dome silhouette without transparent
+  /// sorting or an extra node per rib. The blue surface stays an opaque proxy.
+  void _domeFrame(
+    _CityMesh mesh,
+    vm.Vector3 center,
+    double width,
+    double height,
+  ) {
+    const frameColor = Color(0xffccd9d0);
+    for (var rib = 0; rib < 4; rib++) {
+      final angle = rib * math.pi / 4;
+      vm.Vector3 point(int step) {
+        final t = step * math.pi / 10;
+        return center +
+            vm.Vector3(
+              math.cos(angle) * math.cos(t) * width * .51,
+              math.sin(t) * height * .51,
+              math.sin(angle) * math.cos(t) * width * .51,
+            );
+      }
+
+      for (var step = 0; step < 10; step++) {
+        mesh.beam(point(step), point(step + 1), .012, frameColor);
+      }
+    }
+    for (var i = 0; i < 16; i++) {
+      final a = i * math.pi / 8, b = (i + 1) * math.pi / 8;
+      mesh.beam(
+        center +
+            vm.Vector3(math.cos(a) * width * .51, 0, math.sin(a) * width * .51),
+        center +
+            vm.Vector3(math.cos(b) * width * .51, 0, math.sin(b) * width * .51),
+        .022,
+        frameColor,
       );
     }
   }
@@ -287,53 +523,143 @@ class CityModels {
     Color roofColor = roof,
     bool pitched = false,
   }) {
-    final y = terrain.height(x, z);
+    final y = terrain.height(x, z) + .029;
+    _pavedLot(mesh, terrain, x, z, width + .075, depth + .065);
+    mesh.box(
+      vm.Vector3(x, y + .018, z),
+      vm.Vector3(width + .028, .070, depth + .028),
+      const Color(0xff998f7c),
+    );
     mesh.box(
       vm.Vector3(x, y + height / 2, z),
       vm.Vector3(width, height, depth),
       color,
     );
+    mesh.box(
+      vm.Vector3(x, y + .045, z),
+      vm.Vector3(width + .006, .019, depth + .006),
+      warmWalls,
+    );
+    final e = depth / 2 + .026, w = width / 2 + .026;
     if (pitched) {
-      final e = depth / 2 + .012, w = width / 2 + .016;
-      mesh.quad(
-        vm.Vector3(x - w, y + height, z - e),
-        vm.Vector3(x - w, y + height + .08, z),
-        vm.Vector3(x + w, y + height + .08, z),
-        vm.Vector3(x + w, y + height, z - e),
+      final rise = math.min(width, depth) * .40;
+      // Full closed gables, fascia and ridge make a roof with thickness.
+      mesh.triangle(
+        vm.Vector3(x - width / 2, y + height, z + depth / 2),
+        vm.Vector3(x - width / 2, y + height + rise, z),
+        vm.Vector3(x - width / 2, y + height, z - depth / 2),
+        color,
+      );
+      mesh.triangle(
+        vm.Vector3(x + width / 2, y + height, z - depth / 2),
+        vm.Vector3(x + width / 2, y + height + rise, z),
+        vm.Vector3(x + width / 2, y + height, z + depth / 2),
+        color,
+      );
+      for (final side in [-1.0, 1.0]) {
+        for (var course = 0; course < 5; course++) {
+          final t0 = course / 5, t1 = (course + 1) / 5;
+          final stripColor = Color.lerp(
+            roofColor,
+            const Color(0xffe2b489),
+            course.isEven ? .06 : .0,
+          )!;
+          final a = vm.Vector3(
+            x - w,
+            y + height + rise * (1 - t0),
+            z + side * e * t0,
+          );
+          final b = vm.Vector3(
+            x - w,
+            y + height + rise * (1 - t1),
+            z + side * e * t1,
+          );
+          final c = vm.Vector3(x + w, b.y, b.z);
+          final d = vm.Vector3(x + w, a.y, a.z);
+          if (side > 0) {
+            mesh.quad(a, b, c, d, stripColor);
+          } else {
+            mesh.quad(d, c, b, a, stripColor);
+          }
+        }
+        mesh.box(
+          vm.Vector3(x, y + height - .006, z + side * e),
+          vm.Vector3(width + .057, .028, .014),
+          roofColor,
+        );
+      }
+      mesh.box(
+        vm.Vector3(x, y + height + rise + .006, z),
+        vm.Vector3(width + .055, .016, .020),
         roofColor,
       );
-      mesh.quad(
-        vm.Vector3(x - w, y + height + .08, z),
-        vm.Vector3(x - w, y + height, z + e),
-        vm.Vector3(x + w, y + height, z + e),
-        vm.Vector3(x + w, y + height + .08, z),
-        roofColor,
+      mesh.box(
+        vm.Vector3(x + width * .23, y + height + rise * .83, z - depth * .12),
+        vm.Vector3(.032, .12, .036),
+        warmWalls,
       );
     } else {
       mesh.box(
-        vm.Vector3(x, y + height + .018, z),
-        vm.Vector3(width + .022, .036, depth + .022),
+        vm.Vector3(x, y + height + .015, z),
+        vm.Vector3(width + .026, .030, depth + .026),
         roofColor,
       );
       mesh.box(
-        vm.Vector3(x + width * .22, y + height + .052, z - depth * .18),
-        vm.Vector3(width * .27, .055, depth * .27),
+        vm.Vector3(x, y + height + .030, z),
+        vm.Vector3(width - .025, .012, depth - .025),
+        Color.lerp(roofColor, const Color(0xff9caca8), .25)!,
+      );
+      mesh.box(
+        vm.Vector3(x + width * .22, y + height + .055, z - depth * .18),
+        vm.Vector3(width * .25, .050, depth * .27),
         steel,
       );
     }
-    for (var floor = 0; floor < (height > .32 ? 2 : 1); floor++) {
-      final elevation = y + .10 + floor * .13;
-      mesh.box(
-        vm.Vector3(x, elevation, z + depth / 2 + .004),
-        vm.Vector3(width * .72, .035, .008),
-        windows,
-      );
-      mesh.box(
-        vm.Vector3(x + width / 2 + .004, elevation, z),
-        vm.Vector3(.008, .035, depth * .68),
-        windows,
-      );
+    final floors = math.max(1, (height / .13).floor());
+    final frontColumns = math.max(2, (width / .083).floor());
+    final sideColumns = math.max(2, (depth / .090).floor());
+    for (var floor = 0; floor < floors; floor++) {
+      final elevation = y + .087 + floor * (height - .06) / floors;
+      for (final side in [-1.0, 1.0]) {
+        for (var column = 0; column < frontColumns; column++) {
+          final wx = x + ((column + .5) / frontColumns - .5) * width * .80;
+          mesh.box(
+            vm.Vector3(wx, elevation, z + side * (depth / 2 + .002)),
+            vm.Vector3(width / frontColumns * .48, .041, .006),
+            windows,
+          );
+          mesh.box(
+            vm.Vector3(wx, elevation - .024, z + side * (depth / 2 + .007)),
+            vm.Vector3(width / frontColumns * .58, .007, .016),
+            const Color(0xffefe4c9),
+          );
+        }
+        for (var column = 0; column < sideColumns; column++) {
+          final wz = z + ((column + .5) / sideColumns - .5) * depth * .76;
+          mesh.box(
+            vm.Vector3(x + side * (width / 2 + .002), elevation, wz),
+            vm.Vector3(.006, .039, depth / sideColumns * .46),
+            windows,
+          );
+        }
+      }
     }
+    // Entry and awning read from the street without adding separate nodes.
+    mesh.box(
+      vm.Vector3(x, y + .045, z + depth / 2 + .006),
+      vm.Vector3(.038, .085, .008),
+      const Color(0xff725c46),
+    );
+    mesh.box(
+      vm.Vector3(x, y + .096, z + depth / 2 + .030),
+      vm.Vector3(.078, .013, .059),
+      roofColor,
+    );
+    mesh.box(
+      vm.Vector3(x, y + .006, z + depth / 2 + .035),
+      vm.Vector3(.090, .018, .066),
+      paving,
+    );
   }
 
   void _district(
@@ -385,53 +711,74 @@ class CityModels {
   }
 
   void _housing(_CityMesh mesh, CityTerrain terrain, vm.Vector3 c, int level) {
-    _road(mesh, terrain, c.x - .67, c.z, c.x + .67, c.z, width: .11);
-    _road(mesh, terrain, c.x, c.z - .70, c.x, c.z + .70, width: .10);
+    _road(mesh, terrain, c.x - .71, c.z, c.x + .71, c.z, width: .13);
+    _road(mesh, terrain, c.x, c.z - .75, c.x, c.z + .75, width: .11);
     const lots = [
-      (-.23, -.23),
-      (.23, -.22),
-      (-.23, .24),
-      (.23, .25),
-      (-.52, -.17),
-      (.52, .13),
-      (-.20, -.56),
-      (.17, .57),
-      (.49, -.38),
-      (-.49, .38),
-      (.20, -.55),
-      (-.22, .56),
-      (-.51, .10),
-      (.52, -.13),
+      (-.25, -.25, .29, .27),
+      (.25, -.25, .30, .27),
+      (-.25, .25, .30, .27),
+      (.25, .25, .29, .27),
+      (-.58, -.22, .22, .24),
+      (.58, .22, .22, .24),
+      (-.20, -.61, .24, .23),
+      (.20, .61, .24, .23),
+      (.48, -.49, .24, .22),
+      (-.48, .49, .24, .22),
+      (.20, -.61, .24, .23),
+      (-.20, .61, .24, .23),
+      (-.59, .14, .20, .22),
+      (.59, -.14, .20, .22),
     ];
-    final count = [0, 8, 11, 14][level];
+    final count = [0, 10, 12, 14][level];
+    const roofColors = [
+      Color(0xffac6441),
+      Color(0xffbd7b4d),
+      Color(0xff695f52),
+      Color(0xff527780),
+      Color(0xff995333),
+    ];
+    const wallColors = [walls, warmWalls, Color(0xffddc69e), Color(0xffece0c4)];
     for (var i = 0; i < count; i++) {
-      final (x, z) = lots[i];
+      final (x, z, width, depth) = lots[i];
       _building(
         mesh,
         terrain,
         c.x + x,
         c.z + z,
-        width: i < 4 ? .27 : .20,
-        depth: i < 4 ? .23 : .18,
-        height: .17 + (i % 3) * .045 + (level - 1) * .055,
-        color: i.isEven ? walls : warmWalls,
-        roofColor: i % 3 == 0 ? const Color(0xff946e49) : roof,
-        pitched: i >= 4 && level < 3,
+        width: width,
+        depth: depth,
+        height: .21 + (i % 3) * .043 + (level - 1) * .072,
+        color: wallColors[i % wallColors.length],
+        roofColor: roofColors[i % roofColors.length],
+        pitched: i % 4 != 3 || level == 1,
       );
     }
-    // Small plazas, trees and lanes make the district read as inhabited land.
-    _road(
-      mesh,
-      terrain,
-      c.x - .51,
-      c.z + .52,
-      c.x - .36,
-      c.z + .59,
-      width: .16,
-      color: paving,
-    );
-    _tree(mesh, terrain, c.x - .42, c.z + .58, scale: .65);
-    _tree(mesh, terrain, c.x + .39, c.z - .58, scale: .60);
+    _garden(mesh, terrain, c.x - .51, c.z - .51);
+    _garden(mesh, terrain, c.x + .51, c.z + .51);
+    _car(mesh, terrain, c.x - .45, c.z - .027);
+    if (level > 1) {
+      _car(
+        mesh,
+        terrain,
+        c.x + .44,
+        c.z + .027,
+        color: const Color(0xffb66843),
+      );
+    }
+    // Street corners remain gardens at every level, rather than spare empty ground.
+    for (final corner in [(-.72, .24), (.71, -.26), (-.43, -.58), (.43, .58)]) {
+      _tree(
+        mesh,
+        terrain,
+        c.x + corner.$1,
+        c.z + corner.$2,
+        scale: .63,
+        color: const Color(0xff638447),
+      );
+    }
+    for (final lamp in [(-.10, -.50), (.10, .50), (-.48, .10), (.48, -.10)]) {
+      _streetLamp(mesh, terrain, c.x + lamp.$1, c.z + lamp.$2);
+    }
   }
 
   void _campus(
@@ -442,6 +789,27 @@ class CityModels {
     int level, {
     required bool mars,
   }) {
+    _pavedLot(
+      mesh,
+      terrain,
+      c.x,
+      c.z,
+      1.18,
+      1.12,
+      color: const Color(0xffc5bba0),
+    );
+    for (var i = 0; i < 5; i++) {
+      _road(
+        mesh,
+        terrain,
+        c.x - .54 + i * .27,
+        c.z - .54,
+        c.x - .54 + i * .27,
+        c.z + .54,
+        width: .013,
+        color: const Color(0xffa89c83),
+      );
+    }
     _road(
       mesh,
       terrain,
@@ -479,6 +847,21 @@ class CityModels {
       depth: .23,
       height: .19 + level * .025,
     );
+    final frontY = terrain.height(c.x - .24, c.z - .25);
+    mesh.box(
+      vm.Vector3(c.x - .24, frontY + .18, c.z - .101),
+      vm.Vector3(.33, .24, .015),
+      const Color(0xff4f8a9a),
+    );
+    for (var i = 0; i < 5; i++) {
+      mesh.box(
+        vm.Vector3(c.x - .39 + i * .075, frontY + .18, c.z - .086),
+        vm.Vector3(.008, .26, .012),
+        walls,
+      );
+    }
+    _streetLamp(mesh, terrain, c.x - .53, c.z + .04);
+    _streetLamp(mesh, terrain, c.x + .49, c.z + .47);
     for (var i = 0; i < level; i++) {
       _building(
         mesh,
@@ -514,6 +897,20 @@ class CityModels {
       ),
       vm.Vector3(.28, .17, .24),
     );
+    _domeFrame(
+      mesh,
+      vm.Vector3(
+        c.x - .24,
+        terrain.height(c.x - .24, c.z - .25) + .35 + level * .065,
+        c.z - .25,
+      ),
+      .28,
+      .17,
+    );
+    if (!mars) {
+      _garden(mesh, terrain, c.x + .31, c.z + .11);
+      _car(mesh, terrain, c.x - .30, c.z + .11, color: const Color(0xff527b8b));
+    }
     if (!mars) {
       _tree(mesh, terrain, c.x - .59, c.z + .15, scale: .65);
       _tree(mesh, terrain, c.x + .55, c.z + .08, scale: .75);
@@ -527,6 +924,15 @@ class CityModels {
     vm.Vector3 c,
     int level,
   ) {
+    _pavedLot(
+      mesh,
+      terrain,
+      c.x,
+      c.z,
+      1.30,
+      1.12,
+      color: const Color(0xffaaa18a),
+    );
     _road(
       mesh,
       terrain,
@@ -571,6 +977,19 @@ class CityModels {
         i.isEven ? orange : roof,
       );
     }
+    for (var container = 0; container < level + 2; container++) {
+      final x = c.x - .38 + container * .22, z = c.z + .47;
+      final y = terrain.height(x, z);
+      for (var rib = 0; rib < 4; rib++) {
+        mesh.box(
+          vm.Vector3(x - .059 + rib * .039, y + .065, z + .068),
+          vm.Vector3(.008, .115, .008),
+          container.isEven ? const Color(0xffeab56f) : const Color(0xff829ea0),
+        );
+      }
+    }
+    _streetLamp(mesh, terrain, c.x - .58, c.z + .38);
+    _streetLamp(mesh, terrain, c.x + .58, c.z + .38);
     final y = terrain.height(c.x + .52, c.z + .05);
     for (final z in [c.z - .13, c.z + .09]) {
       p.part(
@@ -590,6 +1009,15 @@ class CityModels {
   }
 
   void _solar(_CityMesh mesh, CityTerrain terrain, vm.Vector3 c, int level) {
+    _pavedLot(
+      mesh,
+      terrain,
+      c.x,
+      c.z,
+      1.24,
+      1.29,
+      color: const Color(0xffada781),
+    );
     final rows = level + 3;
     for (var row = 0; row < rows; row++) {
       final z = c.z - .56 + row * (1.10 / (rows - 1));
@@ -605,8 +1033,24 @@ class CityModels {
           vm.Vector3(x, y + .12, z),
           .29,
           .16,
-          const Color(0xff234c66),
+          const Color(0xff245771),
           .035,
+        );
+        for (final offset in [-.096, -.048, .048, .096]) {
+          mesh.tiltedPanel(
+            vm.Vector3(x + offset, y + .124, z),
+            .004,
+            .16,
+            const Color(0xff799daa),
+            .035,
+          );
+        }
+        mesh.tiltedPanel(
+          vm.Vector3(x, y + .125, z),
+          .29,
+          .004,
+          const Color(0xff799daa),
+          .001,
         );
         mesh.tiltedPanel(
           vm.Vector3(x, y + .123, z),
@@ -744,6 +1188,7 @@ class CityModels {
         vm.Vector3(x, y + .19, z),
         vm.Vector3(size, .30, size),
       );
+      _domeFrame(mesh, vm.Vector3(x, y + .19, z), size, .30);
       mesh.box(
         vm.Vector3(x, y + .06, z + size * .40),
         vm.Vector3(.13, .12, .16),
@@ -867,11 +1312,26 @@ class CityModels {
         vm.Vector3(.22, .27, .86),
       );
       for (final dz in [-.28, 0.0, .28]) {
-        mesh.box(
-          vm.Vector3(x, y + .24, z + dz),
-          vm.Vector3(.18, .025, .018),
-          walls,
-        );
+        for (var segment = 0; segment < 8; segment++) {
+          final a = segment * math.pi / 8, b = (segment + 1) * math.pi / 8;
+          // Ellipsoidal cross sections narrow towards either end of the tunnel.
+          final width = .113 * math.sqrt(1 - dz * dz / (.43 * .43));
+          final rise = .139 * math.sqrt(1 - dz * dz / (.43 * .43));
+          mesh.beam(
+            vm.Vector3(
+              x + math.cos(a) * width,
+              y + .15 + math.sin(a) * rise,
+              z + dz,
+            ),
+            vm.Vector3(
+              x + math.cos(b) * width,
+              y + .15 + math.sin(b) * rise,
+              z + dz,
+            ),
+            .011,
+            walls,
+          );
+        }
       }
     }
     _road(
@@ -1124,7 +1584,7 @@ class CityModels {
         depth: .23 + (i % 3) * .04,
         height: height,
         color: i.isEven ? walls : warmWalls,
-        roofColor: i % 4 == 0 ? const Color(0xff946e49) : roof,
+        roofColor: i % 4 == 0 ? roof : const Color(0xffa26d4b),
         pitched: i % 3 != 0,
       );
     }
@@ -1269,6 +1729,59 @@ class _CityMesh {
           vm.Vector3(math.cos(b) * size.x / 2, 0, math.sin(b) * size.z / 2);
       triangle(vb, va, top, color);
       triangle(va, vb, bottom, color);
+    }
+  }
+
+  /// Three staggered rings soften silhouettes while preserving a baked mesh.
+  void crown(vm.Vector3 center, vm.Vector3 size, Color color, int seed) {
+    const segments = 7;
+    final rings = <List<vm.Vector3>>[];
+    for (var row = 0; row < 3; row++) {
+      final radius = row == 1 ? 1.0 : .65;
+      rings.add([
+        for (var i = 0; i < segments; i++)
+          center +
+              vm.Vector3(
+                math.cos(i * math.pi * 2 / segments + row * .19) *
+                    size.x *
+                    .5 *
+                    radius,
+                (row - 1) * size.y * .34,
+                math.sin(i * math.pi * 2 / segments + row * .19) *
+                    size.z *
+                    .5 *
+                    radius,
+              ),
+      ]);
+    }
+    for (var i = 0; i < segments; i++) {
+      final next = (i + 1) % segments;
+      final facet = Color.lerp(
+        color,
+        const Color(0xffc2bb65),
+        ((i * 3 + seed).abs() % 7) * .018,
+      )!;
+      triangle(
+        rings[0][i],
+        rings[0][next],
+        center - vm.Vector3(0, size.y * .50, 0),
+        facet,
+      );
+      for (var row = 0; row < 2; row++) {
+        quad(
+          rings[row][next],
+          rings[row][i],
+          rings[row + 1][i],
+          rings[row + 1][next],
+          facet,
+        );
+      }
+      triangle(
+        rings[2][next],
+        rings[2][i],
+        center + vm.Vector3(0, size.y * .52, 0),
+        facet,
+      );
     }
   }
 
