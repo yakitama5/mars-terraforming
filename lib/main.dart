@@ -42,8 +42,14 @@ Future<void> main() async {
 }
 
 class MarsApp extends StatelessWidget {
-  const MarsApp({super.key, required this.controller, this.sceneBuilder});
+  const MarsApp({
+    super.key,
+    required this.controller,
+    this.sceneBuilder,
+    this.renderScene = true,
+  });
   final GameController controller;
+  final bool renderScene;
   final Widget Function(bool earth, int earthLevel, int habitats, bool cargo)?
   sceneBuilder;
 
@@ -76,7 +82,67 @@ class MarsApp extends StatelessWidget {
         titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
       ),
       visualDensity: VisualDensity.compact,
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(44, 44),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(2)),
+          ),
+          // Component text styles replace the default style, so they must
+          // carry the bundled Web font instead of triggering network fallback.
+          textStyle: const TextStyle(
+            fontFamily: kIsWeb ? 'NotoSansJP' : null,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(44, 44),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(2)),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          minimumSize: const Size(44, 44),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(2)),
+          ),
+        ),
+      ),
+      chipTheme: const ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(2)),
+        ),
+        side: BorderSide(color: Color(0xff52645e)),
+        labelStyle: TextStyle(
+          fontFamily: kIsWeb ? 'NotoSansJP' : null,
+          fontSize: 12,
+          color: Color(0xffdce8df),
+        ),
+        secondaryLabelStyle: TextStyle(
+          fontFamily: kIsWeb ? 'NotoSansJP' : null,
+          fontSize: 12,
+          color: Color(0xffe8f3e9),
+        ),
+        backgroundColor: Color(0xff17272e),
+        selectedColor: Color(0xff355047),
+        padding: EdgeInsets.symmetric(horizontal: 5, vertical: 5),
+      ),
+      dialogTheme: const DialogThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(4)),
+          side: BorderSide(color: Color(0xff52645e)),
+        ),
+      ),
     ),
-    home: GameScreen(controller: controller, sceneBuilder: sceneBuilder),
+    home: GameScreen(
+      controller: controller,
+      sceneBuilder: sceneBuilder,
+      renderScene: renderScene,
+    ),
   );
 }

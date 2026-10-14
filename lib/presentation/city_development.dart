@@ -1,10 +1,10 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../application/game_controller.dart';
 import '../domain/game_content.dart';
 import '../domain/game_state.dart';
+import '../rendering/city_scene.dart';
+import 'city_scene_data.dart';
 import 'investment_comparison.dart';
 import 'strategy_widgets.dart';
 
@@ -17,8 +17,13 @@ class CityDevelopment extends StatefulWidget {
     required this.onOpenResearch,
     required this.onSaveInvestment,
     this.savedInvestment,
+    this.renderScene = true,
+    this.onOpenGlobe,
+    this.onOpenOperations,
   });
   final GameController controller;
+  final bool renderScene;
+  final VoidCallback? onOpenGlobe, onOpenOperations;
   final String cityId;
   final ValueChanged<String> onCityChanged;
   final ValueChanged<String> onOpenResearch;
@@ -31,6 +36,7 @@ class CityDevelopment extends StatefulWidget {
 
 class _CityDevelopmentState extends State<CityDevelopment> {
   int selectedPlot = 12;
+  bool showInspector = true;
   String? selectedDistrict;
   GameState get game => widget.controller.state;
   CityDefinition get city => GameContent.cities[widget.cityId]!;
@@ -54,225 +60,129 @@ class _CityDevelopmentState extends State<CityDevelopment> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      StrategySplit(overview: _overview(), detail: _detail());
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: _overview()),
+        if (showInspector) ...[
+          const VerticalDivider(width: 1, color: strategyLine),
+          SizedBox(
+            width: constraints.maxWidth > 1100 ? 350 : 296,
+            child: _detail(),
+          ),
+        ],
+      ],
+    ),
+  );
 
-  Widget _overview() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 2),
-        child: Row(
-          children: [
-            Text(
-              city.planet == 'earth' ? '地球  /  ' : '火星  /  ',
-              style: const TextStyle(color: strategyMuted, fontSize: 12),
-            ),
-            Expanded(
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  key: const Key('city-selector'),
-                  value: city.id,
-                  isExpanded: true,
-                  items: [
-                    for (final item in GameContent.cities.values)
-                      DropdownMenuItem(
-                        value: item.id,
-                        child: Text(
-                          item.name,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) widget.onCityChanged(value);
-                  },
+  Widget _overview() {
+    final development = game.cityDevelopment(city.id);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: const BoxDecoration(
+            color: Color(0xff10212b),
+            border: Border(bottom: BorderSide(color: strategyLine)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              if (widget.onOpenGlobe != null)
+                IconButton(
+                  key: const Key('city-to-globe'),
+                  tooltip: '惑星全体へ戻る',
+                  onPressed: widget.onOpenGlobe,
+                  icon: const Icon(Icons.public, size: 19),
                 ),
+              Text(
+                city.planet == 'earth' ? '地球 / ' : '火星 / ',
+                style: const TextStyle(color: strategyMuted, fontSize: 12),
               ),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              '区画を選択',
-              style: TextStyle(color: strategyMint, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 5),
-        child: Text(
-          '${game.cityDevelopment(city.id).stageName} · 完成 ${game.cityDevelopment(city.id).completedPlots}/${city.plotCount}区画 · 総Lv.${game.cityDevelopment(city.id).totalLevels} · 未予約空地 ${game.cityDevelopment(city.id).availablePlots}',
-          key: const Key('city-development-summary'),
-          style: const TextStyle(color: strategyMint, fontSize: 11),
-        ),
-      ),
-      Expanded(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final tileWidth = math.min(
-              94.0,
-              math.max(
-                43.0,
-                math.min(
-                  (constraints.maxWidth - 44) / (city.width + .5),
-                  (constraints.maxHeight - 12) / (city.height * .78 + .22),
-                ),
-              ),
-            );
-            final tileHeight = tileWidth;
-            final boardWidth = (city.width + .5) * tileWidth;
-            final boardHeight = (city.height * .78 + .22) * tileHeight;
-            final neighbors = city.adjacentPlots(selectedPlot);
-            return SingleChildScrollView(
-              child: Center(
-                child: SizedBox(
-                  width: boardWidth,
-                  height: boardHeight,
-                  child: Stack(
-                    children: [
-                      for (var index = 0; index < city.plotCount; index++)
-                        Positioned(
-                          left:
-                              (index % city.width +
-                                  ((index ~/ city.width).isOdd ? .5 : 0)) *
-                              tileWidth,
-                          top: (index ~/ city.width) * tileHeight * .78,
-                          width: tileWidth - 3,
-                          height: tileHeight - 3,
-                          child: _plot(
-                            index,
-                            neighbors.contains(index),
-                            tileWidth < 65,
+              Expanded(
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    key: const Key('city-selector'),
+                    value: city.id,
+                    isExpanded: true,
+                    items: [
+                      for (final item in GameContent.cities.values)
+                        DropdownMenuItem(
+                          value: item.id,
+                          child: Text(
+                            item.name,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                     ],
+                    onChanged: (value) {
+                      if (value != null) widget.onCityChanged(value);
+                    },
                   ),
                 ),
               ),
-            );
-          },
-        ),
-      ),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
-        child: Wrap(
-          spacing: 14,
-          runSpacing: 4,
-          children: [
-            _legend(strategyMint, '選択区画'),
-            _legend(strategyCopper, '隣接効果の対象'),
-            const Text(
-              '上下スクロール · 隣接区画に効果',
-              style: TextStyle(color: strategyMuted, fontSize: 11),
-            ),
-          ],
-        ),
-      ),
-    ],
-  );
-
-  Widget _legend(Color color, String text) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(width: 8, height: 8, color: color),
-      const SizedBox(width: 5),
-      Text(text, style: const TextStyle(color: strategyMuted, fontSize: 11)),
-    ],
-  );
-
-  Widget _plot(int index, bool neighbor, bool compact) {
-    final district = game.districtAt(city.id, index);
-    final plans = game.plans.where(
-      (plan) =>
-          plan.cityId == city.id && plan.plotIndex == index && !plan.isFinished,
-    );
-    final planned = plans.isNotEmpty;
-    final selected = index == selectedPlot;
-    final terrain = city.terrainAt(index);
-    final terrainName = GameContent.terrainNames[terrain] ?? terrain;
-    final name = district == null
-        ? terrainName
-        : GameContent.districts[district.districtId]!.name;
-    final fill = district != null
-        ? const Color(0xff244443)
-        : _terrainColor(terrain);
-    final stroke = selected
-        ? strategyMint
-        : neighbor
-        ? strategyCopper.withValues(alpha: .7)
-        : strategyLine;
-    return Semantics(
-      label: '${city.name}の区画${index + 1}、$name${planned ? '、建設予約あり' : ''}',
-      button: true,
-      selected: selected,
-      child: GestureDetector(
-        key: Key('plot-${city.id}-$index'),
-        onTap: () => setState(() {
-          selectedDistrict =
-              game.districtAt(city.id, selectedPlot)?.districtId ??
-              selectedDistrict;
-          selectedPlot = index;
-        }),
-        child: CustomPaint(
-          painter: _HexPaint(
-            fill: selected ? const Color(0xff31564f) : fill,
-            stroke: stroke,
-            selected: selected,
-          ),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 3 : 7,
-              vertical: compact ? 4 : 15,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  planned
-                      ? Icons.construction
-                      : district == null
-                      ? _terrainIcon(terrain)
-                      : _districtIcon(district.districtId),
-                  size: compact ? 14 : 18,
-                  color: selected ? strategyMint : strategyMuted,
+              IconButton(
+                key: const Key('city-inspector-toggle'),
+                tooltip: showInspector ? '地図を広く表示' : '区画の詳細を表示',
+                onPressed: () => setState(() => showInspector = !showInspector),
+                icon: Icon(
+                  showInspector ? Icons.open_in_full : Icons.close_fullscreen,
+                  size: 18,
                 ),
-                Text(
-                  compact
-                      ? '${index + 1}'
-                      : planned
-                      ? plans.first.status == 'running'
-                            ? '建設中'
-                            : '予約済み'
-                      : name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: compact ? 12 : 10,
-                    color: selected ? strategyMint : Colors.white,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
-                  ),
-                ),
-                if (district != null && !compact)
-                  Text(
-                    'Lv.${district.level}',
-                    style: const TextStyle(color: strategyMint, fontSize: 10),
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      ),
+        Expanded(
+          child: CityScene(
+            key: ValueKey('city-scene-${city.id}'),
+            cityId: city.id,
+            cityName: city.name,
+            earth: city.planet == 'earth',
+            columns: city.width,
+            rows: city.height,
+            plots: scenePlotsForCity(game, city),
+            selectedPlot: selectedPlot,
+            adjacentPlots: city.adjacentPlots(selectedPlot).toSet(),
+            renderScene: widget.renderScene,
+            onPlotSelected: (index) => setState(() {
+              selectedDistrict =
+                  game.districtAt(city.id, selectedPlot)?.districtId ??
+                  selectedDistrict;
+              selectedPlot = index;
+              showInspector = true;
+            }),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: const BoxDecoration(
+            color: Color(0xff10212b),
+            border: Border(top: BorderSide(color: strategyLine)),
+          ),
+          child: Text(
+            '${development.stageName} · 完成 ${development.completedPlots}/${city.plotCount}区画 · 総Lv.${development.totalLevels} · 未予約空地 ${development.availablePlots}',
+            key: const Key('city-development-summary'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: strategyMint, fontSize: 11),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _detail() {
     final existing = game.districtAt(city.id, selectedPlot);
     final districts = available;
+    final reserved = game.districtPlanAt(city.id, selectedPlot);
     final selected =
         existing?.districtId ??
+        reserved?.definition.districtId ??
         (districts.any((item) => item.id == selectedDistrict)
             ? selectedDistrict!
             : districts.first.id);
@@ -305,14 +215,56 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         Expanded(
           child: ListView(
             key: const Key('district-detail'),
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(14),
             children: [
               StrategyHeading(
                 '区画 ${selectedPlot + 1}  ·  $terrain',
-                existing == null
-                    ? '建設する地区を選び、立地効果を比較します。'
+                reserved != null
+                    ? 'この区画の予約と工事状況を確認します。'
+                    : existing == null
+                    ? '地形と隣接効果を確認し、この場所に建設します。'
                     : '完成した地区を強化し、都市の能力を高めます。',
               ),
+              if (plan != null) ...[
+                StrategyCard(
+                  key: const Key('district-work-status'),
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        plan.stopReason.isNotEmpty
+                            ? '待機・停止中'
+                            : plan.status == 'running'
+                            ? '建設中'
+                            : '建設予約',
+                        style: const TextStyle(
+                          color: strategyCopper,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (plan.stopReason.isNotEmpty) Text(plan.stopReason),
+                      if (plan.status == 'running') ...[
+                        const SizedBox(height: 8),
+                        LinearProgressIndicator(
+                          value: plan.progress.clamp(0, 1),
+                        ),
+                        const SizedBox(height: 6),
+                        Text('残り ${gameDuration(plan.remainingMs)}'),
+                        const Text(
+                          '着工費は確保済みです。工期は着工時の条件で進みます。',
+                          style: TextStyle(fontSize: 11, color: strategyMuted),
+                        ),
+                      ] else
+                        const Text(
+                          '設備の順番と必要条件が揃うと、費用を確保して着工します。',
+                          style: TextStyle(fontSize: 11, color: strategyMuted),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               if (!game.cityUnlocked(city.id)) ...[
                 StrategyCard(
                   child: Text(
@@ -329,7 +281,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 ),
                 const SizedBox(height: 12),
               ],
-              if (existing == null) ...[
+              if (existing == null && reserved == null) ...[
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
@@ -367,68 +319,11 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 style: const TextStyle(fontSize: 12, color: strategyMuted),
               ),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                key: const Key('save-investment'),
-                onPressed: maxLevel
-                    ? null
-                    : () => widget.onSaveInvestment(candidate),
-                icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-                label: const Text('比較に保存'),
-              ),
-              if (widget.savedInvestment case final saved?) ...[
-                const SizedBox(height: 8),
-                StrategyCard(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        '保存した候補',
-                        style: TextStyle(color: strategyMint, fontSize: 11),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '${saved.title}\n${saved.action}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      const SizedBox(height: 5),
-                      const Text(
-                        '別の区画・都市を選ぶと、現在の候補と比較できます。',
-                        style: TextStyle(color: strategyMuted, fontSize: 11),
-                      ),
-                      TextButton.icon(
-                        key: const Key('compare-investments'),
-                        onPressed: maxLevel
-                            ? null
-                            : () => showDialog<void>(
-                                context: context,
-                                builder: (context) => ListenableBuilder(
-                                  listenable: widget.controller,
-                                  builder: (context, _) => InvestmentComparison(
-                                    game: widget.controller.state,
-                                    saved: saved,
-                                    current: candidate,
-                                  ),
-                                ),
-                              ),
-                        icon: const Icon(Icons.compare_arrows, size: 18),
-                        label: const Text('候補を比較'),
-                      ),
-                      TextButton(
-                        key: const Key('clear-investment'),
-                        onPressed: () => widget.onSaveInvestment(null),
-                        child: const Text('比較候補を解除'),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
               if (maxLevel)
                 const StrategyCard(
                   child: Text('この地区は最大レベルです。別の区画への展開を検討してください。'),
                 )
-              else ...[
+              else if (plan == null) ...[
                 StrategyCard(
                   padding: const EdgeInsets.all(12),
                   child: Column(
@@ -470,6 +365,63 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                     style: TextStyle(fontSize: 12, color: strategyMuted),
                   ),
               ],
+              OutlinedButton.icon(
+                key: const Key('save-investment'),
+                onPressed: maxLevel || plan != null
+                    ? null
+                    : () => widget.onSaveInvestment(candidate),
+                icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                label: const Text('比較に保存'),
+              ),
+              if (widget.savedInvestment case final saved?) ...[
+                const SizedBox(height: 8),
+                StrategyCard(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        '保存した候補',
+                        style: TextStyle(color: strategyMint, fontSize: 11),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '${saved.title}\n${saved.action}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        '別の区画・都市を選ぶと、現在の候補と比較できます。',
+                        style: TextStyle(color: strategyMuted, fontSize: 11),
+                      ),
+                      TextButton.icon(
+                        key: const Key('compare-investments'),
+                        onPressed: maxLevel || plan != null
+                            ? null
+                            : () => showDialog<void>(
+                                context: context,
+                                builder: (context) => ListenableBuilder(
+                                  listenable: widget.controller,
+                                  builder: (context, _) => InvestmentComparison(
+                                    game: widget.controller.state,
+                                    saved: saved,
+                                    current: candidate,
+                                  ),
+                                ),
+                              ),
+                        icon: const Icon(Icons.compare_arrows, size: 18),
+                        label: const Text('候補を比較'),
+                      ),
+                      TextButton(
+                        key: const Key('clear-investment'),
+                        onPressed: () => widget.onSaveInvestment(null),
+                        child: const Text('比較候補を解除'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
               if (definition.requiredResearch != null)
                 StrategyFact(
                   '必要研究',
@@ -555,20 +507,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                     style: TextStyle(fontSize: 12, color: strategyCopper),
                   ),
                 ),
-              if (plan != null) ...[
-                const SizedBox(height: 10),
-                LinearProgressIndicator(value: plan.progress.clamp(0, 1)),
-                const SizedBox(height: 7),
-                Text(
-                  plan.status == 'running'
-                      ? '建設中 · 残り ${gameDuration(plan.remainingMs)}'
-                      : '建設予約 · ${plan.stopReason}',
-                  style: const TextStyle(color: strategyCopper, fontSize: 12),
-                ),
-              ],
               const SizedBox(height: 8),
               const Text(
-                '費用は着工時に確保。完成すると地区と隣接効果が都市に反映されます。',
+                '着工すると地図に工事現場が現れ、完成・増強で建物が変わります。費用は着工時に確保します。',
                 style: TextStyle(color: strategyMuted, fontSize: 11),
               ),
             ],
@@ -582,90 +523,31 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   : city.planet == 'mars' && game.marsKits == 0
                   ? '到着キットが揃うまで着工を待機します'
                   : '${dollars(preview.cost)} · ${gameDuration(preview.durationMs)}'),
-          child: FilledButton.icon(
-            key: const Key('confirm-district'),
-            onPressed: !preview.isValid || widget.controller.busy
-                ? null
-                : () => widget.controller.command(
-                    (engine) => existing == null
-                        ? engine.enqueueDistrict(
-                            city.id,
-                            selectedPlot,
-                            selected,
-                          )
-                        : engine.upgradeDistrict(city.id, selectedPlot),
-                  ),
-            icon: const Icon(Icons.construction, size: 18),
-            label: Text(existing == null ? 'この区画に建設を予約' : 'この地区を強化する'),
-          ),
+          child: plan != null && widget.onOpenOperations != null
+              ? OutlinedButton.icon(
+                  key: const Key('district-open-operations'),
+                  onPressed: widget.onOpenOperations,
+                  icon: const Icon(Icons.view_timeline_outlined, size: 18),
+                  label: const Text('設備・進行で確認'),
+                )
+              : FilledButton.icon(
+                  key: const Key('confirm-district'),
+                  onPressed: !preview.isValid || widget.controller.busy
+                      ? null
+                      : () => widget.controller.command(
+                          (engine) => existing == null
+                              ? engine.enqueueDistrict(
+                                  city.id,
+                                  selectedPlot,
+                                  selected,
+                                )
+                              : engine.upgradeDistrict(city.id, selectedPlot),
+                        ),
+                  icon: const Icon(Icons.construction, size: 18),
+                  label: Text(existing == null ? 'この区画に建設を予約' : 'この地区を強化する'),
+                ),
         ),
       ],
     );
   }
-}
-
-Color _terrainColor(String terrain) => switch (terrain) {
-  'coast' => const Color(0xff193a4b),
-  'mineral' => const Color(0xff493d32),
-  'ridge' => const Color(0xff353d44),
-  'ice' => const Color(0xff324b56),
-  'crater' => const Color(0xff45362f),
-  _ => const Color(0xff243a37),
-};
-
-IconData _terrainIcon(String terrain) => switch (terrain) {
-  'coast' => Icons.water_outlined,
-  'ice' => Icons.ac_unit,
-  'mineral' => Icons.diamond_outlined,
-  'ridge' => Icons.landscape_outlined,
-  'crater' => Icons.blur_circular,
-  _ => Icons.grass_outlined,
-};
-
-IconData _districtIcon(String district) => switch (district) {
-  'housing' => Icons.home_outlined,
-  'campus' || 'mars_lab' => Icons.science_outlined,
-  'industry' => Icons.factory_outlined,
-  'solar' => Icons.solar_power_outlined,
-  'spaceport' => Icons.rocket_launch_outlined,
-  'mars_habitat' => Icons.holiday_village_outlined,
-  'greenhouse' => Icons.eco_outlined,
-  'extractor' => Icons.construction_outlined,
-  _ => Icons.location_city_outlined,
-};
-
-class _HexPaint extends CustomPainter {
-  const _HexPaint({
-    required this.fill,
-    required this.stroke,
-    required this.selected,
-  });
-  final Color fill;
-  final Color stroke;
-  final bool selected;
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(size.width / 2, 1)
-      ..lineTo(size.width - 1, size.height * .25)
-      ..lineTo(size.width - 1, size.height * .75)
-      ..lineTo(size.width / 2, size.height - 1)
-      ..lineTo(1, size.height * .75)
-      ..lineTo(1, size.height * .25)
-      ..close();
-    canvas.drawPath(path, Paint()..color = fill);
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = stroke
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = selected ? 2 : 1,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _HexPaint oldDelegate) =>
-      oldDelegate.fill != fill ||
-      oldDelegate.stroke != stroke ||
-      oldDelegate.selected != selected;
 }

@@ -9,6 +9,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/infrastructure/file_save_store.dart';
 import 'package:mars_terraforming/main.dart';
+import 'package:mars_terraforming/rendering/city_scene.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -140,7 +141,28 @@ void main() {
 
       // Place an Earth housing district through the actual hex board and preview.
       await tapKey('navigation-1');
-      await tapKey('plot-earth_delta-0');
+      await sceneReady();
+      // Tap actual projected ground coordinates, not an accessibility label.
+      for (final index in [4, 12, 0]) {
+        final map = tester.widget<CityScene>(find.byType(CityScene));
+        final geometry = CityTerrain(
+          earth: map.earth,
+          columns: map.columns,
+          rows: map.rows,
+          plots: map.plots,
+        );
+        final projection = CityMapProjection(terrain: geometry);
+        final screen =
+            tester.getTopLeft(find.byType(CityScene)) +
+            projection.center(index, tester.getSize(find.byType(CityScene)));
+        await tester.tapAt(screen);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(
+          tester.widget<CityScene>(find.byType(CityScene)).selectedPlot,
+          index,
+        );
+      }
+      await capture('terrain-ios-before');
       await tapKey('confirm-district');
       final home = controller.state.districtPlanAt('earth_delta', 0)!;
       expect(home.definition.districtId, 'housing');
@@ -152,6 +174,19 @@ void main() {
           before: true,
         ),
       );
+      await controller.advanceForDevelopment(
+        duration: Duration(milliseconds: factoryRun.remainingMs),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        tester.widget<CityScene>(find.byType(CityScene)).plots[0].workState,
+        SceneWorkState.building,
+      );
+      expect(
+        tester.widget<CityScene>(find.byType(CityScene)).plots[0].level,
+        0,
+      );
+      await capture('terrain-ios-construction');
       await controller.advanceForDevelopment(
         duration: const Duration(minutes: 15),
       );
@@ -166,7 +201,12 @@ void main() {
             .data,
         contains('拠点 · 完成 1/25区画 · 総Lv.1'),
       );
+      expect(
+        tester.widget<CityScene>(find.byType(CityScene)).plots[0].level,
+        1,
+      );
       await capture('strategy-ios-city');
+      await capture('terrain-ios-completed');
 
       // A completed neighboring campus changes both tax and research speed.
       await controller.command((engine) => engine.enqueue('urban_planning'));
@@ -197,6 +237,11 @@ void main() {
         isNot(contains('automated_fabrication')),
       );
 
+      expect(
+        tester.widget<CityScene>(find.byType(CityScene)).plots[0].level,
+        2,
+      );
+      await capture('terrain-ios-upgraded');
       await tapKey('plot-earth_delta-1');
       await tapKey('district-option-campus');
       final estimate = controller.state.districtPreview(
