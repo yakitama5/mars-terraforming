@@ -55,11 +55,35 @@ class CityTerrain {
     ];
   }
 
+  /// Edges shared by two plots are interior roads, not the edge of the city.
+  /// Quantized XZ keys tolerate Float32 coordinates without changing geometry.
+  List<(vm.Vector3, vm.Vector3)> boundaryEdges(Set<int> indices) {
+    final edges = <String, (vm.Vector3, vm.Vector3)>{};
+    String vertexKey(vm.Vector3 point) =>
+        '${(point.x * 10000).round()}:${(point.z * 10000).round()}';
+    for (final plot in plots.where((plot) => indices.contains(plot.index))) {
+      final points = boundary(plot.index);
+      for (var i = 0; i < points.length; i++) {
+        final a = points[i];
+        final b = points[(i + 1) % points.length];
+        final ak = vertexKey(a);
+        final bk = vertexKey(b);
+        final key = ak.compareTo(bk) < 0 ? '$ak/$bk' : '$bk/$ak';
+        if (edges.containsKey(key)) {
+          edges.remove(key);
+        } else {
+          edges[key] = (a, b);
+        }
+      }
+    }
+    return edges.values.toList();
+  }
+
   vm.Vector3 surfacePoint(double x, double z, {double offset = 0}) =>
       vm.Vector3(x, height(x, z) + offset, z);
 
   double _terrainHeight(String terrain) => switch (terrain) {
-    'ridge' => earth ? .80 : .90,
+    'ridge' => earth ? .95 : 1.00,
     'mineral' => .40,
     'ice' => .17,
     'coast' => .075,
@@ -105,44 +129,103 @@ class CityTerrain {
         _terrainHeight(plots[closest].terrain) * footprint;
     elevation +=
         (1 - footprint) *
-        (.10 * math.sin(x * 2.1 + z) + .07 * math.cos(z * 2.7 - x));
-    elevation += craterRim;
+        (.16 * math.sin(x * .84 + z * .22) +
+            .10 * math.cos(z * .9 - x * .30) +
+            .04 * math.sin(x * 2.4 + z * 1.2));
+    elevation += craterRim * (1 - footprint);
     if (hasCoast) {
-      final shore = -columns * math.sqrt(3) / 2 + .02 + .13 * math.sin(z * 1.4);
-      final sea = ((shore - x) / .75).clamp(0.0, 1.0);
-      elevation = elevation * (1 - sea) - .28 * sea;
+      final sea = _smooth(0, .85, -coastDistance(x, z));
+      elevation = elevation * (1 - sea) - .32 * sea;
     }
     return elevation;
   }
 
+  /// Curved shoreline outside the coastal building pads. The terrain remains
+  /// deterministic and authored; this does not change buildable game plots.
+  double coastDistance(double x, double z) =>
+      x -
+      (-columns * math.sqrt(3) / 2 -
+          .40 +
+          .35 * math.sin(z * .58 + .40) +
+          .14 * math.sin(z * 1.1 - 1.2));
+
+  static double _smooth(double start, double end, double value) {
+    final t = ((value - start) / (end - start)).clamp(0.0, 1.0);
+    return t * t * (3 - 2 * t);
+  }
+
   Color colorAt(double x, double z) {
-    var distance = double.infinity;
-    var terrain = 'plain';
+    // Blend terrain fields instead of coloring the nearest plot's whole
+    // Voronoi region. This keeps ice, rock and soil in natural broad patches,
+    // including beyond the development boundary.
+    var weights = 0.0;
+    var red = 0.0, green = 0.0, blue = 0.0;
     for (var i = 0; i < centers.length; i++) {
       final point = centers[i];
-      final next =
+      final distance =
           (x - point.x) * (x - point.x) + (z - point.z) * (z - point.z);
-      if (next < distance) {
-        distance = next;
-        terrain = plots[i].terrain;
-      }
+      final weight = math.exp(-distance * 1.1);
+      final color = switch (plots[i].terrain) {
+        'coast' => const Color(0xffb1a36a),
+        'ice' => const Color(0xffb6cdd2),
+        'mineral' => earth ? const Color(0xff7d7c50) : const Color(0xff75422f),
+        'ridge' => earth ? const Color(0xff747e61) : const Color(0xff9b553b),
+        'crater' => const Color(0xff714131),
+        _ => earth ? const Color(0xff6c8b3e) : const Color(0xffb05a32),
+      };
+      weights += weight;
+      red += color.r * weight;
+      green += color.g * weight;
+      blue += color.b * weight;
     }
-    if (hasCoast && height(x, z) < .015) {
-      return height(x, z) < -.15
-          ? const Color(0xff174b64)
-          : const Color(0xff34757f);
+    final wilderness = earth
+        ? const Color(0xff65843c)
+        : const Color(0xffac5834);
+    var base = weights > 1e-10
+        ? Color.lerp(
+            wilderness,
+            Color.from(
+              alpha: 1,
+              red: red / weights,
+              green: green / weights,
+              blue: blue / weights,
+            ),
+            _smooth(.03, .50, weights),
+          )!
+        : wilderness;
+    final patch =
+        .5 +
+        .25 * math.sin(x * .66 + z * .32) +
+        .25 * math.cos(z * .93 - x * .24);
+    base = Color.lerp(
+      base,
+      earth ? const Color(0xff34582e) : const Color(0xff713925),
+      .12 * patch,
+    )!;
+    if (hasCoast) {
+      final distance = coastDistance(x, z);
+      final beach = 1 - _smooth(.15, 1.0, distance);
+      base = Color.lerp(base, const Color(0xffb8ae76), beach * .65)!;
+      final water = _smooth(-.04, .45, -distance);
+      final depth = _smooth(.30, 2.0, -distance);
+      final sea = Color.lerp(
+        const Color(0xff348782),
+        const Color(0xff173f70),
+        depth,
+      )!;
+      base = Color.lerp(base, sea, water)!;
+      // A thin, soft surf line follows the shore without a texture or network.
+      final surf = math.exp(-math.pow((distance + .12) / .075, 2));
+      base = Color.lerp(base, const Color(0xffb3d5ba), surf * .48)!;
     }
-    final base = switch (terrain) {
-      'coast' => const Color(0xffa69c6f),
-      'ice' => const Color(0xff9bafba),
-      'mineral' => earth ? const Color(0xff77715b) : const Color(0xff875d48),
-      'ridge' => earth ? const Color(0xff6b7962) : const Color(0xffa2694c),
-      'crater' => const Color(0xff674c40),
-      _ => earth ? const Color(0xff57775a) : const Color(0xffaa7153),
-    };
-    final variation = .5 + .5 * math.sin(x * 3.7 + z * 6.1);
-    return Color.lerp(base, const Color(0xffc9b38f), variation * .12)!;
+    return base;
   }
+
+  // FlutterScene's PBR shader multiplies vertex RGB directly into linear
+  // albedo. Flutter Color is sRGB; feeding it raw washes out grass and red soil.
+  static double linearChannel(double srgb) => srgb <= .04045
+      ? srgb / 12.92
+      : math.pow((srgb + .055) / 1.055, 2.4).toDouble();
 
   fs.MeshGeometry mesh() {
     final positions = <double>[];
@@ -172,7 +255,12 @@ class CityTerrain {
           for (final index in triangle) {
             final p = corners[index];
             positions.addAll([p.x, p.y, p.z]);
-            colors.addAll([color.r, color.g, color.b, 1]);
+            colors.addAll([
+              linearChannel(color.r),
+              linearChannel(color.g),
+              linearChannel(color.b),
+              1,
+            ]);
           }
         }
       }
@@ -203,8 +291,8 @@ class CityMapProjection {
   CityMapProjection({
     required this.terrain,
     this.azimuth = .18,
-    this.elevation = .92,
-    this.zoom = 1,
+    this.elevation = .82,
+    this.zoom = 1.14,
     this.panX = 0,
     this.panZ = 0,
   });

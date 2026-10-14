@@ -93,7 +93,7 @@ void main() {
         final terrain = terrainFor(city);
         for (final size in [const Size(480, 260), const Size(960, 640)]) {
           for (final view in [
-            (azimuth: .18, elevation: .92, zoom: 1.0),
+            (azimuth: .18, elevation: .82, zoom: 1.14),
             (azimuth: -.9, elevation: .85, zoom: .9),
             (azimuth: 2.2, elevation: 1.12, zoom: 1.0),
           ]) {
@@ -148,6 +148,88 @@ void main() {
       },
     );
   }
+
+  test(
+    'development border removes shared edges and joins into closed outlines',
+    () {
+      final terrain = terrainFor(GameContent.cities['earth_delta']!);
+      final single = terrain.boundaryEdges({12});
+      expect(single, hasLength(6));
+      expect(terrain.boundaryEdges({12, 13}), hasLength(10));
+      final perimeter = terrain.boundaryEdges(
+        terrain.plots.map((p) => p.index).toSet(),
+      );
+      expect(perimeter, hasLength(38));
+      final degrees = <String, int>{};
+      for (final edge in perimeter) {
+        for (final point in [edge.$1, edge.$2]) {
+          final key =
+              '${(point.x * 10000).round()}:${(point.z * 10000).round()}';
+          degrees.update(key, (count) => count + 1, ifAbsent: () => 1);
+        }
+      }
+      expect(degrees.values.every((degree) => degree == 2), isTrue);
+    },
+  );
+
+  test(
+    'terrain color blends across ice and soil instead of a sharp hex seam',
+    () {
+      final terrain = CityTerrain(
+        earth: false,
+        columns: 2,
+        rows: 1,
+        plots: const [
+          ScenePlot(index: 0, terrain: 'ice', terrainName: '氷層'),
+          ScenePlot(index: 1, terrain: 'plain', terrainName: '平地'),
+        ],
+      );
+      final first = terrain.center(0);
+      final second = terrain.center(1);
+      final seam = (first.x + second.x) / 2;
+      final left = terrain.colorAt(seam - 1e-4, first.z);
+      final right = terrain.colorAt(seam + 1e-4, first.z);
+      expect(left.r, closeTo(right.r, .001));
+      expect(left.g, closeTo(right.g, .001));
+      expect(left.b, closeTo(right.b, .001));
+      expect(
+        terrain.colorAt(first.x, first.z).b,
+        greaterThan(terrain.colorAt(second.x, second.z).b + .15),
+      );
+    },
+  );
+
+  test('sRGB terrain colors are decoded before entering linear PBR albedo', () {
+    expect(CityTerrain.linearChannel(0), 0);
+    expect(CityTerrain.linearChannel(1), closeTo(1, 1e-10));
+    expect(CityTerrain.linearChannel(.5), closeTo(.21404114, 1e-7));
+    expect(CityTerrain.linearChannel(.04045), closeTo(.0031308, 1e-7));
+  });
+
+  test(
+    'all building centers retain flat pads after terrain detail is added',
+    () {
+      for (final city in GameContent.cities.values) {
+        final terrain = terrainFor(city);
+        for (var index = 0; index < city.plotCount; index++) {
+          final center = terrain.center(index);
+          for (final offset in [
+            const Offset(.35, 0),
+            const Offset(-.35, 0),
+            const Offset(0, .35),
+            const Offset(0, -.35),
+          ]) {
+            expect(
+              terrain.height(center.x + offset.dx, center.z + offset.dy),
+              closeTo(center.y, geometryTolerance),
+              reason:
+                  '${city.id} plot $index must support a level main building',
+            );
+          }
+        }
+      }
+    },
+  );
 
   test('crater rims remain continuous at the neighboring terrain boundary', () {
     final terrain = CityTerrain(

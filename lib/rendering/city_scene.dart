@@ -26,11 +26,14 @@ class CityScene extends StatefulWidget {
     required this.adjacentPlots,
     required this.onPlotSelected,
     this.renderScene = true,
+    this.constructionMode = false,
+    this.buildablePlots = const {},
     super.key,
   });
 
   final String cityId, cityName;
-  final bool earth, renderScene;
+  final bool earth, renderScene, constructionMode;
+  final Set<int> buildablePlots;
   final int columns, rows, selectedPlot;
   final List<ScenePlot> plots;
   final Set<int> adjacentPlots;
@@ -49,7 +52,7 @@ class _CitySceneState extends State<CityScene> {
   bool _loading = false;
   int _initialization = 0;
   double _panX = 0, _panZ = 0;
-  double _zoom = 1, _gestureZoom = 1, _azimuth = .18, _elevation = .92;
+  double _zoom = 1.14, _gestureZoom = 1.14, _azimuth = .18, _elevation = .82;
 
   @override
   void initState() {
@@ -75,10 +78,10 @@ class _CitySceneState extends State<CityScene> {
         return;
       }
       pending = fs.Scene()
-        ..environmentIntensity = .45
+        ..environmentIntensity = .60
         ..directionalLight = fs.DirectionalLight(
-          direction: vm.Vector3(-.4, -.85, -.30),
-          intensity: 1.3,
+          direction: vm.Vector3(-.6, -.78, -.42),
+          intensity: 1.65,
         );
       _models = CityModels();
       _scene = pending;
@@ -116,11 +119,11 @@ class _CitySceneState extends State<CityScene> {
   }
 
   void _resetView() {
-    _zoom = 1;
+    _zoom = 1.14;
     _panX = 0;
     _panZ = 0;
     _azimuth = .18;
-    _elevation = .92;
+    _elevation = .82;
   }
 
   void _setZoom(double value) {
@@ -263,6 +266,8 @@ class _CitySceneState extends State<CityScene> {
                         plots: widget.plots,
                         selected: widget.selectedPlot,
                         adjacent: widget.adjacentPlots,
+                        constructionMode: widget.constructionMode,
+                        buildable: widget.buildablePlots,
                       ),
                     ),
                   ),
@@ -382,38 +387,57 @@ class _CitySceneState extends State<CityScene> {
       color: const Color(0xe6102028),
       border: Border.all(color: const Color(0xff6b7b78)),
     ),
-    child: Row(
+    child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _control(
-          targetSize,
-          Icons.remove,
-          '都市地図を縮小',
-          () => setState(() => _setZoom(_zoom - .15)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _control(
+              targetSize,
+              Icons.remove,
+              '都市地図を縮小',
+              () => setState(() => _setZoom(_zoom - .15)),
+            ),
+            _control(
+              targetSize,
+              Icons.add,
+              '都市地図を拡大',
+              () => setState(() => _setZoom(_zoom + .15)),
+            ),
+            _control(
+              targetSize,
+              Icons.fit_screen,
+              '都市全体を表示',
+              () => setState(() {
+                _resetView();
+                _setZoom(.85);
+              }),
+            ),
+          ],
         ),
-        _control(
-          targetSize,
-          Icons.add,
-          '都市地図を拡大',
-          () => setState(() => _setZoom(_zoom + .15)),
-        ),
-        _control(
-          targetSize,
-          Icons.rotate_left,
-          '都市地図を左回転',
-          () => setState(() => _azimuth -= math.pi / 6),
-        ),
-        _control(
-          targetSize,
-          Icons.rotate_right,
-          '都市地図を右回転',
-          () => setState(() => _azimuth += math.pi / 6),
-        ),
-        _control(
-          targetSize,
-          Icons.explore_outlined,
-          '都市地図の視点を戻す',
-          () => setState(_resetView),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _control(
+              targetSize,
+              Icons.rotate_left,
+              '都市地図を左回転',
+              () => setState(() => _azimuth -= math.pi / 6),
+            ),
+            _control(
+              targetSize,
+              Icons.rotate_right,
+              '都市地図を右回転',
+              () => setState(() => _azimuth += math.pi / 6),
+            ),
+            _control(
+              targetSize,
+              Icons.explore_outlined,
+              '都市地図の視点を戻す',
+              () => setState(_resetView),
+            ),
+          ],
         ),
       ],
     ),
@@ -448,41 +472,82 @@ class _PlotBoundaryPainter extends CustomPainter {
     required this.plots,
     required this.selected,
     required this.adjacent,
+    required this.constructionMode,
+    required this.buildable,
   });
   final CityMapProjection view;
   final List<ScenePlot> plots;
   final int selected;
-  final Set<int> adjacent;
+  final Set<int> adjacent, buildable;
+  final bool constructionMode;
 
   @override
   void paint(Canvas canvas, Size size) {
     final border = Paint()..style = PaintingStyle.stroke;
     final text = TextPainter(textDirection: TextDirection.ltr);
+    // This marks the existing 25-plot development area, not a new territorial
+    // ownership rule. Interior shared edges are omitted from the outer line.
+    final perimeter = Path();
+    final camera = view.camera;
+    for (final (a, b) in view.terrain.boundaryEdges(
+      plots.map((plot) => plot.index).toSet(),
+    )) {
+      final start = camera.worldToScreen(a, size)!;
+      final end = camera.worldToScreen(b, size)!;
+      perimeter
+        ..moveTo(start.dx, start.dy)
+        ..lineTo(end.dx, end.dy);
+    }
+    canvas.drawPath(
+      perimeter,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 4.0
+        ..color = const Color(0x85233129),
+    );
+    canvas.drawPath(
+      perimeter,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 1.6
+        ..color = const Color(0xcad9d6a4),
+    );
     for (final plot in plots) {
       final isSelected = plot.index == selected;
       final isAdjacent = adjacent.contains(plot.index);
+      final canBuild = constructionMode && buildable.contains(plot.index);
       final color = isSelected
-          ? const Color(0xffffe3a1)
+          ? const Color(0xffffdf87)
+          : canBuild
+          ? const Color(0xb0c1ecbd)
           : isAdjacent
-          ? const Color(0xffcaa97a)
-          : const Color(0xa6425149);
+          ? const Color(0x99c6b878)
+          : constructionMode
+          ? const Color(0x406b7770)
+          : const Color(0x182d452f);
       border
         ..color = color
         ..strokeWidth = isSelected
             ? 2.4
-            : isAdjacent
-            ? 1.4
-            : .8;
+            : canBuild || isAdjacent
+            ? 1.2
+            : .65;
       final polygon = view.polygon(plot.index, size);
-      if (isSelected) {
-        canvas.drawPath(polygon, Paint()..color = const Color(0x15ffe3a1));
+      if (isSelected || canBuild) {
+        canvas.drawPath(
+          polygon,
+          Paint()
+            ..color = isSelected
+                ? const Color(0x20ffdd7c)
+                : const Color(0x1232ba7a),
+        );
       }
       canvas.drawPath(polygon, border);
       final bounds = polygon.getBounds();
       final center = view.center(plot.index, size);
-      if (!isSelected &&
-          !plot.isDeveloped &&
-          plot.workState == SceneWorkState.none) {
+      if (!isSelected && plot.workState == SceneWorkState.none) {
         continue;
       }
       final use = switch (plot.districtId) {
