@@ -88,8 +88,8 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
       await target.getByRole('button', { name: '提携・支援', exact: true }).click();
       await target.getByRole('button', { name: '人員配分', exact: true }).click();
     }
-    await main.getByRole('button', { name: '設備・進行' }).click();
-    await develop.getByRole('button', { name: '設備・進行' }).click();
+    await main.getByRole('button', { name: '設備・進行', exact: true }).click();
+    await develop.getByRole('button', { name: '設備・進行', exact: true }).click();
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
     assert.deepEqual(errors, []);
