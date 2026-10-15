@@ -43,6 +43,13 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
       return JSON.parse(JSON.parse(bundle.primary).payload);
     }, key);
     const ready = async target => {
+      const intro = target.getByRole('button', { name: '物語をスキップ', exact: true });
+      const game = target.getByRole('button', { name: '設備・進行', exact: true });
+      await intro.or(game).first().waitFor({ timeout: 60000 });
+      if (await intro.count()) {
+        await intro.click();
+        await target.getByRole('button', { name: '名前は後で決める', exact: true }).click();
+      }
       await target.getByRole('button', { name: '開発 +5分' }).waitFor({ timeout: 60000 });
       await target.waitForTimeout(400);
     };
