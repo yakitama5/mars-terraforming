@@ -6,6 +6,7 @@ import '../domain/game_state.dart';
 import '../rendering/city_scene.dart';
 import 'city_scene_data.dart';
 import 'city_facility_palette.dart';
+import 'habitat_choice_dialog.dart';
 import 'investment_comparison.dart';
 import 'strategy_widgets.dart';
 
@@ -76,7 +77,11 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         if (showInspector) ...[
           const VerticalDivider(width: 1, color: strategyLine),
           SizedBox(
-            width: constraints.maxWidth > 1100 ? 308 : 280,
+            width: constraints.maxWidth > 1100
+                ? 308
+                : constraints.maxWidth < 650
+                ? constraints.maxWidth * .44
+                : 280,
             child: ColoredBox(
               color: const Color(0xff102129),
               child: choosingFacility
@@ -287,6 +292,15 @@ class _CityDevelopmentState extends State<CityDevelopment> {
       id,
       upgrade: existing != null,
     );
+    final candidate = InvestmentCandidate(
+      cityId: city.id,
+      plotIndex: selectedPlot,
+      districtId: id,
+      targetLevel: preview.targetLevel,
+    );
+    final canCompare = hasPlotSelection && plan == null && !maxLevel;
+    final saved = widget.savedInvestment;
+    final isSaved = saved != null && _sameInvestment(saved, candidate);
     final terrain = GameContent.terrainNames[city.terrainAt(selectedPlot)];
     final reason = hasPlotSelection
         ? preview.blockedReason
@@ -427,8 +441,10 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                             !game.achievements.contains('first_landing') ||
                                 widget.controller.busy
                             ? null
-                            : () => widget.controller.command(
-                                (engine) => engine.chooseHabitat(choice.$1),
+                            : () => confirmHabitatChoice(
+                                context,
+                                widget.controller,
+                                choice.$1,
                               ),
                         child: Text(choice.$2),
                       ),
@@ -503,43 +519,53 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 ),
               Row(
                 children: [
-                  Expanded(
-                    child: TextButton(
-                      key: const Key('city-change-facility'),
-                      onPressed: () => setState(() {
-                        choosingFacility = true;
-                        placementMode = false;
-                      }),
-                      child: const Text(
-                        '施設を変更',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
+                  _toolbarAction(
+                    id: 'city-change-facility',
+                    icon: Icons.grid_view_outlined,
+                    label: existing != null || plan != null ? '新設' : '用途',
+                    tooltip: '建設する施設を選ぶ',
+                    onPressed: () => setState(() {
+                      choosingFacility = true;
+                      placementMode = false;
+                    }),
                   ),
-                  Expanded(
-                    child: TextButton(
-                      key: const Key('city-cancel-placement'),
+                  if (placementMode)
+                    _toolbarAction(
+                      id: 'city-cancel-placement',
+                      icon: Icons.close,
+                      label: '解除',
+                      tooltip: '配置をやめる',
                       onPressed: _cancelPlacement,
-                      child: Text(
-                        placementMode ? '配置をやめる' : '施設一覧へ',
-                        style: const TextStyle(fontSize: 12),
-                      ),
                     ),
-                  ),
+                  if (canCompare)
+                    _toolbarAction(
+                      id: 'city-save-investment',
+                      icon: isSaved
+                          ? Icons.bookmark
+                          : Icons.bookmark_add_outlined,
+                      label: isSaved ? '保存済' : '保存',
+                      tooltip: isSaved ? 'この比較候補は保存済み' : 'この候補を比較に保存',
+                      onPressed: isSaved
+                          ? null
+                          : () => widget.onSaveInvestment(candidate),
+                    ),
+                  if (canCompare && saved != null)
+                    _toolbarAction(
+                      id: 'city-compare-investments',
+                      icon: Icons.compare_arrows,
+                      label: '比較',
+                      tooltip: '保存した候補と比較',
+                      onPressed: isSaved
+                          ? null
+                          : () => _showInvestmentComparison(saved, candidate),
+                    ),
                   if (hasPlotSelection)
-                    IconButton(
-                      key: const Key('city-open-details'),
+                    _toolbarAction(
+                      id: 'city-open-details',
+                      icon: Icons.subject,
+                      label: '詳細',
                       tooltip: '費用・効果と投資比較',
                       onPressed: _openDetails,
-                      icon: const ExcludeSemantics(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.subject, size: 17),
-                            Text('詳細', style: TextStyle(fontSize: 10)),
-                          ],
-                        ),
-                      ),
                     ),
                 ],
               ),
@@ -549,6 +575,75 @@ class _CityDevelopmentState extends State<CityDevelopment> {
       ],
     );
   }
+
+  Widget _toolbarAction({
+    required String id,
+    required IconData icon,
+    required String label,
+    required String tooltip,
+    VoidCallback? onPressed,
+  }) => Expanded(
+    child: Semantics(
+      label: tooltip,
+      button: true,
+      enabled: onPressed != null,
+      onTap: onPressed,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: tooltip,
+        excludeFromSemantics: true,
+        child: TextButton(
+          key: Key(id),
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+            minimumSize: const Size(0, 44),
+            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 4),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17),
+              Text(label, style: const TextStyle(fontSize: 10)),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  bool _sameInvestment(InvestmentCandidate a, InvestmentCandidate b) =>
+      a.cityId == b.cityId &&
+      a.plotIndex == b.plotIndex &&
+      a.districtId == b.districtId &&
+      a.targetLevel == b.targetLevel;
+
+  Future<void> _showInvestmentComparison(
+    InvestmentCandidate saved,
+    InvestmentCandidate current,
+  ) => showDialog<void>(
+    context: context,
+    builder: (context) => ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) => widget.controller.engine == null
+          ? AlertDialog(
+              key: const Key('investment-comparison-stopped'),
+              title: const Text('進行を停止しました'),
+              content: Text(widget.controller.error ?? '保存状態を確認してください。'),
+              actions: [
+                TextButton(
+                  key: const Key('close-investment-comparison'),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('地図へ戻る'),
+                ),
+              ],
+            )
+          : InvestmentComparison(
+              game: widget.controller.state,
+              saved: saved,
+              current: current,
+            ),
+    ),
+  );
 
   Widget _workStatus(PlannedTask plan) => Column(
     key: const Key('district-work-status'),
@@ -840,39 +935,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                             ? null
                             : () {
                                 Navigator.of(context).pop();
-                                showDialog<void>(
-                                  context: context,
-                                  builder: (context) => ListenableBuilder(
-                                    listenable: widget.controller,
-                                    builder: (context, _) =>
-                                        widget.controller.engine == null
-                                        ? AlertDialog(
-                                            key: const Key(
-                                              'investment-comparison-stopped',
-                                            ),
-                                            title: const Text('進行を停止しました'),
-                                            content: Text(
-                                              widget.controller.error ??
-                                                  '保存状態を確認してください。',
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                key: const Key(
-                                                  'close-investment-comparison',
-                                                ),
-                                                onPressed: () =>
-                                                    Navigator.of(context).pop(),
-                                                child: const Text('地図へ戻る'),
-                                              ),
-                                            ],
-                                          )
-                                        : InvestmentComparison(
-                                            game: widget.controller.state,
-                                            saved: saved,
-                                            current: candidate,
-                                          ),
-                                  ),
-                                );
+                                _showInvestmentComparison(saved, candidate);
                               },
                         icon: const Icon(Icons.compare_arrows, size: 18),
                         label: const Text('候補を比較'),
@@ -929,8 +992,10 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                           !game.achievements.contains('first_landing') ||
                               widget.controller.busy
                           ? null
-                          : () => widget.controller.command(
-                              (engine) => engine.chooseHabitat('dome'),
+                          : () => confirmHabitatChoice(
+                              context,
+                              widget.controller,
+                              'dome',
                             ),
                       child: const Text('ドーム居住'),
                     ),
@@ -940,8 +1005,10 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                           !game.achievements.contains('first_landing') ||
                               widget.controller.busy
                           ? null
-                          : () => widget.controller.command(
-                              (engine) => engine.chooseHabitat('underground'),
+                          : () => confirmHabitatChoice(
+                              context,
+                              widget.controller,
+                              'underground',
                             ),
                       child: const Text('地下居住'),
                     ),
