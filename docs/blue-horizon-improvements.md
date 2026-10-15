@@ -68,3 +68,12 @@ district-5の専門職・提携・支払済み作業・通知も保持する。�
 - iOS実機の日本語キーボード/VoiceOver/電池/長時間GPUメモリ、Android、Safari/Firefoxは未検証。
 
 詳細: [導入](story-onboarding-notes.md)、[UI](blue-ui-review.md)、[研究](research-frontiers.md)、[生成画像とプロンプト](generated-story-assets.md)。
+
+## 公開反映の状態
+
+ローカル実装・検証と目的別コミットは完了。作業ブランチは `codex/blue-horizon-onboarding`。
+2026-10-16の公開GitHubへのpushは自動承認審査により拒否された。前回チャットでの
+「同じように本番まで適用していいよ」という発言の原文を確認して再審査したが、
+別チャットのツール取得内容は今回の公開承認の根拠として認められなかった。
+外部送信・PR作成・develop/mainへの反映・公開版の動作確認は未実施。
+次の判断は、今回のコード・文書・生成画像を既存の公開リポジトリへ送り、develop→mainへ反映することの確認。
