@@ -208,7 +208,14 @@ class _AgencyManagementState extends State<AgencyManagement> {
     );
   }
 
-  Widget _staff() {
+  Widget _staff() => LayoutBuilder(
+    builder: (context, constraints) => _staffPanel(
+      // Keep enough space to expose the whole allocation control on phones.
+      scrollConfirmation: constraints.maxHeight < 240,
+    ),
+  );
+
+  Widget _staffPanel({required bool scrollConfirmation}) {
     final minimum = game.reservedResearchers;
     final maximum = game.specialistCount - game.reservedIndustrialWorkers;
     final candidate = (proposedResearchers ?? game.researchers).clamp(
@@ -343,6 +350,10 @@ class _AgencyManagementState extends State<AgencyManagement> {
                   reason,
                   style: const TextStyle(fontSize: 12, color: strategyCopper),
                 ),
+              if (scrollConfirmation) ...[
+                const SizedBox(height: 12),
+                _staffConfirmation(candidate, reason),
+              ],
               const SizedBox(height: 16),
               const Text(
                 '専門職を育成する',
@@ -391,29 +402,31 @@ class _AgencyManagementState extends State<AgencyManagement> {
             ],
           ),
         ),
-        StrategyActionBar(
-          message: candidate == game.researchers
-              ? '現在の配分です'
-              : '研究 $candidate人 / 工業 ${game.specialistCount - candidate}人に変更',
-          child: FilledButton(
-            key: const Key('confirm-staff-allocation'),
-            onPressed:
-                candidate == game.researchers ||
-                    reason != null ||
-                    widget.controller.busy
-                ? null
-                : () async {
-                    await widget.controller.command(
-                      (engine) => engine.assignResearchers(candidate),
-                    );
-                    if (mounted) setState(() => proposedResearchers = null);
-                  },
-            child: const Text('人員配分を確定'),
-          ),
-        ),
+        if (!scrollConfirmation) _staffConfirmation(candidate, reason),
       ],
     );
   }
+
+  Widget _staffConfirmation(int candidate, String? reason) => StrategyActionBar(
+    message: candidate == game.researchers
+        ? '現在の配分です'
+        : '研究 $candidate人 / 工業 ${game.specialistCount - candidate}人に変更',
+    child: FilledButton(
+      key: const Key('confirm-staff-allocation'),
+      onPressed:
+          candidate == game.researchers ||
+              reason != null ||
+              widget.controller.busy
+          ? null
+          : () async {
+              await widget.controller.command(
+                (engine) => engine.assignResearchers(candidate),
+              );
+              if (mounted) setState(() => proposedResearchers = null);
+            },
+      child: const Text('人員配分を確定'),
+    ),
+  );
 
   Future<void> _confirmPartnership(
     PartnershipDefinition event,
