@@ -65,6 +65,7 @@ Web試遊は既定で開発用の別セーブと時間送りを使います。
 
 ## 資料と検証
 
+- [プロジェクトメモリ：現在の好み・方針・再開時の要約](docs/project-memory.md)
 - [円形の箱庭・川・土の断面と最新の検証](docs/circular-terrarium.md)
 - [都市の接写・質感・投影影](docs/city-diorama.md)
 - [六角地形へ広がる街区・施設選択](docs/district-landscape.md)
@@ -81,4 +82,3 @@ Web試遊は既定で開発用の別セーブと時間送りを使います。
 
 検証: `mise exec -- bash tools/check.sh`。
 Google連携・全球環境・ED・周回・火星復元は今後の段階です。
-

@@ -1,6 +1,8 @@
 # 開発・検証の引き継ぎ
 
 更新: 2026-10-15。最新は円形の地盤・川・土の断面を持つ都市の箱庭。進行データはcontent district-5を維持。
+最新のユーザー意向と再開用の要約は [プロジェクトメモリ](project-memory.md) を参照。
+円形の箱庭はユーザーから「いい感じ！」と評価され、以後の見た目の基準とする。細部は引き続き調整対象。
 最新の変更と検証は [円形の箱庭](circular-terrarium.md) を参照。
 前回の接写・素材・投影影は [箱庭景観](city-diorama.md) を参照。
 施設先行の配置操作は [六角地形と街区配置](district-landscape.md) を参照。
@@ -106,7 +108,9 @@ Flutter test/build/driveを同じcheckoutで並列実行するとnative assets�
 
 ## 初期版からの検証履歴
 
-以下は各段階での記録。最新のUI・区画仕様・テスト件数は戦略試作の記録を優先する。
+以下は各段階の履歴であり、テスト件数や未実施項目も当時の記録。
+現在のUI・景観・検証は [円形の箱庭](circular-terrarium.md)、進行の数値は
+[並行開発と機関運営](agency-development.md) と `lib/domain/game_content.dart` を優先する。
 
 ## GitHub Pages / main・developの初回公開
 
