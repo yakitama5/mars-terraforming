@@ -204,6 +204,24 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     return null;
   }
 
+  bool get _needsFirstDelivery =>
+      city.planet == 'mars' && !game.achievements.contains('first_landing');
+
+  String? _requiredResearch(
+    DistrictDefinition definition,
+    DistrictState? existing,
+  ) {
+    // A first landing unlocks Mars before city-specific research is checked.
+    if (_needsFirstDelivery) return null;
+    final candidates = [
+      ?city.requiredResearch,
+      ?definition.requiredResearch,
+      if (existing != null && existing.level < definition.maxLevel)
+        definition.researchForUpgrade(existing.level + 1),
+    ];
+    return candidates.where((id) => !game.research.contains(id)).firstOrNull;
+  }
+
   Set<int> get _buildablePlots => !placementMode || selectedDistrict == null
       ? const {}
       : {
@@ -262,11 +280,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         available.first.id;
     final definition = GameContent.districts[id]!;
     final maxLevel = existing != null && existing.level >= definition.maxLevel;
-    final requiredResearch =
-        city.requiredResearch != null &&
-            !game.research.contains(city.requiredResearch)
-        ? city.requiredResearch
-        : definition.requiredResearch;
+    final requiredResearch = _requiredResearch(definition, existing);
     final preview = game.districtPreview(
       city.id,
       selectedPlot,
@@ -386,13 +400,19 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   ),
                 ),
               ],
-              if (requiredResearch != null &&
-                  !game.research.contains(requiredResearch))
+              if (requiredResearch != null)
                 TextButton.icon(
                   key: const Key('district-required-research'),
                   onPressed: () => widget.onOpenResearch(requiredResearch),
                   icon: const Icon(Icons.account_tree_outlined, size: 16),
                   label: const Text('必要な研究を確認'),
+                ),
+              if (_needsFirstDelivery && widget.onOpenOperations != null)
+                TextButton.icon(
+                  key: const Key('district-required-delivery'),
+                  onPressed: widget.onOpenOperations,
+                  icon: const Icon(Icons.rocket_launch_outlined, size: 16),
+                  label: const Text('輸送の準備を確認'),
                 ),
               if (id == 'mars_habitat' && game.habitatChoice == null)
                 Wrap(
@@ -619,6 +639,10 @@ class _CityDevelopmentState extends State<CityDevelopment> {
             : districts.first.id);
     final definition = GameContent.districts[selected]!;
     final maxLevel = existing != null && existing.level >= definition.maxLevel;
+    final requiredResearch = _requiredResearch(definition, existing);
+    final investmentResearch = existing != null && !maxLevel
+        ? definition.researchForUpgrade(existing.level + 1)
+        : definition.requiredResearch;
     final preview = game.districtPreview(
       city.id,
       selectedPlot,
@@ -703,16 +727,16 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                     style: const TextStyle(color: strategyCopper),
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    widget.onOpenResearch(
-                      city.requiredResearch ?? 'life_support',
-                    );
-                  },
-                  icon: const Icon(Icons.account_tree_outlined),
-                  label: const Text('必要な研究を見る'),
-                ),
+                if (_needsFirstDelivery && widget.onOpenOperations != null)
+                  TextButton.icon(
+                    key: const Key('district-required-delivery-detail'),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      widget.onOpenOperations!();
+                    },
+                    icon: const Icon(Icons.rocket_launch_outlined),
+                    label: const Text('輸送の準備を確認'),
+                  ),
                 const SizedBox(height: 12),
               ],
               Text(
@@ -866,17 +890,17 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 ),
               ],
               const SizedBox(height: 12),
-              if (definition.requiredResearch != null)
+              if (investmentResearch != null)
                 StrategyFact(
                   '必要研究',
-                  GameContent.tasks[definition.requiredResearch]!.name,
+                  GameContent.tasks[investmentResearch]!.name,
                 ),
-              if (definition.requiredResearch != null &&
-                  !game.research.contains(definition.requiredResearch))
+              if (requiredResearch != null)
                 TextButton.icon(
+                  key: const Key('district-required-research-detail'),
                   onPressed: () {
                     Navigator.of(context).pop();
-                    widget.onOpenResearch(definition.requiredResearch!);
+                    widget.onOpenResearch(requiredResearch);
                   },
                   icon: const Icon(Icons.account_tree_outlined, size: 17),
                   label: const Text('必要な研究を確認'),
