@@ -12,6 +12,7 @@ class CommandHud extends StatelessWidget {
     required this.busy,
     required this.onAdvance,
     required this.onAdvanceDuration,
+    required this.onOpenResources,
   });
 
   final GameState game;
@@ -19,6 +20,7 @@ class CommandHud extends StatelessWidget {
   final bool busy;
   final VoidCallback onAdvance;
   final ValueChanged<Duration> onAdvanceDuration;
+  final VoidCallback onOpenResources;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -27,7 +29,9 @@ class CommandHud extends StatelessWidget {
       final status = game.agencyStatus;
       return Container(
         key: const Key('command-resource-hud'),
-        height: wide ? 54 : 48,
+        height: MediaQuery.textScalerOf(context).scale(14) > 18
+            ? 64
+            : (wide ? 54 : 48),
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -66,6 +70,7 @@ class CommandHud extends StatelessWidget {
                 valueKey: const Key('money'),
                 description: '資金 ${dollars(game.money)}',
                 color: strategyMint,
+                onTap: onOpenResources,
               ),
             ),
             Expanded(
@@ -76,20 +81,30 @@ class CommandHud extends StatelessWidget {
                 description:
                     '税収 ${dollars(game.taxPerMinute)} − 維持費 ${dollars(game.upkeepPerMinute)} = ${signedDollars(game.netPerMinute)}/分',
                 color: game.netPerMinute < 0 ? strategyCopper : strategyMint,
+                onTap: onOpenResources,
               ),
             ),
             for (final resource in [
-              ('研究者', '${game.researchers}人'),
-              ('工業員', '${game.industrialWorkers}人'),
-              ('技術力', '${status.technology}'),
-              ('知名度', '${status.fame}'),
-              if (wide) ('友好度', '${status.friendship}'),
-              if (wide) ('宇宙貢献', '${status.spaceContribution}'),
+              if (constraints.maxWidth >= 800) ('研究者', '${game.researchers}人'),
+              if (constraints.maxWidth >= 800)
+                ('工業員', '${game.industrialWorkers}人'),
+              if (wide) ('技術力', '${status.technology}'),
+              if (wide) ('知名度', '${status.fame}'),
             ])
               Expanded(
                 flex: 9,
-                child: _Resource(label: resource.$1, value: resource.$2),
+                child: _Resource(
+                  label: resource.$1,
+                  value: resource.$2,
+                  onTap: onOpenResources,
+                ),
               ),
+            TextButton.icon(
+              key: const Key('open-resources'),
+              onPressed: onOpenResources,
+              icon: const Icon(Icons.bar_chart, size: 18),
+              label: const Text('国力', style: TextStyle(fontSize: 12)),
+            ),
             if (devTools) ...[
               Padding(
                 padding: const EdgeInsets.only(left: 6),
@@ -132,45 +147,50 @@ class _Resource extends StatelessWidget {
     this.description,
     this.valueKey,
     this.color = const Color(0xffe4e7e1),
+    required this.onTap,
   });
 
   final String label, value;
   final String? description;
   final Key? valueKey;
   final Color color;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => Tooltip(
     message: description ?? '$label $value',
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: const BoxDecoration(
-        border: Border(left: BorderSide(color: strategyLine)),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10, color: strategyMuted),
-          ),
-          Text(
-            value,
-            key: valueKey,
-            semanticsLabel: '$label $value',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 14,
-              height: 1.35,
-              color: color,
-              fontWeight: FontWeight.w700,
+    child: InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: const BoxDecoration(
+          border: Border(left: BorderSide(color: strategyLine)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: strategyMuted),
             ),
-          ),
-        ],
+            Text(
+              value,
+              key: valueKey,
+              semanticsLabel: '$label $value',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.35,
+                color: color,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );

@@ -17,6 +17,7 @@ import 'facility_queue_card.dart';
 import 'investment_comparison.dart';
 import 'plan_forecast_dialog.dart';
 import 'research_tree.dart';
+import 'resource_overview_dialog.dart';
 import 'strategy_widgets.dart';
 
 class GameScreen extends StatefulWidget {
@@ -156,6 +157,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     onAdvance: () => controller.advanceForDevelopment(),
     onAdvanceDuration: (duration) =>
         controller.advanceForDevelopment(duration: duration),
+    onOpenResources: () => showDialog<void>(
+      context: context,
+      builder: (_) => ResourceOverviewDialog(
+        controller: controller,
+        onOpenAgency: () => setState(() {
+          agencySection = 0;
+          tab = 4;
+        }),
+      ),
+    ),
   );
 
   Widget _navigation() => Container(
@@ -217,11 +228,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       shape: const RoundedRectangleBorder(),
                     ),
-                    icon: Icon(entry.$1, size: 19),
+                    icon:
+                        MediaQuery.sizeOf(context).width < 800 ||
+                            MediaQuery.textScalerOf(context).scale(14) > 18
+                        ? null
+                        : Icon(entry.$1, size: 19),
                     label: Text(
                       entry.$2,
-                      style: const TextStyle(
-                        fontSize: 14,
+                      style: TextStyle(
+                        fontSize: _compactLandscape ? 12 : 14,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
