@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'game_content.dart';
+import 'contextual_tips.dart';
 import 'game_state.dart';
 
 /// Deterministic, event-boundary simulation. At a shared timestamp:
@@ -328,6 +329,15 @@ class GameEngine {
         plan.stopReason = '設備休止中・手動で再開';
       }
     }
+    if (state.dismissedTipIds.isNotEmpty) {
+      final retained = retainedContextualTipDismissals(
+        state,
+        state.dismissedTipIds,
+      );
+      state.dismissedTipIds
+        ..clear()
+        ..addAll(retained);
+    }
   }
 
   void _trimFinishedPlans() {
@@ -470,6 +480,7 @@ class GameEngine {
           reward: GameContent.achievementReward,
         );
     }
+    state.recordCompletion(plan);
     _record('${task.name}が完了${task.reward == 0 ? '' : '（+${task.reward}ドル）'}');
   }
 

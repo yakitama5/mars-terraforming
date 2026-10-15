@@ -60,7 +60,31 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
       assert.deepEqual(after.districts, before.districts);
       assert.deepEqual(after.plans.map(p => p.id), before.plans.map(p => p.id));
     };
+    const inspectGuidance = async (target, saveKey) => {
+      const before = await snapshot(target, saveKey);
+      await target.getByRole('button', { name: 'ガイド', exact: true }).click();
+      await target.getByText('開発ガイド・Tips', { exact: true }).waitFor();
+      // The map also has a guide. Select the focusable entry in the open dialog.
+      await target.getByRole('button', { name: '導入の手順と達成状況を確認', exact: true }).and(target.locator('[tabindex="0"]')).click();
+      await target.getByText(/^最初の1時間の手引き · \d\/6達成$/).waitFor();
+      await target.getByRole('button', { name: '閉じて開発を続ける', exact: true }).click();
+      await target.getByRole('button', { name: '閉じる', exact: true }).and(target.locator('[tabindex="0"]')).click();
+      await target.getByText('開発ガイド・Tips', { exact: true }).waitFor({ state: 'hidden' });
+
+      await target.getByRole('button', { name: /^通知(?: \d+)?$/ }).click();
+      await target.getByText('完了通知 · 未読 0件', { exact: true }).waitFor();
+      await target.getByText(/建設・研究・製造・輸送が完了すると\s*ここに記録されます。/).waitFor();
+      await target.getByRole('button', { name: '閉じる', exact: true }).and(target.locator('[tabindex="0"]')).click();
+      await target.getByText('完了通知 · 未読 0件', { exact: true }).waitFor({ state: 'hidden' });
+      const after = await snapshot(target, saveKey);
+      assert.equal(after.worldId, before.worldId);
+      assert.deepEqual(after.plans, before.plans);
+      assert.deepEqual(after.research, before.research);
+      assert.deepEqual(after.districts, before.districts);
+      assert.deepEqual(after.completionNotices, []);
+    };
     await inspectPlacement(main, mainKey);
+    await inspectGuidance(main, mainKey);
     const firstCaches = await main.evaluate(() => caches.keys());
     const mainPrefix = `mars-terraforming:${encodeURIComponent(new URL(base).pathname)}:`;
     assert.ok(firstCaches.some(key => key.startsWith(mainPrefix)));
@@ -68,6 +92,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     const develop = await page(developUrl);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
     await inspectPlacement(develop, developKey);
+    await inspectGuidance(develop, developKey);
     await develop.getByRole('button', { name: '機関運営', exact: true }).click();
     const devBefore = await snapshot(develop, developKey);
     assert.equal(devBefore.contentVersion, 'district-5');
@@ -102,6 +127,9 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     assert.ok((await snapshot(develop, developKey)).simulatedMs >= devAfter.simulatedMs);
     assert.equal((await snapshot(main, mainKey)).researchers, 7);
     assert.equal((await snapshot(develop, developKey)).researchers, 6);
+    // Cached releases must retain usable guide and notification entries offline.
+    await inspectGuidance(main, mainKey);
+    await inspectGuidance(develop, developKey);
     for (const target of [main, develop]) {
       await target.getByRole('button', { name: '機関運営', exact: true }).click();
       await target.getByRole('button', { name: '提携・支援', exact: true }).click();
@@ -112,7 +140,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
     assert.deepEqual(errors, []);
-    result = { result: 'PASS', main: base, develop: developUrl, checks: ['facility-first map placement and cancel on both branches', 'district-5 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
+    result = { result: 'PASS', main: base, develop: developUrl, checks: ['facility-first map placement and cancel on both branches', 'six-step onboarding guide and empty completion history on both branches', 'guide and notification entries work after offline reload', 'district-5 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
   } finally {
     try {
       // Restore networking and close the context before waiting for browser exit.

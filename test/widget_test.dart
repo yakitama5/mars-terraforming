@@ -403,9 +403,13 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('navigation-2')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const Key('research-node-automated_fabrication')),
+      await tester.tap(find.byKey(const Key('research-fit')));
+      await tester.pumpAndSettle();
+      final target = find.byKey(
+        const Key('research-node-automated_fabrication'),
       );
+      expect(target.hitTestable(), findsOneWidget);
+      await tester.tap(target);
       await tester.pumpAndSettle();
       expect(find.text('必要な研究・実証条件'), findsOneWidget);
       expect(find.text('完成するとできること'), findsOneWidget);

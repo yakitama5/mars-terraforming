@@ -3,6 +3,8 @@
 更新: 2026-10-15。[前回の接写と質感](city-diorama.md)に続く変更。
 今回のユーザー指定は、円形に切り抜いた土地に街と自然が収まる、瓶の中の小世界のような箱庭。
 川などの地形が見分けられることを優先する。
+実画面の共有後、ユーザーから「いい感じ！」と評価された。円形の土地・厚み・川が読める構図を
+次の改善の基準とし、細部とゲーム数値は仮設定のまま扱う。[現在の方針](project-memory.md)も参照。
 
 ## 今回の表現
 
@@ -69,8 +71,19 @@ semanticsの外接矩形が連続して安定することを待つよう変更�
 すべてゲーム本体の描画。検証では専用セーブを作り、ユーザーのブラウザ保存には触れていない。
 
 公開先は [main](https://yakitama5.github.io/mars-terraforming/) と
-[develop](https://yakitama5.github.io/mars-terraforming/develop/)。最終のpush起点デプロイrun・SHAと
-公開両URLの操作結果は今回のリリースPRへ記録する。
+[develop](https://yakitama5.github.io/mars-terraforming/develop/)。
+2026-10-15の公開確認は完了し、[開発PR #16](https://github.com/yakitama5/mars-terraforming/pull/16) と
+[リリースPR #17](https://github.com/yakitama5/mars-terraforming/pull/17) に結果を記録済み。
+
+- develop: `845b32ec012f9737b1a2886ee77a454246ece0fa`、
+  [push配信38712432682](https://github.com/yakitama5/mars-terraforming/actions/runs/38712432682) が成功。
+- main: `c899f714995cb323c5f3e6d731220cf6ad47b624`、
+  [push配信38713002016](https://github.com/yakitama5/mars-terraforming/actions/runs/38713002016) が成功。
+- 最終の `deployment.json` の両SHAとrunが一致。公開両URLで `tools/pages_smoke.cjs` が自然終了0。
+  施設選択・地表への配置・取消、人員配分の保存、通常版と開発版の時間送り／保存／ロック／キャッシュ分離、
+  両方のオフライン再読込を確認した。
+
+上記はこの景観版を公開した時点の記録。以後の最新配信は `deployment.json` で確認する。
 更新前の表示が残る場合は再読込後、その配信先のゲームタブをすべて閉じて開き直す。
 
 ## 次の確認と未実施項目
