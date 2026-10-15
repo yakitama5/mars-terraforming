@@ -23,14 +23,20 @@ Future<void> _mount(
   WidgetTester tester,
   GameController controller,
   List<String> opened,
-  Size size,
-) async {
+  Size size, {
+  double textScale = 1,
+}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
@@ -74,6 +80,35 @@ void main() {
       await tester.tap(find.byKey(const Key('guide-roadmap')));
       await tester.pumpAndSettle();
       expect(find.textContaining('順番や期限の制限はなく'), findsOneWidget);
+      expect(
+        find.byKey(const Key('onboarding-open-first_research')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('onboarding-open-first_district')),
+        findsNothing,
+      );
+      for (final id in [
+        'first_research',
+        'first_district',
+        'urban_planning',
+        'first_kit',
+        'first_landing',
+        'first_habitat',
+      ]) {
+        expect(find.byKey(Key('onboarding-step-$id')), findsOneWidget);
+      }
+      final expandCity = find.byKey(
+        const Key('onboarding-toggle-first_district'),
+      );
+      await tester.ensureVisible(expandCity);
+      await tester.pumpAndSettle();
+      await tester.tap(expandCity);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('onboarding-open-first_research')),
+        findsNothing,
+      );
       final city = find.byKey(const Key('onboarding-open-first_district'));
       await tester.ensureVisible(city);
       await tester.pumpAndSettle();
@@ -85,6 +120,47 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets(
+    'primary action and expanded instructions stay usable with larger text',
+    (tester) async {
+      final controller = GameController(_GuideSave(), now: () => epoch);
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      final opened = <String>[];
+      await _mount(
+        tester,
+        controller,
+        opened,
+        const Size(568, 320),
+        textScale: 1.5,
+      );
+      expect(
+        tester.widget(find.byKey(const Key('next-goal'))),
+        isA<FilledButton>(),
+      );
+      expect(find.text('研究を開く'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('next-goal')));
+      expect(opened, ['research:life_support']);
+      await tester.tap(find.byKey(const Key('guide-roadmap')));
+      await tester.pumpAndSettle();
+      final last = find.byKey(const Key('onboarding-toggle-first_habitat'));
+      await tester.ensureVisible(last);
+      await tester.pumpAndSettle();
+      await tester.tap(last);
+      await tester.pumpAndSettle();
+      final destination = find.byKey(
+        const Key('onboarding-open-first_habitat'),
+      );
+      await tester.ensureVisible(destination);
+      await tester.pumpAndSettle();
+      expect(destination.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byKey(const Key('onboarding-close')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+    },
+  );
 
   testWidgets('running and ordinarily queued research open equipment status', (
     tester,

@@ -65,6 +65,48 @@ void main() {
       ),
     );
     expect(find.text(tip.detail), findsOneWidget);
+    expect(tester.widget<Text>(find.text(tip.detail)).maxLines, isNull);
+    expect(find.byKey(const Key('toggle-contextual-tip-detail')), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'ordinary tips can expand their explanation without taking an action',
+    (tester) async {
+      final engine = GameEngine(GameState.initial(DateTime.utc(2026, 1, 1)));
+      engine.enqueue('life_support');
+      final tip = evaluateContextualTips(engine.state).first;
+      var opened = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(1.5)),
+              child: SingleChildScrollView(
+                child: SizedBox(
+                  width: 220,
+                  child: ContextualTipsPanel(
+                    game: engine.state,
+                    compact: true,
+                    onOpen: (_) => opened++,
+                    onDismiss: (_) {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.widget<Text>(find.text(tip.detail)).maxLines, 2);
+      await tester.tap(find.byKey(const Key('toggle-contextual-tip-detail')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(find.text(tip.detail)).maxLines, isNull);
+      expect(opened, 0);
+      expect(engine.state.currentPlanFor('lab'), isNotNull);
+      await tester.tap(find.byKey(const Key('toggle-contextual-tip-detail')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(find.text(tip.detail)).maxLines, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

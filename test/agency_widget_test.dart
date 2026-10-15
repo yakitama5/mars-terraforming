@@ -167,8 +167,7 @@ void main() {
           ),
         );
         // The guide must land directly on the available support choices.
-        await tester.tap(find.byKey(const Key('guide-partnership')));
-        await tester.pumpAndSettle();
+        await _tapDetail(tester, 'guide-partnership', 'planet-detail');
         expect(find.byKey(const Key('agency-partnerships')), findsOneWidget);
         final funds = controller.state.money;
         final funding = GameContent.partnerships['research_exchange']!.choices
@@ -297,8 +296,7 @@ void main() {
       'cargo_packaging',
       'habitat_operations',
     ]) {
-      await tester.tap(find.byKey(const Key('guide-short-research')));
-      await tester.pumpAndSettle();
+      await _tapDetail(tester, 'guide-short-research', 'planet-detail');
       await tester.tap(find.byKey(Key('guide-research-$id')));
       await tester.pumpAndSettle();
       expect(find.byKey(Key('queue-$id')), findsOneWidget);
