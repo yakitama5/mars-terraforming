@@ -289,6 +289,10 @@ void main() {
       // Save the existing campus upgrade and inspect a new city's campus.
       // UI comparison must not modify the world, time, or equipment queue.
       await capture('district-ios-neighborhood');
+      await tester.tap(find.byTooltip('都市全体を表示'));
+      await tapKey('city-inspector-toggle');
+      await capture('terrarium-ios-whole');
+      await tapKey('city-inspector-toggle');
       await tester.tap(find.byTooltip('選んだ区画を近くから表示'));
       await tester.pump(const Duration(milliseconds: 400));
       await tapKey('city-inspector-toggle');
