@@ -52,11 +52,11 @@ class _CitySceneState extends State<CityScene> {
   bool _loading = false;
   int _initialization = 0;
   double _panX = 0, _panZ = 0;
-  double _zoom = CityMapProjection.neighborhoodZoom;
-  double _gestureZoom = CityMapProjection.neighborhoodZoom;
+  double _zoom = CityMapProjection.overviewZoom;
+  double _gestureZoom = CityMapProjection.overviewZoom;
   double _azimuth = CityMapProjection.neighborhoodAzimuth;
   double _gestureAzimuth = CityMapProjection.neighborhoodAzimuth;
-  double _elevation = CityMapProjection.neighborhoodElevation;
+  double _elevation = CityMapProjection.overviewElevation;
 
   @override
   void initState() {
@@ -142,15 +142,17 @@ class _CitySceneState extends State<CityScene> {
   }
 
   void _resetView() {
-    _zoom = CityMapProjection.neighborhoodZoom;
+    _zoom = CityMapProjection.overviewZoom;
     _panX = 0;
     _panZ = 0;
     _azimuth = CityMapProjection.neighborhoodAzimuth;
-    _elevation = CityMapProjection.neighborhoodElevation;
+    _elevation = CityMapProjection.overviewElevation;
   }
 
   void _showNeighborhood() {
     _resetView();
+    _zoom = CityMapProjection.neighborhoodZoom;
+    _elevation = CityMapProjection.neighborhoodElevation;
     if (widget.selectedPlot >= 0 && widget.selectedPlot < widget.plots.length) {
       final focus = _terrain.center(widget.selectedPlot);
       _panX = focus.x;
@@ -233,8 +235,16 @@ class _CitySceneState extends State<CityScene> {
 
   @override
   Widget build(BuildContext context) => ClipRect(
-    child: ColoredBox(
-      color: widget.earth ? const Color(0xff182f31) : const Color(0xff342b27),
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: const Alignment(0, -.2),
+          radius: .85,
+          colors: widget.earth
+              ? const [Color(0xff385654), Color(0xff122528)]
+              : const [Color(0xff645047), Color(0xff241f24)],
+        ),
+      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final size = Size(constraints.maxWidth, constraints.maxHeight);
@@ -464,7 +474,7 @@ class _CitySceneState extends State<CityScene> {
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'left', child: Text('左へ回転')),
             PopupMenuItem(value: 'right', child: Text('右へ回転')),
-            PopupMenuItem(value: 'reset', child: Text('中央の市街へ戻す')),
+            PopupMenuItem(value: 'reset', child: Text('箱庭全体へ戻す')),
           ],
         ),
       ],
@@ -544,22 +554,24 @@ class _PlotBoundaryPainter extends CustomPainter {
         ..moveTo(start.dx, start.dy)
         ..lineTo(end.dx, end.dy);
     }
-    canvas.drawPath(
-      perimeter,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 4.0
-        ..color = const Color(0x85233129),
-    );
-    canvas.drawPath(
-      perimeter,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 1.6
-        ..color = const Color(0xcad9d6a4),
-    );
+    if (constructionMode || selected >= 0) {
+      canvas.drawPath(
+        perimeter,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = 4.0
+          ..color = const Color(0x85233129),
+      );
+      canvas.drawPath(
+        perimeter,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = 1.6
+          ..color = const Color(0xcad9d6a4),
+      );
+    }
     for (final plot in plots) {
       final isSelected = plot.index == selected;
       final isAdjacent = adjacent.contains(plot.index);
@@ -670,6 +682,84 @@ class _MapFallbackPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint();
+    final terrain = view.terrain;
+    final camera = view.camera;
+    const segments = 96;
+    vm.Vector3 edge(int i) {
+      final angle = i / segments * math.pi * 2;
+      return terrain.surfacePoint(
+        math.cos(angle) * terrain.landRadius,
+        math.sin(angle) * terrain.landRadius,
+      );
+    }
+
+    final rim = [for (var i = 0; i < segments; i++) edge(i)];
+    for (var i = 0; i < segments; i++) {
+      final angle = (i + .5) / segments * math.pi * 2;
+      if (math.sin(angle) * math.cos(view.azimuth) +
+              math.cos(angle) * math.sin(view.azimuth) <
+          0) {
+        continue;
+      }
+      final a = rim[i], b = rim[(i + 1) % segments];
+      final side = Path()
+        ..addPolygon([
+          camera.worldToScreen(a, size)!,
+          camera.worldToScreen(b, size)!,
+          camera.worldToScreen(
+            vm.Vector3(b.x * .98, terrain.baseY, b.z * .98),
+            size,
+          )!,
+          camera.worldToScreen(
+            vm.Vector3(a.x * .98, terrain.baseY, a.z * .98),
+            size,
+          )!,
+        ], true);
+      canvas.drawPath(
+        side,
+        paint
+          ..color = terrain.earth
+              ? const Color(0xff80684c)
+              : const Color(0xff784c36),
+      );
+    }
+    final top = Path()
+      ..addPolygon([
+        for (final point in rim) camera.worldToScreen(point, size)!,
+      ], true);
+    canvas.drawPath(
+      top,
+      paint
+        ..color = terrain.earth
+            ? const Color(0xff7c9654)
+            : const Color(0xffa45a3a),
+    );
+    if (terrain.hasRiver) {
+      final north = <Offset>[], south = <Offset>[];
+      for (var i = 0; i <= 96; i++) {
+        final x = -terrain.landRadius + terrain.landRadius * 2 * i / 96;
+        final z = terrain.riverCenterZ(x);
+        for (final (bank, sign) in [(north, -1), (south, 1)]) {
+          bank.add(
+            camera.worldToScreen(
+              vm.Vector3(
+                x,
+                CityTerrain.waterLevel,
+                z + sign * terrain.riverHalfWidth(x),
+              ),
+              size,
+            )!,
+          );
+        }
+      }
+      canvas.save();
+      canvas.clipPath(top);
+      canvas.drawPath(
+        Path()..addPolygon([...north, ...south.reversed], true),
+        paint..color = const Color(0xff439796),
+      );
+      canvas.restore();
+    }
     for (final plot in plots) {
       final center = view.terrain.center(plot.index);
       paint.color = view.terrain.colorAt(center.x, center.z);

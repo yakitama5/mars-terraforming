@@ -1,7 +1,8 @@
 # 開発・検証の引き継ぎ
 
-更新: 2026-10-14。最新は都市の接写・箱庭の質感と投影影。進行データはcontent district-5を維持。
-最新の変更と検証は [箱庭景観](city-diorama.md) を参照。
+更新: 2026-10-15。最新は円形の地盤・川・土の断面を持つ都市の箱庭。進行データはcontent district-5を維持。
+最新の変更と検証は [円形の箱庭](circular-terrarium.md) を参照。
+前回の接写・素材・投影影は [箱庭景観](city-diorama.md) を参照。
 施設先行の配置操作は [六角地形と街区配置](district-landscape.md) を参照。
 前版の地形・指令画面の基盤は [地形と指令UI](terrain-command-ui.md) を参照。
 序盤の数値・機関運営は [並行開発と機関運営](agency-development.md) を参照。
