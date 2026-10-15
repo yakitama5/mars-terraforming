@@ -14,6 +14,8 @@ void main() {
     stdout.writeln(
       jsonEncode({
         ...runProgressionVerification().toJson(),
+        'researchFrontiers': runProgressionVerification(includeFrontiers: true)
+            .toJson(),
         'onboarding': runOnboardingVerification().toJson(),
         'onboardingBaseline': runOnboardingVerification(parallelCargo: false)
             .toJson(),
@@ -28,16 +30,24 @@ void main() {
 }
 
 class ProgressionVerification {
-  const ProgressionVerification(this.state, this.milestones);
+  const ProgressionVerification(
+    this.state,
+    this.milestones, {
+    this.includesFrontiers = false,
+  });
   final GameState state;
   final List<Map<String, Object>> milestones;
+  final bool includesFrontiers;
 
   Map<String, Object> toJson() => {
     'status': 'passed',
     'contentVersion': GameContent.version,
     'startingMoney': GameContent.initialMoney,
     'measurement': 'Simulated calendar time; active play time is not measured.',
-    'scope': 'Available prototype research, not the global-environment ending.',
+    'scope': includesFrontiers
+        ? 'All available prototype research, not the global-environment ending.'
+        : 'Established 13-research route; optional frontiers are checked separately.',
+    'optionalResearchIncluded': includesFrontiers,
     'elapsedHours': state.simulatedMs / Duration.millisecondsPerHour,
     'elapsedDays': state.simulatedMs / Duration.millisecondsPerDay,
     'finalMoney': state.money,
@@ -50,7 +60,9 @@ class ProgressionVerification {
   };
 }
 
-ProgressionVerification runProgressionVerification() {
+ProgressionVerification runProgressionVerification({
+  bool includeFrontiers = false,
+}) {
   final game = GameEngine(GameState.initial(DateTime.utc(2026, 10, 13)));
   final milestones = <Map<String, Object>>[];
   void require(bool condition, String reason) {
@@ -177,18 +189,36 @@ ProgressionVerification runProgressionVerification() {
   research('industrial_network');
   research('regional_habitats');
 
+  if (includeFrontiers) {
+    // A real local laboratory consumes one of the remaining imported kits.
+    // Optional research remains an investment after the established route,
+    // so its arrival times can still be compared without rewriting history.
+    district('mars_arcadia', 4, 'mars_lab');
+    for (final id in GameContent.optionalFrontierResearchIds) {
+      research(id);
+    }
+  }
+
   require(
     GameContent.tasks.values
-        .where((task) => task.unique)
+        .where(
+          (task) =>
+              task.unique &&
+              (includeFrontiers ||
+                  !GameContent.optionalFrontierResearchIds.contains(task.id)),
+        )
         .every((task) => game.state.research.contains(task.id)),
-    'Not all available research was reachable',
+    'Not all requested research was reachable',
   );
   require(
     game.state.developedMarsCityIds.length == 2,
     'Expected two Mars cities',
   );
   require(game.state.marsHabitats == 2, 'Expected two completed habitats');
-  require(game.state.marsKits == 3, 'Cargo was duplicated or lost');
+  require(
+    game.state.marsKits == (includeFrontiers ? 2 : 3),
+    'Cargo was duplicated or lost',
+  );
   final snapshot = jsonEncode(game.state.toJson());
   final restored = GameEngine(
     GameState.fromJson(jsonDecode(snapshot) as Map<String, dynamic>),
@@ -197,7 +227,11 @@ ProgressionVerification runProgressionVerification() {
     jsonEncode(restored.state.toJson()) == snapshot,
     'Reload changed state',
   );
-  return ProgressionVerification(game.state, milestones);
+  return ProgressionVerification(
+    game.state,
+    milestones,
+    includesFrontiers: includeFrontiers,
+  );
 }
 
 enum EarlyInvestmentOrder { industryOnly, industryFirst, housingFirst }

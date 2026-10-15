@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'game_content.dart';
+import 'mission_identity.dart';
+export 'mission_identity.dart';
 import 'completion_notice.dart';
 export 'completion_notice.dart';
 import 'district_state.dart';
@@ -191,6 +193,11 @@ class GameState {
   bool completionBannersEnabled = true;
   bool tipsEnabled = true;
   bool tutorialHidden = false;
+  MissionIdentity identity = const MissionIdentity();
+  bool openingSeen = false;
+  bool openingStarted = false;
+  String cityName(String cityId) => identity.cityName(cityId);
+  String get rocketName => identity.rocketName;
   final Set<String> dismissedTipIds = {};
   Iterable<CompletionNotice> get unreadCompletionNotices =>
       completionNotices.where((notice) => notice.id > readCompletionNoticeId);
@@ -566,6 +573,8 @@ class GameState {
     }
     var delta = const DistrictEffects();
     var rawDelta = const DistrictEffects();
+    var terrainEffects = const DistrictEffects();
+    var adjacencyEffects = const DistrictEffects();
     final bonuses = <String>[];
     if (city != null &&
         definition != null &&
@@ -583,6 +592,37 @@ class GameState {
       final afterEffects = _districtEffects(after);
       delta = afterEffects - beforeEffects;
       rawDelta = delta;
+      // Explain placement with the same engine formula used for live income.
+      // Difference both layouts so an upgrade reports only its added effect
+      // and an industry district also reports losses to existing housing.
+      final noTerrainDelta =
+          _districtEffects(after, includeTerrain: false) -
+          _districtEffects(districts, includeTerrain: false);
+      final baseDelta =
+          _districtEffects(
+            after,
+            includeTerrain: false,
+            includeAdjacency: false,
+          ) -
+          _districtEffects(
+            districts,
+            includeTerrain: false,
+            includeAdjacency: false,
+          );
+      final noAdjacencyDelta =
+          _districtEffects(after, includeAdjacency: false) -
+          _districtEffects(districts, includeAdjacency: false);
+      final terrainDelta = rawDelta - noTerrainDelta;
+      // The tax floor belongs to the adjacency that caused the loss, rather
+      // than making an existing coastal district look like harmful terrain.
+      terrainEffects = DistrictEffects(
+        tax: noAdjacencyDelta.tax - baseDelta.tax,
+        research: terrainDelta.research,
+        factory: terrainDelta.factory,
+        launch: terrainDelta.launch,
+        mars: terrainDelta.mars,
+      );
+      adjacencyEffects = rawDelta - baseDelta - terrainEffects;
       bonuses.add('地形：${GameContent.terrainNames[city.terrainAt(plotIndex)]}');
       for (final neighbor in city.adjacentPlots(plotIndex)) {
         final district = districtAt(cityId, neighbor);
@@ -640,19 +680,28 @@ class GameState {
       launchBonusDelta: delta.launch,
       marsBonusDelta: delta.mars,
       bonuses: bonuses,
+      terrainEffects: terrainEffects,
+      adjacencyEffects: adjacencyEffects,
       blockedReason: reason,
     );
   }
 
-  DistrictEffects _districtEffects(Map<String, DistrictState> layout) {
+  DistrictEffects _districtEffects(
+    Map<String, DistrictState> layout, {
+    bool includeTerrain = true,
+    bool includeAdjacency = true,
+  }) {
     var result = const DistrictEffects();
     for (final district in layout.values) {
       final definition = GameContent.districts[district.districtId]!;
       if (facilities[definition.operatingFacilityId] != true) continue;
       final city = GameContent.cities[district.cityId]!;
-      final terrain = city.terrainAt(district.plotIndex);
+      final terrain = includeTerrain ? city.terrainAt(district.plotIndex) : '';
       final neighbors = [
-        for (final index in city.adjacentPlots(district.plotIndex))
+        for (final index
+            in includeAdjacency
+                ? city.adjacentPlots(district.plotIndex)
+                : const <int>[])
           if (layout['${city.id}:$index'] case final DistrictState neighbor)
             if (facilities[GameContent
                     .districts[neighbor.districtId]!
@@ -669,7 +718,7 @@ class GameState {
             0,
             (sum, n) =>
                 sum +
-                (city.terrainAt(n.plotIndex) == 'ridge'
+                (includeTerrain && city.terrainAt(n.plotIndex) == 'ridge'
                         ? GameContent.solarRidgeEfficiency
                         : GameContent.districtEfficiencyBase['solar']!) *
                     n.level,
@@ -774,6 +823,9 @@ class GameState {
     'schemaVersion': schemaVersion,
     'contentVersion': GameContent.version,
     'worldId': worldId,
+    'missionIdentity': identity.toJson(),
+    'openingSeen': openingSeen,
+    'openingStarted': openingStarted,
     'lastWallClockMs': lastWallClockMs,
     'simulatedMs': simulatedMs,
     'moneyUnits': moneyUnits,
@@ -816,6 +868,7 @@ class GameState {
         json['schemaVersion'] == schemaVersion &&
         [
           GameContent.version,
+          'district-5',
           'district-4',
           'district-3',
           'district-2',
@@ -825,6 +878,14 @@ class GameState {
     }
     final state = GameState._();
     state.worldId = json['worldId'] as String;
+    // Existing worlds continue directly; only genuinely new worlds play the OP.
+    state.openingSeen = json['openingSeen'] as bool? ?? true;
+    state.openingStarted = json['openingStarted'] as bool? ?? false;
+    if (json['missionIdentity'] case final Map identity) {
+      state.identity = MissionIdentity.fromJson(
+        Map<String, dynamic>.from(identity),
+      );
+    }
     state.lastWallClockMs = json['lastWallClockMs'] as int;
     state.simulatedMs = json['simulatedMs'] as int;
     state.moneyUnits = json['moneyUnits'] as int;
@@ -835,7 +896,9 @@ class GameState {
     state.marsHabitats = json['marsHabitats'] as int;
     state.marsResidents = json['marsResidents'] as int;
     state.habitatChoice = json['habitatChoice'] as String?;
-    final currentAgency = json['contentVersion'] == GameContent.version;
+    final currentAgency =
+        json['contentVersion'] == GameContent.version ||
+        json['contentVersion'] == 'district-5';
     if (currentAgency) {
       state.specialistCount = json['specialistCount'] as int;
       state.researchers = json['researchers'] as int;

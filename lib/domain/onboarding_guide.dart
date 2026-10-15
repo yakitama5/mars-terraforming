@@ -12,6 +12,7 @@ class OnboardingStep {
     required this.title,
     required this.timeHint,
     required this.lesson,
+    required this.story,
     required this.status,
     required this.destination,
     required this.target,
@@ -20,7 +21,7 @@ class OnboardingStep {
     this.remainingMs = 0,
   });
 
-  final String id, title, timeHint, lesson, target, reason;
+  final String id, title, timeHint, lesson, story, target, reason;
   final String? facilityId;
   final OnboardingStatus status;
   final OnboardingDestination destination;
@@ -47,6 +48,7 @@ class OnboardingGuide {
       required String title,
       required String timeHint,
       required String lesson,
+      required String story,
       required bool completed,
       required OnboardingDestination destination,
       required String target,
@@ -80,6 +82,7 @@ class OnboardingGuide {
         title: title,
         timeHint: timeHint,
         lesson: lesson,
+        story: story,
         status: status,
         destination: inspectQueue
             ? OnboardingDestination.operations
@@ -122,9 +125,10 @@ class OnboardingGuide {
       List.unmodifiable([
         step(
           id: 'first_research',
+          story: '地球で循環させた一滴の水を、火星での一日に変える。その最初の実証です。',
           title: '生命維持の実証',
           timeHint: '0〜5分',
-          lesson: '研究ツリーで費用と時間を確認し、生命維持研究を予約します。予約した研究は画面を離れても進みます。',
+          lesson: '生命維持研究を予約。待つ間に街を建てられます。研究は画面を離れても進みます。',
           completed: state.research.contains('life_support'),
           destination: OnboardingDestination.research,
           target: 'life_support',
@@ -132,9 +136,10 @@ class OnboardingGuide {
         ),
         step(
           id: 'first_district',
+          story: '宇宙への挑戦を支えるのは、${state.cityName('earth_delta')}で暮らす人々です。',
           title: '地球に最初の地区を建設',
           timeHint: '0〜10分・研究と並行',
-          lesson: '施設を選び、六角区画の費用と効果を比較して建設を予約します。工場の受注と建設は同じ順番待ちです。',
+          lesson: '施設→六角区画→建設予約。土地と隣接の効果を比較しましょう。受注と建設は工場を共用します。',
           completed: hasEarthDistrict,
           destination: OnboardingDestination.city,
           target: earthConstruction?.cityId ?? 'earth_delta',
@@ -142,9 +147,10 @@ class OnboardingGuide {
         ),
         step(
           id: 'urban_planning',
+          story: '街が育てば、計画も育つ。限られた土地で、次に何を増やすかを決めましょう。',
           title: '都市基盤の計画',
           timeHint: '10〜20分',
-          lesson: '都市基盤研究で住宅の増強を解放します。新しい区画への建設と、完成した住宅の増強を比較できます。',
+          lesson: '都市基盤研究で住宅の増強を解放。空き地へ建てるか、今の住宅を育てるかを比較します。',
           completed: state.research.contains('urban_planning'),
           destination: OnboardingDestination.research,
           target: 'urban_planning',
@@ -152,9 +158,10 @@ class OnboardingGuide {
         ),
         step(
           id: 'first_kit',
+          story: '研究所の成果を、人が暮らせる設備へ。工場が地球と火星をつなぎます。',
           title: '居住キットを製造',
           timeHint: '20〜35分',
-          lesson: '製造・受注から居住キットを予約します。無期限受注の後ろで待つ場合は、設備配分で次の予約順を変更できます。',
+          lesson: '製造・受注で居住キットを予約。受注が続いて着手できないときは、設備配分でキットを先頭へ移します。',
           completed: madeKit,
           destination: OnboardingDestination.operations,
           target: '1',
@@ -165,6 +172,8 @@ class OnboardingGuide {
         ),
         step(
           id: 'first_landing',
+          story:
+              '輸送船「${state.rocketName}」が運ぶのは、${state.cityName('mars_arcadia')}の最初の灯りです。',
           title: landed ? '火星の居住方式を選ぶ' : '火星へ輸送し、居住方式を選ぶ',
           timeHint: '35〜45分',
           lesson: landed && state.habitatChoice == null
@@ -178,9 +187,10 @@ class OnboardingGuide {
         ),
         step(
           id: 'first_habitat',
+          story: '赤い大地に、小さな日常が生まれます。この街を育てる次の一手は、あなたが決めます。',
           title: '火星の居住地区を完成',
           timeHint: '45〜60分',
-          lesson: '火星の区画を選び居住地区を建設します。初めての閉鎖居住を達成した後は、都市拡張や応用研究を自由に選べます。',
+          lesson: '火星で居住地区を建設。完成後は、収入・研究・補給のうち足りないものを見つけ、次の投資を選びましょう。',
           completed: state.marsHabitats > 0,
           destination: OnboardingDestination.city,
           target: 'mars_arcadia',
