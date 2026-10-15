@@ -69,15 +69,18 @@ class FacilityQueueCard extends StatelessWidget {
                 enabled ? '稼働' : '休止',
                 style: const TextStyle(fontSize: 11, color: _muted),
               ),
-              Switch(
-                key: Key('facility-toggle-$facilityId'),
-                value: enabled,
-                onChanged: controller.busy
-                    ? null
-                    : (value) => controller.command(
-                        (engine) =>
-                            engine.setFacilityEnabled(facilityId, value),
-                      ),
+              Semantics(
+                label: '${facility.name}の稼働',
+                child: Switch(
+                  key: Key('facility-toggle-$facilityId'),
+                  value: enabled,
+                  onChanged: controller.busy
+                      ? null
+                      : (value) => controller.command(
+                          (engine) =>
+                              engine.setFacilityEnabled(facilityId, value),
+                        ),
+                ),
               ),
             ],
           ),
@@ -113,7 +116,7 @@ class FacilityQueueCard extends StatelessWidget {
               ),
             ),
           for (final (index, plan) in upcoming.indexed)
-            _queued(plan, index, upcoming),
+            _queued(context, plan, index, upcoming),
         ],
       ),
     );
@@ -156,6 +159,7 @@ class FacilityQueueCard extends StatelessWidget {
         const SizedBox(height: 8),
         LinearProgressIndicator(
           value: plan.progress.clamp(0, 1),
+          semanticsLabel: '${plan.definition.name}の進捗',
           minHeight: 4,
           backgroundColor: const Color(0xff2a3c48),
         ),
@@ -173,7 +177,12 @@ class FacilityQueueCard extends StatelessWidget {
     ),
   );
 
-  Widget _queued(PlannedTask plan, int index, List<PlannedTask> upcoming) {
+  Widget _queued(
+    BuildContext context,
+    PlannedTask plan,
+    int index,
+    List<PlannedTask> upcoming,
+  ) {
     final unlimitedBefore = upcoming
         .take(index)
         .where((previous) => previous.remainingRepeats == null)
@@ -240,23 +249,43 @@ class FacilityQueueCard extends StatelessWidget {
               ),
               IconButton(
                 key: Key('queue-cancel-${plan.id}'),
-                tooltip: plan.status == 'running' ? '現在の1回で反復を終了' : 'この予約を取り消す',
+                tooltip: plan.status == 'running'
+                    ? '${plan.definition.name}を現在の1回で終了'
+                    : '${plan.definition.name}の予約を取り消す',
                 icon: const Icon(Icons.stop_circle_outlined, size: 18),
                 onPressed: controller.busy
                     ? null
-                    : () => controller.command(
-                        (engine) => engine.cancelQueued(plan.id),
-                      ),
+                    : () => _cancel(context, plan),
               ),
             ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 9, bottom: 5),
+            child: Text(
+              '1回の目安 ${gameDuration(controller.state.plannedDurationMs(plan))} · 開始時 ${dollars(controller.state.plannedCost(plan))}（未払い）',
+              key: Key('queue-estimate-${plan.id}'),
+              style: const TextStyle(color: _muted, fontSize: 11),
+            ),
           ),
           if (unlimitedBefore != null)
             Padding(
               padding: const EdgeInsets.only(right: 9, bottom: 5),
               child: Text(
-                '先にある「${unlimitedBefore.definition.name}」の無期限反復が続く間、この予約は開始しません。↑で先に移すか、反復を終了してください。',
+                '先にある「${unlimitedBefore.definition.name}」の無期限反復が続く間、この予約は開始しません。「次に実行」で先に移すか、反復を終了してください。',
                 key: Key('unlimited-before-${plan.id}'),
                 style: const TextStyle(color: _copper, fontSize: 11),
+              ),
+            ),
+          if (index > 0)
+            TextButton.icon(
+              key: Key('queue-next-${plan.id}'),
+              onPressed: controller.busy
+                  ? null
+                  : () => _move(plan, upcoming.first, true),
+              icon: const Icon(Icons.vertical_align_top, size: 16),
+              label: Text(
+                '次に実行',
+                semanticsLabel: '${plan.definition.name}を次の予約の先頭へ移動',
               ),
             ),
           Padding(
@@ -283,6 +312,36 @@ class FacilityQueueCard extends StatelessWidget {
     );
   }
 
+  Future<void> _cancel(BuildContext context, PlannedTask plan) async {
+    final running = plan.status == 'running';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: Text(running ? 'この1回で反復を終了しますか？' : '予約を取り消しますか？'),
+        content: Text(
+          '${plan.definition.name}\n'
+          '${plan.cityId == null ? '' : '${_location(plan)}\n'}'
+          '${running ? '進行中の1回は完成まで続き、その後の反復を終了します。確保済みの費用と進捗は維持されます。' : '未着手の予約を取り消します。まだ費用は支払っていません。確認中に作業が始まった場合、その1回は完成まで続きます。'}',
+        ),
+        actions: [
+          TextButton(
+            key: Key('queue-keep-${plan.id}'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('予約を残す'),
+          ),
+          FilledButton(
+            key: Key('queue-confirm-cancel-${plan.id}'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(running ? 'この1回で終了' : '予約を取り消す'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await controller.command((engine) => engine.cancelQueued(plan.id));
+  }
+
   void _move(PlannedTask plan, PlannedTask relative, bool before) {
     controller.command(
       (engine) => engine.reorderPlan(
@@ -296,6 +355,8 @@ class FacilityQueueCard extends StatelessWidget {
 
 String _purpose(PlannedTask plan) => plan.taskId.endsWith('_contract')
     ? '外部受注'
+    : plan.taskId == 'train_specialists'
+    ? '人員育成'
     : plan.definition.unique
     ? '研究'
     : plan.cityId != null

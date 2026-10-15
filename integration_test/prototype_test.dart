@@ -75,6 +75,11 @@ void main() {
 
       await sceneReady();
       await capture('strategy-ios-earth');
+      await tapKey('open-guidance');
+      await capture('guidance-ios-guide');
+      await tester.tap(find.text('閉じる'));
+      await tester.pump(const Duration(milliseconds: 500));
+
       await tapKey('navigation-2');
       await tapKey('research-fit');
       await capture('strategy-ios-research');
@@ -101,6 +106,7 @@ void main() {
       expect(factoryRun.completedRuns, 0);
       expect(controller.state.upcomingPlansFor('factory'), [kit, factoryRun]);
       await capture('strategy-ios-equipment');
+
       final beforeForecast = jsonEncode(controller.state.toJson());
       await tester.scrollUntilVisible(
         find.byKey(const Key('open-plan-forecast')),
@@ -130,6 +136,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       expect(controller.state.achievements, contains('first_landing'));
       expect(controller.state.marsHabitats, 0);
+      expect(controller.state.unreadCompletionNotices, isNotEmpty);
+      await tapKey('open-completions');
+      await capture('guidance-ios-completions');
+      await tapKey('mark-completions-read');
+      expect(controller.state.unreadCompletionNotices, isEmpty);
+      await tester.tap(find.text('閉じる'));
+      await tester.pump(const Duration(milliseconds: 500));
+
       await tapKey('operations-2');
       final branch = find.byKey(const Key('choose-dome'));
       await tester.scrollUntilVisible(

@@ -38,13 +38,19 @@ class _ResearchTreeState extends State<ResearchTree> {
   }
 
   void _fit() {
+    if (viewportSize.width <= 24 || viewportSize.height <= 16) return;
     final scale = math
         .min(
           (viewportSize.width - 24) / graphSize.width,
           (viewportSize.height - 16) / graphSize.height,
         )
-        .clamp(.2, 1.0);
-    transformation.value = Matrix4.diagonal3Values(scale, scale, 1);
+        .clamp(.01, 1.0);
+    transformation.value = Matrix4.diagonal3Values(scale, scale, 1)
+      ..setTranslationRaw(
+        (viewportSize.width - graphSize.width * scale) / 2,
+        (viewportSize.height - graphSize.height * scale) / 2,
+        0,
+      );
   }
 
   @override
@@ -66,8 +72,9 @@ class _ResearchTreeState extends State<ResearchTree> {
         .map((task) => task.researchBranch)
         .toSet()
         .toList();
-    const nodeWidth = 174.0;
-    const nodeHeight = 100.0;
+    final textScale = MediaQuery.textScalerOf(context).scale(13) / 13;
+    final nodeWidth = 24.0 + 150.0 * math.max(1.0, textScale);
+    final nodeHeight = 24.0 + 102.0 * math.max(1.0, textScale);
     const horizontalGap = 48.0;
     const verticalGap = 32.0;
     final positions = <String, Offset>{};
@@ -134,7 +141,7 @@ class _ResearchTreeState extends State<ResearchTree> {
                   key: const Key('research-tree-canvas'),
                   transformationController: transformation,
                   constrained: false,
-                  minScale: .2,
+                  minScale: .01,
                   maxScale: 1.6,
                   boundaryMargin: const EdgeInsets.all(30),
                   child: SizedBox(
@@ -197,6 +204,18 @@ class _ResearchTreeState extends State<ResearchTree> {
       task,
       widget.requirementReasons(task.id),
     );
+    final plan = game.plans
+        .where((plan) => plan.taskId == task.id && !plan.isFinished)
+        .firstOrNull;
+    final paused = plan != null && !game.facilities[task.facilityId]!;
+    final displayStatus = paused ? '$status・休止' : status;
+    final queue = game.upcomingPlansFor(task.facilityId);
+    final queueIndex = plan == null ? -1 : queue.indexOf(plan);
+    final detail = plan?.status == 'running'
+        ? '残り ${gameDuration(plan!.remainingMs)}${paused ? ' · 再開待ち' : ''}'
+        : plan != null
+        ? '予約 ${queueIndex + 1}番目 · ${plan.stopReason.isEmpty ? '開始待ち' : plan.stopReason}'
+        : '${dollars(task.cost)} · ${gameDuration(game.currentTaskDurationMs(task.id))}';
     final color = status == '研究済み'
         ? strategyMint
         : status == '研究中' || status == '予約済み'
@@ -205,9 +224,13 @@ class _ResearchTreeState extends State<ResearchTree> {
         ? const Color(0xffb0d4ea)
         : strategyMuted;
     return Semantics(
+      key: Key('research-semantics-${task.id}'),
+      container: true,
+      excludeSemantics: true,
       button: true,
       selected: task.id == selectedId,
-      label: '${task.name}、$status',
+      label: '${task.name}、$displayStatus、$detail',
+      onTap: () => widget.onSelected(task.id),
       child: Material(
         color: task.id == selectedId ? const Color(0xff294648) : strategyPanel,
         shape: RoundedRectangleBorder(
@@ -238,7 +261,12 @@ class _ResearchTreeState extends State<ResearchTree> {
                       color: color,
                     ),
                     const SizedBox(width: 5),
-                    Text(status, style: TextStyle(fontSize: 11, color: color)),
+                    Expanded(
+                      child: Text(
+                        displayStatus,
+                        style: TextStyle(fontSize: 11, color: color),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 7),
@@ -252,9 +280,18 @@ class _ResearchTreeState extends State<ResearchTree> {
                     maxLines: 2,
                   ),
                 ),
-                Text(
-                  '${dollars(task.cost)} · ${gameDuration(game.currentTaskDurationMs(task.id))}',
-                  style: const TextStyle(color: strategyMuted, fontSize: 11),
+                Tooltip(
+                  message: detail,
+                  child: Text(
+                    detail,
+                    key: Key('research-progress-${task.id}'),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: paused ? strategyCopper : strategyMuted,
+                      fontSize: 11,
+                    ),
+                  ),
                 ),
               ],
             ),

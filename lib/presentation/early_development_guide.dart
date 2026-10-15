@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../application/game_controller.dart';
 import '../domain/game_content.dart';
 import '../domain/game_state.dart';
+import '../domain/onboarding_guide.dart';
 import 'strategy_widgets.dart';
 
 class EarlyDevelopmentGuide extends StatelessWidget {
@@ -41,15 +42,151 @@ class EarlyDevelopmentGuide extends StatelessWidget {
   }
 
   bool _isStopped(PlannedTask plan) =>
-      plan.status == 'running' &&
+      !plan.isFinished &&
       (game.facilities[plan.definition.facilityId] != true ||
-          plan.stopReason.isNotEmpty);
+          (plan.stopReason.isNotEmpty && plan.stopReason != '共用設備の順番待ち'));
 
   String _stopReason(PlannedTask plan) =>
       plan.stopReason.isNotEmpty ? plan.stopReason : '設備休止中・手動で再開';
 
+  void _openStep(OnboardingStep step) {
+    switch (step.destination) {
+      case OnboardingDestination.research:
+        onResearch(step.target);
+      case OnboardingDestination.city:
+        onCity(step.target);
+      case OnboardingDestination.operations:
+        onOperations(int.parse(step.target));
+    }
+  }
+
+  String _stepStatus(OnboardingStep step) => switch (step.status) {
+    OnboardingStatus.completed => '達成済み',
+    OnboardingStatus.running => '進行中 · 残り ${gameDuration(step.remainingMs)}',
+    OnboardingStatus.queued => '予約済み · 設備の順番待ち',
+    OnboardingStatus.stopped => '停止中 · ${step.reason}',
+    OnboardingStatus.locked => '準備中 · ${step.reason}',
+    OnboardingStatus.available => '次に取り組めます',
+  };
+
+  void _showRoadmap(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => ListenableBuilder(
+        listenable: controller,
+        builder: (context, _) {
+          if (controller.engine == null) {
+            return AlertDialog(
+              title: const Text('手引きを更新できません'),
+              content: const Text('進行状態を確認できないため、案内を停止しました。閉じて保存状態を確認してください。'),
+              actions: [
+                TextButton(
+                  key: const Key('onboarding-close'),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('閉じる'),
+                ),
+              ],
+            );
+          }
+          final guide = OnboardingGuide.fromState(game);
+          return AlertDialog(
+            title: Text('最初の1時間の手引き · ${guide.completedCount}/6達成'),
+            content: SizedBox(
+              width: 560,
+              child: SingleChildScrollView(
+                key: const Key('onboarding-roadmap-scroll'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '開始から ${gameDuration(guide.elapsedMs)}（不在中を含む）\n'
+                      '時間は目安です。順番や期限の制限はなく、別の投資も自由に選べます。未達の項目は1時間を過ぎても確認できます。',
+                      style: const TextStyle(
+                        color: strategyMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    for (
+                      var index = 0;
+                      index < guide.steps.length;
+                      index++
+                    ) ...[
+                      StrategyCard(
+                        key: Key('onboarding-step-${guide.steps[index].id}'),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${guide.steps[index].isCompleted ? '✓' : '${index + 1}.'} ${guide.steps[index].title}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              '目安 ${guide.steps[index].timeHint}',
+                              style: const TextStyle(
+                                color: strategyMuted,
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(guide.steps[index].lesson),
+                            const SizedBox(height: 6),
+                            Text(
+                              _stepStatus(guide.steps[index]),
+                              style: TextStyle(
+                                color:
+                                    guide.steps[index].status ==
+                                        OnboardingStatus.stopped
+                                    ? strategyCopper
+                                    : strategyMint,
+                                fontSize: 12,
+                              ),
+                            ),
+                            TextButton.icon(
+                              key: Key(
+                                'onboarding-open-${guide.steps[index].id}',
+                              ),
+                              onPressed: () {
+                                Navigator.of(dialogContext).pop();
+                                _openStep(guide.steps[index]);
+                              },
+                              icon: const Icon(Icons.arrow_forward, size: 16),
+                              label: Text(
+                                guide.steps[index].isCompleted
+                                    ? '成果を確認'
+                                    : '操作画面を開く',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (guide.isComplete)
+                      const Text('導入の目標を達成しました。次は研究・都市・機関運営から、次の開発方針を選んでください。'),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                key: const Key('onboarding-close'),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('閉じて開発を続ける'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final guide = OnboardingGuide.fromState(game);
     final shortResearch = [
       for (final id in [
         'process_design',
@@ -76,24 +213,23 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       detail = _taskStatus('urban_planning');
       open = () => onResearch('urban_planning');
     } else if (!game.achievements.contains('first_landing')) {
-      final preparingDelivery =
-          game.earthKits > 0 || _plan('mars_delivery') != null;
-      focusedTask = preparingDelivery ? 'mars_delivery' : 'habitat_kit';
+      final delivery = _plan('mars_delivery') ?? _plan('cargo_delivery');
+      final preparingDelivery = game.earthKits > 0 || delivery != null;
+      focusedTask = preparingDelivery
+          ? delivery?.taskId ?? 'mars_delivery'
+          : _plan('batch_habitat_kit')?.taskId ?? 'habitat_kit';
       title = preparingDelivery ? '火星への輸送を準備' : '居住キットを製造';
-      detail = _taskStatus(preparingDelivery ? 'mars_delivery' : 'habitat_kit');
+      detail = _taskStatus(focusedTask);
       open = () => onOperations(preparingDelivery ? 2 : 1);
     } else if (game.habitatChoice == null) {
       title = '火星の居住方式を選ぶ';
       detail = '初輸送は完了 · ドームか地下居住を選べます';
       open = () => onOperations(2);
     } else if (game.marsHabitats == 0) {
-      focusedTask = 'district_mars_habitat';
+      focusedTask = _plan('build_habitat')?.taskId ?? 'district_mars_habitat';
       title = '火星の居住地区を建設';
       final plan = game.plans
-          .where(
-            (plan) =>
-                plan.taskId == 'district_mars_habitat' && !plan.isFinished,
-          )
+          .where((plan) => plan.taskId == focusedTask && !plan.isFinished)
           .firstOrNull;
       detail = plan == null
           ? '到着キット ${game.marsKits}基 · 区画を選び費用と隣接を比較'
@@ -126,10 +262,19 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       title = '${focusedPlan.definition.name}の停止を確認・再開';
       detail = '停止中 · ${_stopReason(focusedPlan)}';
       open = () => onOperations(0);
+    } else if (focusedPlan != null) {
+      open = () => onOperations(0);
+    } else if (focusedTask != null &&
+        GameContent.tasks[focusedTask]!.cost > game.money) {
+      title = '${GameContent.tasks[focusedTask]!.name}の資金を準備';
+      detail = '${_taskStatus(focusedTask)} · 受注や提携支援を確認';
+      open = game.availablePartnerships.isNotEmpty
+          ? () => onAgency(1)
+          : () => onOperations(1);
     }
-    final hasEarthDistrict = game.districts.values.any(
-      (d) => d.cityId == 'earth_delta',
-    );
+    final hasEarthDistrict =
+        game.earthLevel > 1 ||
+        game.districts.values.any((d) => d.cityId == 'earth_delta');
     final cityLabel = hasEarthDistrict
         ? '地区を比較・増強'
         : '住宅 ${dollars(GameContent.districts['housing']!.cost)}';
@@ -140,9 +285,38 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '次にできること',
-            style: TextStyle(color: strategyMint, fontSize: compact ? 10 : 11),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  guide.isComplete
+                      ? '導入達成 · 次にできること'
+                      : '最初の1時間 · ${guide.completedCount}/${guide.steps.length}達成',
+                  style: TextStyle(
+                    color: strategyMint,
+                    fontSize: compact ? 10 : 11,
+                  ),
+                ),
+              ),
+              IconButton(
+                key: const Key('guide-roadmap'),
+                tooltip: '導入の手順と達成状況を確認',
+                onPressed: () => _showRoadmap(context),
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.menu_book_outlined, size: 17),
+              ),
+            ],
+          ),
+          LinearProgressIndicator(
+            key: const Key('onboarding-progress'),
+            value: guide.progress,
+            minHeight: 2,
+            color: strategyMint,
+            backgroundColor: strategyLine,
+            semanticsLabel:
+                '導入の達成状況 ${guide.completedCount}/${guide.steps.length}達成',
           ),
           TextButton(
             key: const Key('next-goal'),

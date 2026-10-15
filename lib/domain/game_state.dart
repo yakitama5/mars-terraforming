@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'game_content.dart';
+import 'completion_notice.dart';
+export 'completion_notice.dart';
 import 'district_state.dart';
 export 'district_state.dart';
 export 'agency_state.dart';
@@ -182,6 +184,50 @@ class GameState {
   final List<PlannedTask> plans = [];
   final Map<String, DistrictState> districts = {};
   final List<String> log = [];
+  static const maxCompletionNotices = 48;
+  final List<CompletionNotice> completionNotices = [];
+  int nextCompletionNoticeId = 1;
+  int readCompletionNoticeId = 0;
+  bool completionBannersEnabled = true;
+  bool tipsEnabled = true;
+  bool tutorialHidden = false;
+  final Set<String> dismissedTipIds = {};
+  Iterable<CompletionNotice> get unreadCompletionNotices =>
+      completionNotices.where((notice) => notice.id > readCompletionNoticeId);
+
+  void recordCompletion(PlannedTask plan) {
+    // Combine unread repeats of the same reservation, even across other jobs.
+    // A new ID makes subsequent completions unread after acknowledgement.
+    final previousIndex = completionNotices.indexWhere(
+      (notice) =>
+          notice.planId == plan.id && notice.id > readCompletionNoticeId,
+    );
+    final previousCount = previousIndex < 0
+        ? 0
+        : completionNotices.removeAt(previousIndex).count;
+    completionNotices.add(
+      CompletionNotice(
+        id: nextCompletionNoticeId++,
+        planId: plan.id,
+        taskId: plan.taskId,
+        simulatedMs: simulatedMs,
+        count: previousCount + 1,
+        cityId: plan.cityId,
+        plotIndex: plan.plotIndex,
+        targetLevel: plan.targetLevel,
+      ),
+    );
+    if (completionNotices.length > maxCompletionNotices) {
+      completionNotices.removeAt(0);
+    }
+  }
+
+  void markCompletionsRead(int throughId) {
+    readCompletionNoticeId = math.max(
+      readCompletionNoticeId,
+      throughId.clamp(0, nextCompletionNoticeId - 1),
+    );
+  }
 
   factory GameState.initial(DateTime now) {
     final state = GameState._();
@@ -749,6 +795,17 @@ class GameState {
     'facilities': Map<String, bool>.of(facilities),
     'plans': plans.map((p) => p.toJson()).toList(),
     'log': List<String>.of(log),
+    'completionNotices': completionNotices
+        .map((notice) => notice.toJson())
+        .toList(),
+    'nextCompletionNoticeId': nextCompletionNoticeId,
+    'readCompletionNoticeId': readCompletionNoticeId,
+    'guidancePreferences': {
+      'completionBannersEnabled': completionBannersEnabled,
+      'tipsEnabled': tipsEnabled,
+      'tutorialHidden': tutorialHidden,
+      'dismissedTipIds': dismissedTipIds.toList(),
+    },
     'districts': districts.values.map((d) => d.toJson()).toList(),
   };
 
@@ -806,6 +863,41 @@ class GameState {
       ),
     );
     state.log.addAll((json['log'] as List).cast<String>());
+    // Optional additions keep existing saves playable without replaying history.
+    if (json.containsKey('completionNotices')) {
+      state.completionNotices.addAll(
+        (json['completionNotices'] as List).map(
+          (item) =>
+              CompletionNotice.fromJson(Map<String, dynamic>.from(item as Map)),
+        ),
+      );
+      state.nextCompletionNoticeId = json['nextCompletionNoticeId'] as int;
+      state.readCompletionNoticeId = json['readCompletionNoticeId'] as int;
+      var previousId = 0;
+      for (final notice in state.completionNotices) {
+        if (notice.id <= previousId ||
+            notice.id >= state.nextCompletionNoticeId ||
+            notice.simulatedMs > state.simulatedMs) {
+          throw const FormatException('完了通知の順序が不正です');
+        }
+        previousId = notice.id;
+      }
+      if (state.completionNotices.length > maxCompletionNotices ||
+          state.nextCompletionNoticeId < 1 ||
+          state.readCompletionNoticeId < 0 ||
+          state.readCompletionNoticeId >= state.nextCompletionNoticeId) {
+        throw const FormatException('完了通知の既読位置が不正です');
+      }
+    }
+    if (json['guidancePreferences'] case final Map preferences) {
+      state.completionBannersEnabled =
+          preferences['completionBannersEnabled'] as bool? ?? true;
+      state.tipsEnabled = preferences['tipsEnabled'] as bool? ?? true;
+      state.tutorialHidden = preferences['tutorialHidden'] as bool? ?? false;
+      state.dismissedTipIds.addAll(
+        (preferences['dismissedTipIds'] as List? ?? []).cast<String>(),
+      );
+    }
     if (!legacy) {
       for (final item in json['districts'] as List) {
         final district = DistrictState.fromJson(

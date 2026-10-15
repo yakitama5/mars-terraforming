@@ -38,9 +38,17 @@
   人口と専門職は分け、資金・税収・維持費・技術力・知名度・研究者・工業員・友好度・宇宙支援貢献を理解できる表示にする。
 - 提携と支援は初期実装済み。友好度は協力先全体の単一指標で、国別外交や豊富な動的イベントは未実装。
 
-序盤の最新試走は [並行開発と機関運営](agency-development.md) を参照。
+序盤の投資・判断間隔の試走は [並行開発と機関運営](agency-development.md) を参照。
 2経路の最大判断間隔は各5.50分、意味のある開発完了の最大間隔は5.50分／8.94分。
 以前の約13分の空白への改善はあるが、1時間ずっと面白く遊べることや20時間の内容量の証明ではない。
+
+2026-10-15に、ユーザーから導入チュートリアル、状況別Tips、建設・研究の予約と完了通知を
+約5並列・5巡で改善し、親がサブエージェントを統合するよう依頼された。
+同時実行上限に合わせて3サブエージェントと親で5観点・5巡を実施。
+6工程の手引き、対応画面へ移れるTips、予約の先頭移動と取消確認、既読を保存する完了通知を追加した。
+ゲームの費用・工期・解放条件は維持。3方針のシミュレーションでは35分で火星居住、60分で6/6工程達成。
+実時間の1時間試遊は未実施。実装と検証の詳細は [導入ガイドの改善記録](first-hour-guidance.md) を参照。
+続けて「本番まで適用していいよ」と承認され、作業ブランチ→develop→mainの順で反映する。
 
 ## 維持する基盤と保留事項
 
@@ -63,10 +71,14 @@
   数値の定義は `lib/domain/game_content.dart`。進行・保存・UI・描画の責務分離を維持する。
 - 採用版は Flutter 3.47.7 / Dart 3.13.5 / FlutterScene 0.24.3。
   これは採用記録であり、今後の最新版を保証しない。SDKと依存はmise・pubspec・lockfileで再現する。
-- 保存形式2 / content district-5。今回の景観変更では費用・工期・ID・隣接計算・保存形式を変更していない。
+- 保存形式2 / content district-5。導入改善では省略可能な通知・表示設定の項目を追加。
+  旧保存を維持し、過去の完了を再通知しない。費用・工期・ID・隣接計算は変更していない。
 - 2026-10-15の景観実装の検証: 221テスト、依存方向・整形・静的解析、Web release、
   Chrome実操作、iPhone 17 Pro / iOS 26.1 SimulatorのGPU描画と操作、公開main/developの操作が成功。
   Webの検証NodeとiOSドライバは手動終了せず完走した。
+- 導入改善後は284テスト、依存方向・整形・静的解析、Web release、Chrome実操作、
+  iPhone 17 Pro / iOS 26.1 Simulatorのガイド・通知・進行・保存再開が成功。
+  公開環境への反映結果は該当PRと配信メタデータで確認する。
 - 未実施: iOS実機・Androidの性能／電池／長時間GPUメモリ、Safari/Firefox。
   旧キャッシュから新Service Workerへ切り替わる更新過程も未検証。
   iOS初回シェーダー生成には最大約0.61秒の停止警告が残る。
@@ -80,7 +92,7 @@
   mainは通常版、developは時間送り付き版。保存・ロック・キャッシュを分ける。
 - [通常版](https://yakitama5.github.io/mars-terraforming/) /
   [開発版](https://yakitama5.github.io/mars-terraforming/develop/)。両ブランチのpushで両方をまとめて自動配信する。
-  直近の実配信は [PR #17](https://github.com/yakitama5/mars-terraforming/pull/17)。
+  景観版の実配信記録は [PR #17](https://github.com/yakitama5/mars-terraforming/pull/17)。
   配信の現在値は [deployment.json](https://yakitama5.github.io/mars-terraforming/deployment.json) で確認する。
 - 実フォルダ名は `mars_terraforming`、GitHub名は `mars-terraforming`。
   検証は `mise exec -- bash tools/check.sh`。Web/iOSの詳しい再現方法は [開発手順](development.md) と [Web検証ガイド](web-preview.md)。
