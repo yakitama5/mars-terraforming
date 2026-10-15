@@ -6,6 +6,7 @@ import '../domain/game_state.dart';
 import '../rendering/city_scene.dart';
 import 'city_scene_data.dart';
 import 'city_facility_palette.dart';
+import 'district_location_impact.dart';
 import 'habitat_choice_dialog.dart';
 import 'investment_comparison.dart';
 import 'strategy_widgets.dart';
@@ -83,7 +84,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 ? constraints.maxWidth * .44
                 : 280,
             child: ColoredBox(
-              color: const Color(0xff102129),
+              color: strategySurface,
               child: choosingFacility
                   ? CityFacilityPalette(
                       districts: available,
@@ -106,7 +107,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
       children: [
         Container(
           decoration: const BoxDecoration(
-            color: Color(0xff10212b),
+            color: strategySurface,
             border: Border(bottom: BorderSide(color: strategyLine)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -134,7 +135,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                         DropdownMenuItem(
                           value: item.id,
                           child: Text(
-                            item.name,
+                            game.cityName(item.id),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -164,7 +167,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
           child: CityScene(
             key: ValueKey('city-scene-${city.id}'),
             cityId: city.id,
-            cityName: city.name,
+            cityName: game.cityName(city.id),
             earth: city.planet == 'earth',
             columns: city.width,
             rows: city.height,
@@ -182,7 +185,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           decoration: const BoxDecoration(
-            color: Color(0xff10212b),
+            color: strategySurface,
             border: Border(top: BorderSide(color: strategyLine)),
           ),
           child: Text(
@@ -324,7 +327,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
             children: [
               Row(
                 children: [
-                  Icon(districtIcon(id), color: strategyCopper, size: 24),
+                  Icon(districtIcon(id), color: strategyBlue, size: 24),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -362,37 +365,45 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                     ),
                     Expanded(
                       child: StrategyStat(
-                        '設備占有',
+                        '工期',
                         gameDuration(preview.durationMs),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  '完成後の純収支 ${signedDollars(preview.netDeltaPerMinute)}/分',
-                  style: const TextStyle(color: strategyMint, fontSize: 12),
+                const Text(
+                  '完成後',
+                  style: TextStyle(fontSize: 11, color: strategyMuted),
+                ),
+                StrategyOutcome(
+                  '収支 ${signedDollars(preview.netDeltaPerMinute)}/分',
+                  tone: preview.netDeltaPerMinute > 0
+                      ? StrategyTone.benefit
+                      : preview.netDeltaPerMinute < 0
+                      ? StrategyTone.loss
+                      : StrategyTone.neutral,
                 ),
                 if (effects.isNotEmpty)
                   Text(
                     effects.join(' · '),
-                    style: const TextStyle(fontSize: 12, color: strategyMint),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: strategyBenefit,
+                    ),
                   ),
                 const SizedBox(height: 8),
-                const Text(
-                  '立地・隣接ボーナス',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                DistrictLocationImpact(
+                  game: game,
+                  cityId: city.id,
+                  plotIndex: selectedPlot,
+                  preview: preview,
                 ),
-                for (final bonus in preview.bonuses)
-                  Text(
-                    bonus,
-                    style: const TextStyle(fontSize: 11, color: strategyMuted),
-                  ),
                 if (preview.isValid && game.money < preview.cost)
                   const Padding(
                     padding: EdgeInsets.only(top: 8),
                     child: Text(
-                      '資金不足 · 予約後は資金が貯まるまで着工待ち。後続の受注も待つため、設備の順番を確認してください。',
+                      '資金待ちで予約できます。後続の受注も待つため、設備の順番に注意。',
                       key: Key('district-funding-warning'),
                       style: TextStyle(fontSize: 11, color: strategyCopper),
                     ),
@@ -407,7 +418,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 const SizedBox(height: 8),
                 Text(
                   reason ??
-                      '明るい六角が配置できる空地です（${_buildablePlots.length}区画）。場所を選ぶと費用と隣接効果が分かります。',
+                      '六角の空地を選択（${_buildablePlots.length}区画）。費用と土地の効果を比べられます。',
                   style: TextStyle(
                     fontSize: 12,
                     color: reason == null ? strategyMint : strategyCopper,
@@ -515,7 +526,12 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                           }
                         },
                   icon: const Icon(Icons.construction, size: 17),
-                  label: Text(existing == null ? 'この区画に建設を予約' : 'この地区を強化する'),
+                  label: Text(
+                    existing == null ? '建設を予約' : '地区を強化',
+                    semanticsLabel: existing == null
+                        ? 'この区画に建設を予約'
+                        : 'この地区を強化する',
+                  ),
                 ),
               Row(
                 children: [
@@ -878,24 +894,13 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  '立地・隣接ボーナス',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                DistrictLocationImpact(
+                  game: game,
+                  cityId: city.id,
+                  plotIndex: selectedPlot,
+                  preview: preview,
+                  expanded: true,
                 ),
-                const SizedBox(height: 6),
-                for (final bonus in preview.bonuses)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: Text(
-                      '＋ $bonus',
-                      style: const TextStyle(fontSize: 12, color: strategyMint),
-                    ),
-                  ),
-                if (preview.bonuses.isEmpty)
-                  const Text(
-                    'この配置で追加の立地効果はありません。隣の区画も比較できます。',
-                    style: TextStyle(fontSize: 12, color: strategyMuted),
-                  ),
               ],
               OutlinedButton.icon(
                 key: const Key('save-investment'),
@@ -921,7 +926,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                       ),
                       const SizedBox(height: 5),
                       Text(
-                        '${saved.title}\n${saved.action}',
+                        '${saved.titleFor(game)}\n${saved.action}',
                         style: const TextStyle(fontSize: 12),
                       ),
                       const SizedBox(height: 5),

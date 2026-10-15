@@ -5,6 +5,7 @@ import '../domain/game_content.dart';
 import '../domain/game_state.dart';
 import '../domain/onboarding_guide.dart';
 import 'strategy_widgets.dart';
+import 'mission_adviser.dart';
 
 class EarlyDevelopmentGuide extends StatelessWidget {
   const EarlyDevelopmentGuide({
@@ -165,6 +166,16 @@ class EarlyDevelopmentGuide extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
+                    'ミナ「${step.story}」',
+                    key: Key('onboarding-story-${step.id}'),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: strategyMint,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
                     step.lesson,
                     style: const TextStyle(fontSize: 12, height: 1.5),
                   ),
@@ -263,7 +274,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
                         const Padding(
                           padding: EdgeInsets.only(top: 12),
                           child: Text(
-                            '導入の目標を達成しました。次は研究・都市・機関運営から、次の開発方針を選んでください。',
+                            'ミナ「ここからは、あなたの計画です。収入が足りなければ街と受注、開発を速めるなら研究、火星を育てるなら製造と輸送を見直しましょう。」',
                           ),
                         ),
                     ],
@@ -461,9 +472,20 @@ class EarlyDevelopmentGuide extends StatelessWidget {
                 '導入の達成状況 ${guide.completedCount}/${guide.steps.length}達成',
           ),
           const SizedBox(height: 10),
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          Row(
+            children: [
+              const MinaAvatar(size: 34),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 5),
           Text(

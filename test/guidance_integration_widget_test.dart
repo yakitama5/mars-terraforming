@@ -26,7 +26,11 @@ void main() {
       addTearDown(controller.dispose);
       await controller.initialize(startTimer: false);
       await tester.pumpWidget(
-        MarsApp(controller: controller, renderScene: false),
+        MarsApp(
+          showIntroduction: false,
+          controller: controller,
+          renderScene: false,
+        ),
       );
       expect(find.text('通知 1'), findsOneWidget);
       final money = controller.state.moneyUnits;
@@ -67,7 +71,11 @@ void main() {
         await controller.command((engine) => engine.enqueue('life_support'));
         await controller.advanceForDevelopment();
         await tester.pumpWidget(
-          MarsApp(controller: controller, renderScene: false),
+          MarsApp(
+            showIntroduction: false,
+            controller: controller,
+            renderScene: false,
+          ),
         );
         await tester.tap(find.byKey(const Key('open-completions')));
         await tester.pumpAndSettle();
@@ -113,7 +121,11 @@ void main() {
         await controller.command((engine) => engine.enqueue('life_support'));
         await controller.advanceForDevelopment();
         await tester.pumpWidget(
-          MarsApp(controller: controller, renderScene: false),
+          MarsApp(
+            showIntroduction: false,
+            controller: controller,
+            renderScene: false,
+          ),
         );
         await tester.tap(find.byKey(const Key('open-completions')));
         await tester.pumpAndSettle();
@@ -145,7 +157,11 @@ void main() {
       addTearDown(controller.dispose);
       await controller.initialize(startTimer: false);
       await tester.pumpWidget(
-        MarsApp(controller: controller, renderScene: false),
+        MarsApp(
+          showIntroduction: false,
+          controller: controller,
+          renderScene: false,
+        ),
       );
       await tester.tap(find.byKey(const Key('navigation-3')));
       await tester.pumpAndSettle();

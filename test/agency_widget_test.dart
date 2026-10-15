@@ -64,6 +64,7 @@ void main() {
         await controller.initialize(startTimer: false);
         await tester.pumpWidget(
           MarsApp(
+            showIntroduction: false,
             controller: controller,
             sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
           ),
@@ -165,6 +166,7 @@ void main() {
         controller.state.districts[house.key] = house;
         await tester.pumpWidget(
           MarsApp(
+            showIntroduction: false,
             controller: controller,
             sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
           ),
@@ -232,6 +234,7 @@ void main() {
     addTearDown(controller.dispose);
     await tester.pumpWidget(
       MarsApp(
+        showIntroduction: false,
         controller: controller,
         sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
       ),
@@ -289,6 +292,7 @@ void main() {
     controller.state.research.addAll(['urban_planning', 'life_support']);
     await tester.pumpWidget(
       MarsApp(
+        showIntroduction: false,
         controller: controller,
         sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
       ),

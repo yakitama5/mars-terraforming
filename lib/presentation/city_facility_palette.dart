@@ -51,13 +51,13 @@ class CityFacilityPalette extends StatelessWidget {
     padding: const EdgeInsets.all(10),
     children: [
       Text(
-        compact ? '施設を選ぶ' : '1  建設する施設を選ぶ',
+        '1  施設を選ぶ',
         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
       ),
       if (!compact) ...[
         const SizedBox(height: 5),
         const Text(
-          '施設 → 地図の区画 → 建設予約。空地から選んでも構いません。',
+          '施設 → 区画 → 建設予約',
           style: TextStyle(fontSize: 11, color: strategyMuted),
         ),
       ],
@@ -65,29 +65,28 @@ class CityFacilityPalette extends StatelessWidget {
       for (final district in districts) ...[
         Semantics(
           selected: district.id == selectedId,
+          hint:
+              '${districtPurpose(district.id)}。基準費用${dollars(district.cost)}${lockReason(district) == null ? '' : '。${lockReason(district)}'}',
           child: TextButton(
             key: Key('district-option-${district.id}'),
             onPressed: () => onSelected(district.id),
             style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-              foregroundColor: const Color(0xffe2ebe3),
+              padding: EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: compact ? 9 : 12,
+              ),
+              foregroundColor: strategyText,
               backgroundColor: district.id == selectedId
-                  ? const Color(0xff304940)
-                  : const Color(0xff1b3034),
+                  ? strategySelected
+                  : strategyPanel,
               side: BorderSide(
-                color: district.id == selectedId
-                    ? strategyCopper
-                    : strategyLine,
+                color: district.id == selectedId ? strategyBlue : strategyLine,
               ),
               alignment: Alignment.centerLeft,
             ),
             child: Row(
               children: [
-                Icon(
-                  districtIcon(district.id),
-                  size: 25,
-                  color: strategyCopper,
-                ),
+                Icon(districtIcon(district.id), size: 25, color: strategyBlue),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -103,7 +102,7 @@ class CityFacilityPalette extends StatelessWidget {
                       ),
                       ExcludeSemantics(
                         child: Text(
-                          '${districtPurpose(district.id)}\n基準 ${dollars(district.cost)}',
+                          '${districtPurpose(district.id)} · ${dollars(district.cost)}〜',
                           style: const TextStyle(
                             fontSize: 11,
                             color: strategyMuted,
@@ -113,7 +112,9 @@ class CityFacilityPalette extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (lockReason(district) != null)
+                if (district.id == selectedId)
+                  const Icon(Icons.check_circle, size: 18, color: strategyBlue)
+                else if (lockReason(district) != null)
                   const Icon(
                     Icons.lock_outline,
                     size: 16,
@@ -125,10 +126,11 @@ class CityFacilityPalette extends StatelessWidget {
         ),
         const SizedBox(height: 6),
       ],
-      const Text(
-        '区画を選ぶと実際の費用と効果が分かります。鍵付きの施設は解放条件を確認できます。',
-        style: TextStyle(fontSize: 11, color: strategyMuted),
-      ),
+      if (!compact)
+        const Text(
+          '鍵のある施設を押すと、解放条件を確認できます。',
+          style: TextStyle(fontSize: 11, color: strategyMuted),
+        ),
     ],
   );
 }

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../application/game_controller.dart';
 import '../domain/game_content.dart';
 import '../domain/game_state.dart';
+import '../domain/colony_ending.dart';
+import 'colony_endings.dart';
 import 'strategy_widgets.dart';
 
 class CompletionCenter extends StatefulWidget {
@@ -100,6 +102,22 @@ class _CompletionCenterState extends State<CompletionCenter> {
                   key: const Key('completion-history'),
                   padding: EdgeInsets.zero,
                   children: [
+                    if (ColonyEnding.all.any(
+                      (ending) => ending.isUnlocked(game),
+                    ))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: OutlinedButton.icon(
+                          key: const Key('completion-open-endings'),
+                          onPressed: () =>
+                              showColonyEndings(context, game: game),
+                          icon: const Icon(
+                            Icons.auto_stories_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('居住編の結末を見る'),
+                        ),
+                      ),
                     if (showSettings)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
@@ -155,6 +173,7 @@ class _CompletionCenterState extends State<CompletionCenter> {
                     for (final notice in notices)
                       _CompletionRow(
                         notice: notice,
+                        game: game,
                         unread: notice.id > game.readCompletionNoticeId,
                         elapsedMs: game.simulatedMs,
                         onOpen: () {
@@ -192,14 +211,20 @@ class _CompletionCenterState extends State<CompletionCenter> {
 class _CompletionRow extends StatelessWidget {
   const _CompletionRow({
     required this.notice,
+    required this.game,
     required this.unread,
     required this.elapsedMs,
     required this.onOpen,
   });
   final CompletionNotice notice;
+  final GameState game;
   final bool unread;
   final int elapsedMs;
   final VoidCallback onOpen;
+
+  String get location => notice.cityId == null
+      ? notice.location
+      : '${game.cityName(notice.cityId!)}・区画 ${notice.plotIndex! + 1}・Lv.${notice.targetLevel}';
 
   (IconData, String) get category {
     final task = notice.definition;
@@ -242,8 +267,7 @@ class _CompletionRow extends StatelessWidget {
     final tint = unread ? strategyMint : strategyMuted;
     return Semantics(
       button: true,
-      label:
-          '${unread ? '未読、' : ''}${notice.title}、${notice.location}、$ageLabel',
+      label: '${unread ? '未読、' : ''}${notice.title}、$location、$ageLabel',
       excludeSemantics: true,
       onTap: onOpen,
       child: InkWell(
@@ -261,7 +285,7 @@ class _CompletionRow extends StatelessWidget {
                     width: 34,
                     height: 34,
                     decoration: BoxDecoration(
-                      color: unread ? const Color(0xff24423f) : strategyPanel,
+                      color: unread ? strategySelected : strategyPanel,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(icon, size: 19, color: tint),
@@ -332,7 +356,7 @@ class _CompletionRow extends StatelessWidget {
                             ),
                           ),
                         Text(
-                          notice.location,
+                          location,
                           style: const TextStyle(
                             fontSize: 11,
                             color: strategyMuted,
