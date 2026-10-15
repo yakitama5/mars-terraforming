@@ -80,8 +80,19 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     );
     const ground = async (city, number) => {
       const target = page.getByRole('button', { name: new RegExp(`^${city}の区画${number}、`) });
-      const bounds = await target.boundingBox();
-      assert.ok(bounds, `Projected plot ${city}/${number} is visible`);
+      await target.waitFor({ state: 'visible' });
+      // Flutter's semantic rectangles can lag the newly resized GPU surface.
+      // Wait for stable layout before dispatching an actual coordinate tap.
+      let bounds, previous, stable = 0;
+      for (let attempt = 0; attempt < 30 && stable < 5; attempt++) {
+        await page.waitForTimeout(100);
+        bounds = await target.boundingBox();
+        const signature = bounds && [bounds.x, bounds.y, bounds.width, bounds.height]
+          .map(value => value.toFixed(1)).join('/');
+        stable = signature && signature === previous ? stable + 1 : 0;
+        previous = signature;
+      }
+      assert.ok(bounds && stable >= 5, `Projected plot ${city}/${number} has stable bounds`);
       await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
       await page.getByText(new RegExp(`^区画 ${number}  ·`)).waitFor();
     };
@@ -342,6 +353,8 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
       }));
     }
     const beforeCamera = await snapshot();
+    await page.screenshot({ path: path.join(output, 'terrarium-web-whole.png') });
+    await page.getByRole('button', { name: '市街', exact: true }).click();
     await page.getByRole('button', { name: '都市地図を拡大', exact: true }).click();
     await page.getByRole('button', { name: '都市地図を拡大', exact: true }).click();
     await page.mouse.move(160, 30);
@@ -350,6 +363,11 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await page.getByRole('button', { name: '全域', exact: true }).click();
     await page.waitForTimeout(400);
     await page.screenshot({ path: path.join(output, 'diorama-web-overview.png') });
+    await page.getByRole('button', { name: '都市地図の視点操作', exact: true }).click();
+    await page.getByRole('menuitem', { name: '右へ回転', exact: true }).click();
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: path.join(output, 'terrarium-web-orbit.png') });
+    await page.getByRole('button', { name: '全域', exact: true }).click();
     await page.getByRole('button', { name: '区画の詳細を表示', exact: true }).click();
     await chooseFacility('住宅地区');
     await ground('デルタ湾岸', 1);
