@@ -47,11 +47,15 @@ class _CompletionCenterState extends State<CompletionCenter> {
         title: Row(
           children: [
             Expanded(
-              child: Text(
-                '完了通知 · 未読 ${game.unreadCompletionNotices.length}件',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
+              child: Semantics(
+                container: true,
+                header: true,
+                child: Text(
+                  '完了通知 · 未読 ${game.unreadCompletionNotices.length}件',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
