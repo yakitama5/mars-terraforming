@@ -411,8 +411,8 @@ void main() {
       expect(target.hitTestable(), findsOneWidget);
       await tester.tap(target);
       await tester.pumpAndSettle();
-      expect(find.text('必要な研究・実証条件'), findsOneWidget);
-      expect(find.text('完成するとできること'), findsOneWidget);
+      expect(find.text('開始に必要な条件'), findsOneWidget);
+      expect(find.byKey(const Key('research-unlocks')), findsOneWidget);
       await tester.ensureVisible(
         find.byKey(const Key('queue-automated_fabrication')),
       );

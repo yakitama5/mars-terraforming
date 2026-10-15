@@ -125,6 +125,7 @@ void main() {
         find.byKey(const Key('refresh-plan-forecast')).hitTestable(),
         findsOneWidget,
       );
+      await tapKey('forecast-equipment-details');
       await capture('forecast-ios-equipment');
       await tapKey('refresh-plan-forecast');
       await tapKey('close-plan-forecast');
@@ -152,6 +153,7 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       await tapKey('choose-dome');
+      await tapKey('confirm-habitat-choice');
 
       // Choose a district, then compare real tiles before confirming placement.
       await tapKey('navigation-1');
