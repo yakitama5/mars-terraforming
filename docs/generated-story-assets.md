@@ -3,12 +3,18 @@
 2026-10-16。ユーザーの依頼に基づき内蔵 image_gen（imagegen スキル、CLI/APIは未使用）で生成し、リポジトリ内の assets/images にコピーしたオリジナル画像。新しい外部依存は追加していない。4枚ともオフライン配布物に同梱する。
 
 - OP: 地球を望むキービジュアルと、有限のズーム・手動字幕による3幕。動画ファイルや音声は生成していない。
-- 秘書: ミナ（仮名）。案内・Tips・導入で同一の人物を使う。透過PNG。
+- 秘書: ミナ（仮名）。ユーザーの追加希望を受け、写実的な初稿から、丸メガネを掛けたかわいらしいデフォルメ絵へ変更。案内・Tips・導入・EDで同じ顔を使う。透過PNG、顔を大きく取ったほぼ正方形の構図。
 - ED: 窓越しのドーム生活と、赤い岩盤に守られた地下生活の専用背景。方式ごとの結末を別の情景で表す。屋外の呼吸可能化や完全自立を描いた科学資料ではない。
 - 生成画の地球/火星の距離や視直径、室内設備は演出。科学の説明・出典は研究カードを優先する。
 - ファイル: [blue_horizon.png](../assets/images/blue_horizon.png)、[mission_control.png](../assets/images/mission_control.png)、[colony_home.png](../assets/images/colony_home.png)、[underground_home.png](../assets/images/underground_home.png)。
 
 ## 使用した最終プロンプト
+
+### mission_control.png 改訂版（メガネ・デフォルメ）
+
+2026-10-16のユーザー評価に基づき、内蔵 image_gen の編集で再生成。参照画像は9430869時点の同ファイルの初稿。元のボブと青い制服を引き継ぎ、絵柄・頭身・メガネ・顔中心の構図を変更した。
+
+Use case: style-transfer. Asset type: transparent character portrait for a Japanese space development game's opening, tutorial, and tiny 32–40 px adviser icons. Input image 1 is the existing fictional secretary Mina to redesign. Primary request: make Mina MUCH more stylized, cute, and super-deformed, and give her clearly visible round glasses. Preserve her short dark bob haircut, kind competent mission-adviser personality, and navy/Earth-blue operations uniform with simple light-blue piping. Change the realistic adult anatomy/rendering into a charming 2.5-head-proportion chibi cartoon design with a large rounded head, small shoulders, rounded cheeks, large expressive warm brown eyes, a small simple nose, and a cheerful gentle smile. She is still an adult professional character, represented in a cute mascot style. Glasses are essential: large round navy frames with a clearly drawn bridge, moderately thick clean rims, transparent lenses, both eyes unobscured, no glare. Style: clean Japanese game mascot illustration, bold tidy outlines, simple cel shading with only a few color tones, flat softly colored shapes; no photographic detail, no realistic skin, no painterly realistic portrait. Composition: SQUARE canvas, close head-and-shoulders bust, centered, slightly turned toward the viewer; hair top around 6 percent from top edge, whole head fully inside frame, head including hair occupies about 75 percent of the canvas width, eyes near 43 percent canvas height. Face and glasses must remain legible inside a small circular avatar. Show only a little uniform at the bottom; do not devote space to a full body, hands, or tablet. Genuine transparent background with crisp clean alpha edges. No backdrop, no glow, no frame, no cast shadow outside character, no text, no logo, no watermark. Keep palette consistent with the original navy and Earth-blue game.
 
 ### underground_home.png
 
@@ -18,7 +24,7 @@ Use case: stylized-concept. Asset type: wide ending illustration for a Japanese 
 
 Use case: stylized-concept. Asset type: wide cinematic opening background for a Japanese offline space development strategy game. Primary request: an inspiring view from a near-Earth orbital observation deck, a luminous blue Earth curving across the lower right, delicate city lights and white clouds, a small elegant uncrewed interplanetary transport departing toward a distant tiny rust-red Mars in a star field. Grounded near-future industrial spacecraft, no fantasy magic. Style: premium hand-painted science fiction game key art, refined painterly 3D lighting, detailed but calm, romantic optimism about engineering and exploration. Composition: widescreen landscape 16:9, blue Earth and spacecraft concentrated right and lower half, left third dark navy negative space for separate Japanese UI titles. Rich Earth ocean blue, soft azure rim light, subtle warm sunlight. No people, no text, no typography, no logos, no watermark. The scene depicts an artistic aspirational game narrative, not a scientific diagram.
 
-### mission_control.png
+### mission_control.png 初稿（絵柄変更により不採用）
 
 Use case: stylized-concept. Asset type: transparent-background character portrait for dialogue and tips in a Japanese science fiction city-building game. Primary request: create an original friendly, competent mission secretary and flight operations adviser named Mina, adult woman around 30, waist-up three-quarter portrait facing slightly left toward the player. Soft confident smile, attentive warm brown eyes, neat dark short bob with a subtle side part. Practical navy and Earth-blue flight operations uniform, understated pale blue piping, a small geometric orbit insignia without letters, discreet earpiece, holding a thin tablet low at her waist. Professional, approachable, grounded scientist/engineer mood. Painterly premium Japanese game illustration, restrained anime influence, clean silhouette, softly rendered materials and cinematic cool fill with warm skin, visual clarity even when portrait is small. Entire head and shoulders fully inside frame with generous transparent margins. Genuinely transparent background, no frame, no scenery, no text, no typography, no watermark, no sexualized costume, no oversized accessories.
 

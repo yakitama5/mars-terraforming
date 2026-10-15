@@ -25,7 +25,7 @@ class MinaAvatar extends StatelessWidget {
       child: Image.asset(
         'assets/images/mission_control.png',
         fit: BoxFit.cover,
-        alignment: const Alignment(0, -0.75),
+        alignment: Alignment.center,
         cacheWidth: (size * 3).round(),
         excludeFromSemantics: true,
         errorBuilder: (_, _, _) =>
