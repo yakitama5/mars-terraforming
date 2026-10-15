@@ -136,7 +136,7 @@ class FacilityQueueCard extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                '現在の1回 · ${_purpose(plan)}',
+                '${enabled ? '進行中' : '一時停止'} · ${_purpose(plan)}',
                 style: const TextStyle(fontSize: 11, color: _mint),
               ),
             ),
@@ -165,13 +165,8 @@ class FacilityQueueCard extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          '${enabled ? '進行中' : plan.stopReason} · 残り ${gameDuration(plan.remainingMs)}',
+          '${enabled ? '残り' : '再開後の残り'} ${gameDuration(plan.remainingMs)} · 支払済み',
           style: TextStyle(color: enabled ? _mint : _copper, fontSize: 11),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'この1回は順番変更後も続行・費用は確保済み',
-          style: TextStyle(fontSize: 10, color: _muted),
         ),
       ],
     ),
@@ -210,7 +205,7 @@ class FacilityQueueCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${index + 1}. ${_purpose(plan)} · $futureCount',
+                      '${index == 0 ? '次の作業' : '${index + 1}番目'} · ${_purpose(plan)} · $futureCount',
                       style: TextStyle(
                         fontSize: 10,
                         color: plan.taskId.endsWith('_contract')
@@ -221,7 +216,10 @@ class FacilityQueueCard extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       plan.definition.name,
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     if (plan.cityId != null)
                       Text(
@@ -271,7 +269,7 @@ class FacilityQueueCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 9, bottom: 5),
               child: Text(
-                '先にある「${unlimitedBefore.definition.name}」の無期限反復が続く間、この予約は開始しません。「次に実行」で先に移すか、反復を終了してください。',
+                '先にある「${unlimitedBefore.definition.name}」の無期限反復が続く間、この予約は開始しません。',
                 key: Key('unlimited-before-${plan.id}'),
                 style: const TextStyle(color: _copper, fontSize: 11),
               ),
@@ -292,7 +290,7 @@ class FacilityQueueCard extends StatelessWidget {
             padding: const EdgeInsets.only(right: 9),
             child: Text(
               plan.status == 'running'
-                  ? '現在の1回の後の反復 · ${plan.completedRuns}回完了'
+                  ? '次回以降の反復 · ${plan.completedRuns}回完了'
                   : plan.stopReason.isEmpty
                   ? '開始待ち'
                   : plan.stopReason,
@@ -351,6 +349,33 @@ class FacilityQueueCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Shared help for the facility list; current work and blockers stay in cards.
+class QueueRulesDisclosure extends StatelessWidget {
+  const QueueRulesDisclosure({super.key});
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.transparent,
+    child: ExpansionTile(
+      key: const Key('queue-rules'),
+      tilePadding: EdgeInsets.zero,
+      title: const Text('予約・反復のしくみ', style: TextStyle(fontSize: 13)),
+      children: const [
+        Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: Text(
+            '同じ設備では上から順に着手します。「次に実行」や↑↓で順番を変更できます。進行中の1回は中断しません。\n\n'
+            '費用は1回の着手ごとに支払います。未着手の費用・工期は、その時点の効率や土地で変わることがあります。\n\n'
+            '先頭が資金・資材・研究の条件待ちなら、後続も待ちます。無期限反復の後ろにある作業は、反復より前に移すと進められます。\n\n'
+            '取消は未着手の予約を取り消します。反復中なら現在の1回を最後に終了します。設備スイッチで休止した作業は、再開後に残り時間から続きます。',
+            style: TextStyle(fontSize: 12, color: _muted),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 String _purpose(PlannedTask plan) => plan.taskId.endsWith('_contract')

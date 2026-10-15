@@ -62,31 +62,36 @@ void main() {
         now: () => epoch,
         devTools: true,
       );
-      addTearDown(controller.dispose);
-      await controller.initialize(startTimer: false);
-      await controller.command((engine) => engine.enqueue('life_support'));
-      await controller.advanceForDevelopment();
-      await tester.pumpWidget(
-        MarsApp(controller: controller, renderScene: false),
-      );
-      await tester.tap(find.byKey(const Key('open-completions')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byType(SwitchListTile));
-      await tester.pumpAndSettle();
-      expect(controller.state.completionBannersEnabled, isFalse);
-      await tester.tap(
-        find.byKey(
-          Key('completion-${controller.state.completionNotices.single.id}'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('research-detail')), findsOneWidget);
-      expect(find.byType(AlertDialog), findsNothing);
-      expect(
-        store.data!['guidancePreferences'],
-        containsPair('completionBannersEnabled', false),
-      );
-      expect(tester.takeException(), isNull);
+      try {
+        await controller.initialize(startTimer: false);
+        await controller.command((engine) => engine.enqueue('life_support'));
+        await controller.advanceForDevelopment();
+        await tester.pumpWidget(
+          MarsApp(controller: controller, renderScene: false),
+        );
+        await tester.tap(find.byKey(const Key('open-completions')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('completion-settings-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(SwitchListTile));
+        await tester.pumpAndSettle();
+        expect(controller.state.completionBannersEnabled, isFalse);
+        await tester.tap(
+          find.byKey(
+            Key('completion-${controller.state.completionNotices.single.id}'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('research-detail')), findsOneWidget);
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(
+          store.data!['guidancePreferences'],
+          containsPair('completionBannersEnabled', false),
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        controller.dispose();
+      }
     },
   );
 
@@ -103,26 +108,29 @@ void main() {
         now: () => epoch,
         devTools: true,
       );
-      addTearDown(controller.dispose);
-      await controller.initialize(startTimer: false);
-      await controller.command((engine) => engine.enqueue('life_support'));
-      await controller.advanceForDevelopment();
-      await tester.pumpWidget(
-        MarsApp(controller: controller, renderScene: false),
-      );
-      await tester.tap(find.byKey(const Key('open-completions')));
-      await tester.pumpAndSettle();
-      store.fail = true;
-      await tester.tap(find.byKey(const Key('mark-completions-read')));
-      await tester.pumpAndSettle();
-      expect(find.text('既読・表示設定を保存できていません。'), findsOneWidget);
-      expect(store.data!['readCompletionNoticeId'], 0);
-      expect(tester.takeException(), isNull);
-      store.fail = false;
-      await tester.tap(find.byKey(const Key('retry-notification-save')));
-      await tester.pumpAndSettle();
-      expect(find.text('既読・表示設定を保存できていません。'), findsNothing);
-      expect(store.data!['readCompletionNoticeId'], 1);
+      try {
+        await controller.initialize(startTimer: false);
+        await controller.command((engine) => engine.enqueue('life_support'));
+        await controller.advanceForDevelopment();
+        await tester.pumpWidget(
+          MarsApp(controller: controller, renderScene: false),
+        );
+        await tester.tap(find.byKey(const Key('open-completions')));
+        await tester.pumpAndSettle();
+        store.fail = true;
+        await tester.tap(find.byKey(const Key('mark-completions-read')));
+        await tester.pumpAndSettle();
+        expect(find.text('既読・表示設定を保存できていません。'), findsOneWidget);
+        expect(store.data!['readCompletionNoticeId'], 0);
+        expect(tester.takeException(), isNull);
+        store.fail = false;
+        await tester.tap(find.byKey(const Key('retry-notification-save')));
+        await tester.pumpAndSettle();
+        expect(find.text('既読・表示設定を保存できていません。'), findsNothing);
+        expect(store.data!['readCompletionNoticeId'], 1);
+      } finally {
+        controller.dispose();
+      }
     },
   );
 

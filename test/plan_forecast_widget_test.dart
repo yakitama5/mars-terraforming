@@ -24,21 +24,21 @@ class _ForecastSave implements SaveRepository {
 
 void main() {
   for (final size in [const Size(844, 390), const Size(1280, 800)]) {
-    testWidgets(
-      'forecast is read-only and refreshes only on request at $size',
-      (tester) async {
-        tester.view.physicalSize = size;
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        final repository = _ForecastSave();
-        final controller = GameController(
-          repository,
-          devTools: true,
-          now: () => DateTime.utc(2026, 10, 13, 15),
-        );
+    testWidgets('forecast is read-only and refreshes only on request at $size', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final repository = _ForecastSave();
+      final controller = GameController(
+        repository,
+        devTools: true,
+        now: () => DateTime.utc(2026, 10, 13, 15),
+      );
+      try {
         await controller.initialize(startTimer: false);
-        addTearDown(controller.dispose);
         await controller.command((engine) {
           engine.enqueue('factory_contract', repeats: 3);
           engine.enqueue('life_support');
@@ -133,8 +133,10 @@ void main() {
         expect(jsonEncode(controller.state.toJson()), advanced);
         expect(repository.writes, writesAfterAdvance);
         expect(tester.takeException(), isNull);
-      },
-    );
+      } finally {
+        controller.dispose();
+      }
+    });
   }
 
   for (final alreadyStale in [false, true]) {
@@ -151,54 +153,57 @@ void main() {
           devTools: true,
           now: () => DateTime.utc(2026, 10, 13),
         );
-        await controller.initialize(startTimer: false);
-        addTearDown(controller.dispose);
-        await tester.pumpWidget(
-          MarsApp(
-            controller: controller,
-            sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
-          ),
-        );
-        await tester.tap(find.byKey(const Key('navigation-3')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('open-plan-forecast')));
-        await tester.pumpAndSettle();
-        if (alreadyStale) {
-          await controller.advanceForDevelopment();
+        try {
+          await controller.initialize(startTimer: false);
+          await tester.pumpWidget(
+            MarsApp(
+              controller: controller,
+              sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
+            ),
+          );
+          await tester.tap(find.byKey(const Key('navigation-3')));
           await tester.pumpAndSettle();
-          expect(find.byKey(const Key('forecast-stale')), findsOneWidget);
+          await tester.tap(find.byKey(const Key('open-plan-forecast')));
+          await tester.pumpAndSettle();
+          if (alreadyStale) {
+            await controller.advanceForDevelopment();
+            await tester.pumpAndSettle();
+            expect(find.byKey(const Key('forecast-stale')), findsOneWidget);
+          }
+          repository.conflict = true;
+          await controller.save();
+          await tester.pumpAndSettle();
+          expect(controller.engine, isNull);
+          expect(find.byKey(const Key('forecast-unavailable')), findsOneWidget);
+          expect(find.byKey(const Key('forecast-money')), findsNothing);
+          expect(
+            tester
+                .widget<TextButton>(
+                  find.byKey(const Key('refresh-plan-forecast')),
+                )
+                .onPressed,
+            isNull,
+          );
+          for (final minutes in [30, 60, 480]) {
+            final chip = find.byKey(Key('forecast-horizon-$minutes'));
+            expect(tester.widget<ChoiceChip>(chip).onSelected, isNull);
+            await tester.tap(chip);
+          }
+          await tester.tap(find.byKey(const Key('refresh-plan-forecast')));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(
+            find.byKey(const Key('close-plan-forecast')).hitTestable(),
+            findsOneWidget,
+          );
+          await tester.tap(find.byKey(const Key('close-plan-forecast')));
+          await tester.pumpAndSettle();
+          expect(find.byKey(const Key('forecast-unavailable')), findsNothing);
+          expect(find.textContaining('保存内容の競合を検出'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        } finally {
+          controller.dispose();
         }
-        repository.conflict = true;
-        await controller.save();
-        await tester.pumpAndSettle();
-        expect(controller.engine, isNull);
-        expect(find.byKey(const Key('forecast-unavailable')), findsOneWidget);
-        expect(find.byKey(const Key('forecast-money')), findsNothing);
-        expect(
-          tester
-              .widget<TextButton>(
-                find.byKey(const Key('refresh-plan-forecast')),
-              )
-              .onPressed,
-          isNull,
-        );
-        for (final minutes in [30, 60, 480]) {
-          final chip = find.byKey(Key('forecast-horizon-$minutes'));
-          expect(tester.widget<ChoiceChip>(chip).onSelected, isNull);
-          await tester.tap(chip);
-        }
-        await tester.tap(find.byKey(const Key('refresh-plan-forecast')));
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull);
-        expect(
-          find.byKey(const Key('close-plan-forecast')).hitTestable(),
-          findsOneWidget,
-        );
-        await tester.tap(find.byKey(const Key('close-plan-forecast')));
-        await tester.pumpAndSettle();
-        expect(find.byKey(const Key('forecast-unavailable')), findsNothing);
-        expect(find.textContaining('保存内容の競合を検出'), findsOneWidget);
-        expect(tester.takeException(), isNull);
       },
     );
   }

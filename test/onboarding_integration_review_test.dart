@@ -73,6 +73,10 @@ void main() {
       await tester.pumpAndSettle();
       await _tapVisible(
         tester,
+        find.byKey(const Key('guidance-display-settings')),
+      );
+      await _tapVisible(
+        tester,
         find.widgetWithText(SwitchListTile, '惑星マップに導入ガイドを表示'),
       );
       await _tapVisible(

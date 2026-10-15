@@ -49,54 +49,57 @@ void main() {
         devTools: true,
         now: () => DateTime.utc(2026, 10, 13),
       );
-      await controller.initialize(startTimer: false);
-      addTearDown(controller.dispose);
-      await tester.pumpWidget(
-        MarsApp(
-          controller: controller,
-          sceneBuilder: (_, _, _, _) => const ColoredBox(color: Colors.black),
-        ),
-      );
-      await tester.tap(find.byKey(const Key('navigation-2')));
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('queue-life_support')),
-        150,
-        scrollable: find.descendant(
-          of: find.byKey(const Key('research-detail')),
-          matching: find.byType(Scrollable),
-        ),
-      );
-      await tester.tap(find.byKey(const Key('queue-life_support')));
-      await tester.pumpAndSettle();
-      expect(controller.state.plans.single.taskId, 'life_support');
-      final researchSteps =
-          (GameContent.tasks['life_support']!.durationSeconds / 300).ceil();
-      for (var i = 0; i < researchSteps; i++) {
+      try {
+        await controller.initialize(startTimer: false);
+        await tester.pumpWidget(
+          MarsApp(
+            controller: controller,
+            sceneBuilder: (_, _, _, _) => const ColoredBox(color: Colors.black),
+          ),
+        );
+        await tester.tap(find.byKey(const Key('navigation-2')));
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('queue-life_support')),
+          150,
+          scrollable: find.descendant(
+            of: find.byKey(const Key('research-detail')),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        await tester.tap(find.byKey(const Key('queue-life_support')));
+        await tester.pumpAndSettle();
+        expect(controller.state.plans.single.taskId, 'life_support');
+        final researchSteps =
+            (GameContent.tasks['life_support']!.durationSeconds / 300).ceil();
+        for (var i = 0; i < researchSteps; i++) {
+          await tester.tap(find.byKey(const Key('advance-time')));
+          await tester.pumpAndSettle();
+        }
+        expect(controller.state.research, contains('life_support'));
+        await tester.tap(find.byKey(const Key('operations-1')));
+        await tester.pumpAndSettle();
+        final factory = find.byKey(const Key('queue-factory_contract'));
+        await tester.scrollUntilVisible(
+          factory,
+          180,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(factory);
+        await tester.pumpAndSettle();
+        await tester.tap(factory);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('repeat-3')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('advance-time')));
         await tester.pumpAndSettle();
+        expect(controller.state.plans.last.completedRuns, 3);
+        expect(controller.state.plans.last.status, 'completed');
+        expect(tester.takeException(), isNull);
+      } finally {
+        controller.dispose();
       }
-      expect(controller.state.research, contains('life_support'));
-      await tester.tap(find.byKey(const Key('operations-1')));
-      await tester.pumpAndSettle();
-      final factory = find.byKey(const Key('queue-factory_contract'));
-      await tester.scrollUntilVisible(
-        factory,
-        180,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(factory);
-      await tester.pumpAndSettle();
-      await tester.tap(factory);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('repeat-3')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('advance-time')));
-      await tester.pumpAndSettle();
-      expect(controller.state.plans.last.completedRuns, 3);
-      expect(controller.state.plans.last.status, 'completed');
-      expect(tester.takeException(), isNull);
     },
   );
 
@@ -411,8 +414,8 @@ void main() {
       expect(target.hitTestable(), findsOneWidget);
       await tester.tap(target);
       await tester.pumpAndSettle();
-      expect(find.text('必要な研究・実証条件'), findsOneWidget);
-      expect(find.text('完成するとできること'), findsOneWidget);
+      expect(find.text('開始に必要な条件'), findsOneWidget);
+      expect(find.byKey(const Key('research-unlocks')), findsOneWidget);
       await tester.ensureVisible(
         find.byKey(const Key('queue-automated_fabrication')),
       );

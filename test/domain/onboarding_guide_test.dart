@@ -55,6 +55,7 @@ void main() {
     expect(paused.status, OnboardingStatus.stopped);
     expect(paused.destination, OnboardingDestination.operations);
     expect(paused.target, '0');
+    expect(paused.facilityId, 'lab');
     expect(paused.reason, contains('設備休止中'));
     expect(paused.remainingMs, remaining);
   });
@@ -142,8 +143,10 @@ void main() {
       step(engine.state, 'first_district').status,
       OnboardingStatus.running,
     );
+    expect(step(engine.state, 'first_district').facilityId, 'factory');
     engine.advanceBy(const Duration(minutes: 10));
     expect(step(engine.state, 'first_district').isCompleted, isTrue);
+    expect(step(engine.state, 'first_district').facilityId, isNull);
     expect(step(engine.state, 'first_research').isCompleted, isFalse);
   });
 
@@ -158,6 +161,7 @@ void main() {
       ]);
       engine.enqueue('batch_habitat_kit');
       expect(step(engine.state, 'first_kit').status, OnboardingStatus.running);
+      expect(step(engine.state, 'first_kit').facilityId, 'factory');
       engine.advanceBy(const Duration(minutes: 10));
       expect(step(engine.state, 'first_kit').isCompleted, isTrue);
       engine.enqueue('cargo_delivery');
@@ -167,6 +171,7 @@ void main() {
         step(engine.state, 'first_landing').status,
         OnboardingStatus.running,
       );
+      expect(step(engine.state, 'first_landing').facilityId, 'launch');
       // Finished history is bounded. Cargo already in flight still proves
       // that the player manufactured its input, even when that record is gone.
       engine.state.plans.removeWhere((plan) => plan.isFinished);
@@ -197,6 +202,7 @@ void main() {
         step(engine.state, 'first_habitat').status,
         OnboardingStatus.running,
       );
+      expect(step(engine.state, 'first_habitat').facilityId, 'mars');
       engine.advanceBy(const Duration(minutes: 2));
       expect(step(engine.state, 'first_habitat').isCompleted, isTrue);
     },
