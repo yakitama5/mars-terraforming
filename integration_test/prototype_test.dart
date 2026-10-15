@@ -395,6 +395,7 @@ void main() {
       expect(controller.state.researchers, 5);
       await tapKey('agency-section-partnerships');
       await tapKey('partnership-research_exchange-funding');
+      await tapKey('confirm-partnership-research_exchange-funding');
       expect(
         controller.state.partnershipChoices['research_exchange'],
         'funding',

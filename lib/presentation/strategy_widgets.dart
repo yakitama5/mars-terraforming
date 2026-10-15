@@ -173,7 +173,7 @@ class StrategySplit extends StatelessWidget {
                 : constraints.maxWidth < 650
                 ? constraints.maxWidth * .48
                 : 310,
-            child: ColoredBox(color: const Color(0xff102129), child: detail),
+            child: Material(color: const Color(0xff102129), child: detail),
           ),
         ],
       );

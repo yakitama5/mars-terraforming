@@ -312,6 +312,8 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     assert.equal((await snapshot()).researchers, 5);
     await page.getByRole('button', { name: '提携・支援', exact: true }).click();
     await click('都市技術の共同研究：開発資金を受けるを選ぶ');
+    await page.getByRole('button', { name: 'この提案で決定', exact: true }).click();
+    await page.waitForTimeout(250);
     assert.equal((await snapshot()).partnershipChoices.research_exchange, 'funding');
     await page.screenshot({ path: path.join(output, 'agency-web-partnerships.png') });
     await page.getByRole('button', { name: '人員配分', exact: true }).click();

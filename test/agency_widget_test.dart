@@ -179,6 +179,25 @@ void main() {
           'partnership-research_exchange-funding',
           'agency-partnerships',
         );
+        expect(find.byType(AlertDialog), findsOneWidget);
+        expect(controller.state.partnershipChoices, isEmpty);
+        expect(controller.state.money, funds);
+        await tester.tap(
+          find.byKey(const Key('cancel-partnership-research_exchange')),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.state.partnershipChoices, isEmpty);
+        await _tapDetail(
+          tester,
+          'partnership-research_exchange-funding',
+          'agency-partnerships',
+        );
+        await tester.tap(
+          find.byKey(
+            const Key('confirm-partnership-research_exchange-funding'),
+          ),
+        );
+        await tester.pumpAndSettle();
         expect(controller.state.partnershipChoices, {
           'research_exchange': 'funding',
         });
