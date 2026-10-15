@@ -83,7 +83,7 @@ class InvestmentComparison extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20),
             child: Text(
-              'どちらも今の都市・資金で見積もります。費用と設備の占有時間、空地と隣接効果を比べて、配置を選んでください。',
+              '両方の候補を、現在の都市・設備で見積もっています。',
               style: TextStyle(color: strategyMuted, fontSize: 12),
             ),
           ),
@@ -97,8 +97,13 @@ class InvestmentComparison extends StatelessWidget {
                 return SingleChildScrollView(
                   key: const Key('investment-comparison-scroll'),
                   padding: const EdgeInsets.all(16),
-                  child: constraints.maxWidth >= 700
-                      ? Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _differenceSummary(),
+                      const SizedBox(height: 12),
+                      if (constraints.maxWidth >= 700)
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(child: cards[0]),
@@ -106,13 +111,13 @@ class InvestmentComparison extends StatelessWidget {
                             Expanded(child: cards[1]),
                           ],
                         )
-                      : Column(
-                          children: [
-                            cards[0],
-                            const SizedBox(height: 12),
-                            cards[1],
-                          ],
-                        ),
+                      else ...[
+                        cards[0],
+                        const SizedBox(height: 12),
+                        cards[1],
+                      ],
+                    ],
+                  ),
                 );
               },
             ),
@@ -121,6 +126,103 @@ class InvestmentComparison extends StatelessWidget {
       ),
     ),
   );
+
+  Widget _differenceSummary() {
+    if (saved.changedReason(game) != null ||
+        current.changedReason(game) != null) {
+      return const Text(
+        '候補の状態が変わっています。下の候補を確認してください。',
+        key: Key('investment-difference-unavailable'),
+        style: TextStyle(color: strategyCopper, fontSize: 12),
+      );
+    }
+    final previous = saved.preview(game);
+    final selected = current.preview(game);
+    final cost = selected.cost - previous.cost;
+    final duration = selected.durationMs - previous.durationMs;
+    final income = selected.netDeltaPerMinute - previous.netDeltaPerMinute;
+    final plots = selected.additionalPlots - previous.additionalPlots;
+    final differences = [
+      (
+        'cost',
+        '費用',
+        cost == 0 ? '同額' : '${dollars(cost.abs())}${cost > 0 ? '高い' : '安い'}',
+        cost > 0 ? strategyCopper : strategyMint,
+      ),
+      (
+        'duration',
+        '工期',
+        duration == 0
+            ? '同じ'
+            : '${gameDuration(duration.abs())}${duration > 0 ? '長い' : '短い'}',
+        duration > 0 ? strategyCopper : strategyMint,
+      ),
+      (
+        'income',
+        '毎分の収支',
+        income == 0 ? '同じ' : '${signedDollars(income)}/分',
+        income < 0 ? strategyCopper : strategyMint,
+      ),
+      (
+        'plots',
+        '使う土地',
+        plots == 0 ? '同じ' : '${plots.abs()}区画${plots > 0 ? '多い' : '少ない'}',
+        plots > 0 ? strategyCopper : strategyMint,
+      ),
+    ];
+    return StrategyCard(
+      key: const Key('investment-difference-summary'),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            '現在の候補は、保存した候補と比べて',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 660 ? 4 : 2;
+              final width =
+                  (constraints.maxWidth - (columns - 1) * 12) / columns;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                children: [
+                  for (final (id, label, value, color) in differences)
+                    SizedBox(
+                      width: width,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              color: strategyMuted,
+                              fontSize: 11,
+                            ),
+                          ),
+                          Text(
+                            value,
+                            key: Key('investment-difference-$id'),
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _candidateCard(
     InvestmentCandidate candidate,
@@ -166,16 +268,14 @@ class InvestmentComparison extends StatelessWidget {
                   style: const TextStyle(color: strategyCopper, fontSize: 12),
                 ),
               ),
-            InvestmentEstimate(game: game, preview: preview, cityId: city.id),
+            InvestmentEstimate(
+              game: game,
+              preview: preview,
+              cityId: city.id,
+              collapsibleDetails: true,
+              detailsKey: Key('investment-details-$id'),
+            ),
             const SizedBox(height: 8),
-            for (final bonus in preview.bonuses)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  bonus,
-                  style: const TextStyle(fontSize: 12, color: strategyMuted),
-                ),
-              ),
             if (preview.blockedReason != null)
               Text(
                 preview.blockedReason!,
@@ -210,15 +310,70 @@ class InvestmentEstimate extends StatelessWidget {
     required this.game,
     required this.preview,
     required this.cityId,
+    this.collapsibleDetails = false,
+    this.detailsKey,
   });
   final GameState game;
   final DistrictPreview preview;
   final String cityId;
+  final bool collapsibleDetails;
+  final Key? detailsKey;
 
   @override
   Widget build(BuildContext context) {
     final city = GameContent.cities[cityId]!;
     final facilityId = city.planet == 'earth' ? 'factory' : 'mars';
+    final details = <Widget>[
+      StrategyFact(
+        '税収 / 維持費',
+        '${signedDollars(preview.taxDeltaPerMinute)} / ${signedDollars(preview.upkeepDeltaPerMinute)} 毎分',
+      ),
+      const SizedBox(height: 6),
+      const Text(
+        '完成後の効率変化（上限適用後）',
+        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+      ),
+      for (final (label, actual, raw) in [
+        ('研究', preview.researchBonusDelta, preview.rawResearchBonusDelta),
+        ('製造', preview.factoryBonusDelta, preview.rawFactoryBonusDelta),
+        ('輸送', preview.launchBonusDelta, preview.rawLaunchBonusDelta),
+        ('火星建設', preview.marsBonusDelta, preview.rawMarsBonusDelta),
+      ])
+        if (actual != 0 || raw != 0)
+          StrategyFact(
+            label,
+            '${signedNumber(actual)}%${actual != raw ? '（上限前 ${signedNumber(raw)}%）' : ''}',
+          ),
+      if (preview.rawResearchBonusDelta == 0 &&
+          preview.rawFactoryBonusDelta == 0 &&
+          preview.rawLaunchBonusDelta == 0 &&
+          preview.rawMarsBonusDelta == 0)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 5),
+          child: Text(
+            'この候補では効率の変化はありません',
+            style: TextStyle(fontSize: 12, color: strategyMuted),
+          ),
+        ),
+      const SizedBox(height: 10),
+      const Text(
+        '費用・工期の内訳',
+        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+      ),
+      StrategyFact('本体', dollars(preview.baseCost)),
+      StrategyFact('都市整備負荷', '+${dollars(preview.developmentCost)}'),
+      StrategyFact('初回開拓', '+${dollars(preview.setupCost)}'),
+      Text(
+        '素工期：本体 ${gameDuration(preview.baseDurationMs)} ＋ 都市整備 ${gameDuration(preview.developmentDurationMs)} ＋ 初回開拓 ${gameDuration(preview.setupDurationMs)}',
+        style: const TextStyle(fontSize: 11, color: strategyMuted),
+      ),
+      StrategyFact(
+        '建設設備',
+        '${GameContent.facilities[facilityId]!.name} · 効率 ${signedNumber(game.facilityBonusPercent(facilityId))}%',
+      ),
+      if (city.planet == 'mars')
+        StrategyFact('必要資材', '到着キット 1基 / 在庫 ${game.marsKits}基'),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -233,55 +388,34 @@ class InvestmentEstimate extends StatelessWidget {
           '${signedDollars(preview.netDeltaPerMinute)}/分',
           color: preview.netDeltaPerMinute >= 0 ? strategyMint : strategyCopper,
         ),
-        StrategyFact(
-          '税収 / 維持費',
-          '${signedDollars(preview.taxDeltaPerMinute)} / ${signedDollars(preview.upkeepDeltaPerMinute)} 毎分',
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          '完成後の効率変化（上限適用後）',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-        ),
-        for (final (label, actual, raw) in [
-          ('研究', preview.researchBonusDelta, preview.rawResearchBonusDelta),
-          ('製造', preview.factoryBonusDelta, preview.rawFactoryBonusDelta),
-          ('輸送', preview.launchBonusDelta, preview.rawLaunchBonusDelta),
-          ('火星建設', preview.marsBonusDelta, preview.rawMarsBonusDelta),
-        ])
-          if (actual != 0 || raw != 0)
-            StrategyFact(
-              label,
-              '${signedNumber(actual)}%${actual != raw ? '（上限前 ${signedNumber(raw)}%）' : ''}',
+        if (collapsibleDetails)
+          Material(
+            color: Colors.transparent,
+            child: ExpansionTile(
+              key: detailsKey,
+              tilePadding: EdgeInsets.zero,
+              title: const Text('費用・効果と立地の内訳', style: TextStyle(fontSize: 12)),
+              children: [
+                ...details,
+                for (final bonus in preview.bonuses)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        bonus,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: strategyMuted,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-        if (preview.rawResearchBonusDelta == 0 &&
-            preview.rawFactoryBonusDelta == 0 &&
-            preview.rawLaunchBonusDelta == 0 &&
-            preview.rawMarsBonusDelta == 0)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 5),
-            child: Text(
-              'この候補では効率の変化はありません',
-              style: TextStyle(fontSize: 12, color: strategyMuted),
-            ),
-          ),
-        const SizedBox(height: 10),
-        const Text(
-          '費用・工期の内訳',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-        ),
-        StrategyFact('本体', dollars(preview.baseCost)),
-        StrategyFact('都市整備負荷', '+${dollars(preview.developmentCost)}'),
-        StrategyFact('初回開拓', '+${dollars(preview.setupCost)}'),
-        Text(
-          '素工期：本体 ${gameDuration(preview.baseDurationMs)} ＋ 都市整備 ${gameDuration(preview.developmentDurationMs)} ＋ 初回開拓 ${gameDuration(preview.setupDurationMs)}',
-          style: const TextStyle(fontSize: 11, color: strategyMuted),
-        ),
-        StrategyFact(
-          '建設設備',
-          '${GameContent.facilities[facilityId]!.name} · 効率 ${signedNumber(game.facilityBonusPercent(facilityId))}%',
-        ),
-        if (city.planet == 'mars')
-          StrategyFact('必要資材', '到着キット 1基 / 在庫 ${game.marsKits}基'),
+          )
+        else
+          ...details,
       ],
     );
   }

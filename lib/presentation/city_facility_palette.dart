@@ -41,19 +41,26 @@ class CityFacilityPalette extends StatelessWidget {
   final String? Function(DistrictDefinition) lockReason;
 
   @override
-  Widget build(BuildContext context) => ListView(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) =>
+        _palette(compact: constraints.maxHeight < 300),
+  );
+
+  Widget _palette({required bool compact}) => ListView(
     key: const Key('city-facility-palette'),
     padding: const EdgeInsets.all(10),
     children: [
-      const Text(
-        '1  建設する施設を選ぶ',
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+      Text(
+        compact ? '施設を選ぶ' : '1  建設する施設を選ぶ',
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
       ),
-      const SizedBox(height: 5),
-      const Text(
-        '用途を選び、地図で建てる場所を比較します。空き区画から選んでも構いません。',
-        style: TextStyle(fontSize: 11, color: strategyMuted),
-      ),
+      if (!compact) ...[
+        const SizedBox(height: 5),
+        const Text(
+          '施設 → 地図の区画 → 建設予約。空地から選んでも構いません。',
+          style: TextStyle(fontSize: 11, color: strategyMuted),
+        ),
+      ],
       const SizedBox(height: 10),
       for (final district in districts) ...[
         Semantics(
@@ -119,7 +126,7 @@ class CityFacilityPalette extends StatelessWidget {
         const SizedBox(height: 6),
       ],
       const Text(
-        '基準費用に都市の整備費などを加えた実額は、区画を選ぶと表示します。未研究の施設も用途を確認できます。',
+        '区画を選ぶと実際の費用と効果が分かります。鍵付きの施設は解放条件を確認できます。',
         style: TextStyle(fontSize: 11, color: strategyMuted),
       ),
     ],

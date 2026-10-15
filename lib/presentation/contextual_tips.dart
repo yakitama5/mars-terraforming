@@ -6,7 +6,7 @@ import 'strategy_widgets.dart';
 
 /// Shows one suggestion at a time. The host owns dismissal persistence and
 /// navigation; tips never create notifications or interrupt ongoing work.
-class ContextualTipsPanel extends StatelessWidget {
+class ContextualTipsPanel extends StatefulWidget {
   const ContextualTipsPanel({
     super.key,
     required this.game,
@@ -23,35 +23,43 @@ class ContextualTipsPanel extends StatelessWidget {
   final bool compact;
 
   @override
+  State<ContextualTipsPanel> createState() => _ContextualTipsPanelState();
+}
+
+class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
+  String? expandedTipId;
+
+  @override
   Widget build(BuildContext context) {
     final tip = evaluateContextualTips(
-      game,
-      dismissedIds: dismissedIds,
+      widget.game,
+      dismissedIds: widget.dismissedIds,
       limit: 1,
     ).firstOrNull;
     if (tip == null) return const SizedBox.shrink();
+    final needsAttention = tip.priority >= 80;
+    final expanded = needsAttention || expandedTipId == tip.id;
+    final accent = needsAttention ? strategyCopper : strategyMuted;
     return StrategyCard(
       key: const Key('contextual-tips-panel'),
-      padding: EdgeInsets.all(compact ? 8 : 12),
+      padding: EdgeInsets.all(widget.compact ? 8 : 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Icon(
-                tip.priority >= 80
-                    ? Icons.info_outline
-                    : Icons.lightbulb_outline,
+                needsAttention ? Icons.info_outline : Icons.lightbulb_outline,
                 size: 17,
-                color: strategyCopper,
+                color: accent,
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   tip.title,
-                  style: const TextStyle(
-                    color: strategyCopper,
-                    fontSize: 12,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -59,7 +67,7 @@ class ContextualTipsPanel extends StatelessWidget {
               IconButton(
                 key: const Key('dismiss-contextual-tip'),
                 tooltip: 'このTipsを非表示',
-                onPressed: () => onDismiss(tip.id),
+                onPressed: () => widget.onDismiss(tip.id),
                 icon: const Icon(Icons.close, size: 16),
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 padding: const EdgeInsets.all(8),
@@ -68,18 +76,42 @@ class ContextualTipsPanel extends StatelessWidget {
           ),
           Text(
             tip.detail,
-            style: const TextStyle(color: strategyMuted, fontSize: 11),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              key: const Key('open-contextual-tip'),
-              onPressed: () => onOpen(tip),
-              child: Text(
-                tip.actionLabel,
-                style: const TextStyle(fontSize: 11),
-              ),
+            maxLines: expanded ? null : 2,
+            overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: strategyMuted,
+              fontSize: 12,
+              height: 1.45,
             ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 8,
+            children: [
+              TextButton(
+                key: const Key('open-contextual-tip'),
+                onPressed: () => widget.onOpen(tip),
+                child: Text(
+                  tip.actionLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: needsAttention ? strategyCopper : strategyMint,
+                  ),
+                ),
+              ),
+              if (!needsAttention)
+                TextButton(
+                  key: const Key('toggle-contextual-tip-detail'),
+                  onPressed: () => setState(() {
+                    expandedTipId = expanded ? null : tip.id;
+                  }),
+                  child: Text(
+                    expanded ? '説明を閉じる' : '詳しく',
+                    style: const TextStyle(fontSize: 11, color: strategyMuted),
+                  ),
+                ),
+            ],
           ),
         ],
       ),

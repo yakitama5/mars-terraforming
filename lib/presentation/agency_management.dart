@@ -129,7 +129,7 @@ class _AgencyManagementState extends State<AgencyManagement> {
               spacing: 10,
               runSpacing: 10,
               children: [
-                for (final (label, value, meaning, effect, icon) in metrics)
+                for (final (label, value, meaning, _, icon) in metrics)
                   SizedBox(
                     width: width,
                     child: StrategyCard(
@@ -163,14 +163,6 @@ class _AgencyManagementState extends State<AgencyManagement> {
                           ),
                           const SizedBox(height: 7),
                           Text(meaning, style: const TextStyle(fontSize: 11)),
-                          const SizedBox(height: 5),
-                          Text(
-                            effect,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: strategyMuted,
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -179,11 +171,51 @@ class _AgencyManagementState extends State<AgencyManagement> {
             );
           },
         ),
+        const SizedBox(height: 10),
+        ExpansionTile(
+          key: const Key('agency-metric-explanations'),
+          tilePadding: EdgeInsets.zero,
+          title: const Text('指標の意味と増やし方', style: TextStyle(fontSize: 13)),
+          children: [
+            for (final (label, _, _, effect, _) in metrics)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: strategyMint,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      effect,
+                      style: const TextStyle(
+                        color: strategyMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ],
     );
   }
 
-  Widget _staff() {
+  Widget _staff() => LayoutBuilder(
+    builder: (context, constraints) => _staffPanel(
+      // Keep enough space to expose the whole allocation control on phones.
+      scrollConfirmation: constraints.maxHeight < 240,
+    ),
+  );
+
+  Widget _staffPanel({required bool scrollConfirmation}) {
     final minimum = game.reservedResearchers;
     final maximum = game.specialistCount - game.reservedIndustrialWorkers;
     final candidate = (proposedResearchers ?? game.researchers).clamp(
@@ -211,18 +243,13 @@ class _AgencyManagementState extends State<AgencyManagement> {
               ),
               const SizedBox(height: 6),
               const Text(
-                '研究者と工業員へ割り当てます。確定するまでは人数・計画は変わりません。',
+                '研究と工場に人員を配分します。',
                 style: TextStyle(fontSize: 12, color: strategyMuted),
               ),
               const SizedBox(height: 12),
               StrategyFact(
                 '現在の配分',
                 '研究 ${game.researchers}人 / 工業 ${game.industrialWorkers}人',
-              ),
-              StrategyFact(
-                '変更後',
-                '研究 $candidate人 / 工業 ${game.specialistCount - candidate}人',
-                key: const Key('staff-proposed'),
               ),
               Row(
                 children: [
@@ -238,7 +265,8 @@ class _AgencyManagementState extends State<AgencyManagement> {
                   ),
                   Expanded(
                     child: Text(
-                      '研究者 $candidate人',
+                      '研究 $candidate人 / 工業 ${game.specialistCount - candidate}人',
+                      key: const Key('staff-proposed'),
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
@@ -255,24 +283,21 @@ class _AgencyManagementState extends State<AgencyManagement> {
                   ),
                 ],
               ),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text(
-                  '±で1人ずつ調整し、下のボタンで配分を確定します。',
-                  style: TextStyle(fontSize: 11, color: strategyMuted),
-                ),
-              ),
-              StrategyFact(
-                '研究の人員分',
-                '${signedNumber(game.staffEfficiencyBonus('lab'))}% → ${signedNumber(game.staffEfficiencyBonusFor('lab', candidate))}%',
-              ),
-              StrategyFact(
-                '工場の人員分',
-                '${signedNumber(game.staffEfficiencyBonus('factory'))}% → ${signedNumber(game.staffEfficiencyBonusFor('factory', candidate))}%',
-              ),
-              const Text(
-                '人員分は設備上限を適用する前の効果です。効率はゲーム用の調整値です。',
-                style: TextStyle(fontSize: 11, color: strategyMuted),
+              Row(
+                children: [
+                  Expanded(
+                    child: StrategyStat(
+                      '研究の人員効果',
+                      '${signedNumber(game.staffEfficiencyBonus('lab'))}% → ${signedNumber(game.staffEfficiencyBonusFor('lab', candidate))}%',
+                    ),
+                  ),
+                  Expanded(
+                    child: StrategyStat(
+                      '工場の人員効果',
+                      '${signedNumber(game.staffEfficiencyBonus('factory'))}% → ${signedNumber(game.staffEfficiencyBonusFor('factory', candidate))}%',
+                    ),
+                  ),
+                ],
               ),
               if (game.researchers > 0 &&
                   candidate > game.researchers &&
@@ -290,30 +315,45 @@ class _AgencyManagementState extends State<AgencyManagement> {
                   '製造効率は現在の上限に達しているため、この増員だけでは工期を短縮できません。',
                   style: TextStyle(fontSize: 11, color: strategyCopper),
                 ),
-              StrategyFact(
-                '作業で確保',
-                '研究 ${game.reservedResearchers}人 / 工業 ${game.reservedIndustrialWorkers}人',
-              ),
-              const Text(
-                '開始した作業で確保した人数は完了まで減らせません。工期は着手時に固定され、次の作業から変更が反映されます。',
-                style: TextStyle(fontSize: 11, color: strategyMuted),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                '反復中は次の仕事でも人員を確保します。設備・進行で反復を終了し、現在の1回が完了してから再配分してください。設備の休止だけでは解放されません。',
-                style: TextStyle(fontSize: 11, color: strategyMuted),
-              ),
-              TextButton.icon(
-                key: const Key('agency-open-operations'),
-                onPressed: widget.onOpenOperations,
-                icon: const Icon(Icons.reorder, size: 17),
-                label: const Text('設備・進行で反復と予約を確認'),
+              if (game.reservedResearchers > 0 ||
+                  game.reservedIndustrialWorkers > 0) ...[
+                const SizedBox(height: 10),
+                Text(
+                  '作業中：研究 ${game.reservedResearchers}人・工業 ${game.reservedIndustrialWorkers}人。完了まで移動できません。',
+                  style: const TextStyle(fontSize: 12, color: strategyCopper),
+                ),
+                TextButton.icon(
+                  key: const Key('agency-open-operations'),
+                  onPressed: widget.onOpenOperations,
+                  icon: const Icon(Icons.reorder, size: 17),
+                  label: const Text('設備・進行で反復と予約を確認'),
+                ),
+              ],
+              ExpansionTile(
+                key: const Key('staff-allocation-help'),
+                tilePadding: EdgeInsets.zero,
+                title: const Text('配分のしくみ', style: TextStyle(fontSize: 12)),
+                children: const [
+                  Padding(
+                    padding: EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      '±で1人ずつ調整し、下のボタンで確定します。人員効果は設備上限を適用する前の値です。\n\n'
+                      '作業中の人数と工期は完成まで固定され、変更は次の着手から反映されます。\n\n'
+                      '無期限の反復中は、設備・進行で反復を終了してから現在の1回の完成を待つと再配分できます。設備の休止だけでは人員は解放されません。',
+                      style: TextStyle(fontSize: 12, color: strategyMuted),
+                    ),
+                  ),
+                ],
               ),
               if (reason != null)
                 Text(
                   reason,
                   style: const TextStyle(fontSize: 12, color: strategyCopper),
                 ),
+              if (scrollConfirmation) ...[
+                const SizedBox(height: 12),
+                _staffConfirmation(candidate, reason),
+              ],
               const SizedBox(height: 16),
               const Text(
                 '専門職を育成する',
@@ -325,7 +365,7 @@ class _AgencyManagementState extends State<AgencyManagement> {
                 style: const TextStyle(fontSize: 12, color: strategyMint),
               ),
               const Text(
-                '研究と育成は同じ研究所を使用します。育成した人員は工業へ加わります。新しい仕事に確保されていなければ、配分を変えられます。',
+                '研究所を使って育成し、完成すると工業に加わります。',
                 style: TextStyle(fontSize: 11, color: strategyMuted),
               ),
               if (trainingPlan != null)
@@ -362,27 +402,84 @@ class _AgencyManagementState extends State<AgencyManagement> {
             ],
           ),
         ),
-        StrategyActionBar(
-          message: candidate == game.researchers
-              ? '現在の配分です'
-              : '研究 $candidate人 / 工業 ${game.specialistCount - candidate}人に変更',
-          child: FilledButton(
-            key: const Key('confirm-staff-allocation'),
-            onPressed:
-                candidate == game.researchers ||
-                    reason != null ||
-                    widget.controller.busy
-                ? null
-                : () async {
-                    await widget.controller.command(
-                      (engine) => engine.assignResearchers(candidate),
-                    );
-                    if (mounted) setState(() => proposedResearchers = null);
-                  },
-            child: const Text('人員配分を確定'),
-          ),
-        ),
+        if (!scrollConfirmation) _staffConfirmation(candidate, reason),
       ],
+    );
+  }
+
+  Widget _staffConfirmation(int candidate, String? reason) => StrategyActionBar(
+    message: candidate == game.researchers
+        ? '現在の配分です'
+        : '研究 $candidate人 / 工業 ${game.specialistCount - candidate}人に変更',
+    child: FilledButton(
+      key: const Key('confirm-staff-allocation'),
+      onPressed:
+          candidate == game.researchers ||
+              reason != null ||
+              widget.controller.busy
+          ? null
+          : () async {
+              await widget.controller.command(
+                (engine) => engine.assignResearchers(candidate),
+              );
+              if (mounted) setState(() => proposedResearchers = null);
+            },
+      child: const Text('人員配分を確定'),
+    ),
+  );
+
+  Future<void> _confirmPartnership(
+    PartnershipDefinition event,
+    PartnershipChoice choice,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: Text(choice.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(event.title, style: const TextStyle(color: strategyMint)),
+            const SizedBox(height: 10),
+            Text(choice.description),
+            const SizedBox(height: 10),
+            if (choice.funding > 0)
+              StrategyFact('支援金', dollars(choice.funding)),
+            for (final bonus in choice.efficiencyBonuses.entries)
+              StrategyFact(
+                GameContent.facilities[bonus.key]!.name,
+                '効率 ${signedNumber(bonus.value)}%',
+              ),
+            StrategyFact(
+              '協力の成果',
+              '友好 ${signedNumber(choice.friendship)}点 / 宇宙支援貢献 ${signedNumber(choice.spaceContribution)}点',
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'この協定の選択は一度だけです。決定後は別の提案に変更できません。',
+              style: TextStyle(color: strategyCopper, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            key: Key('cancel-partnership-${event.id}'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('比較に戻る'),
+          ),
+          FilledButton(
+            key: Key('confirm-partnership-${event.id}-${choice.id}'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('この提案で決定'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await widget.controller.command(
+      (engine) => engine.choosePartnership(event.id, choice.id),
     );
   }
 
@@ -458,10 +555,7 @@ class _AgencyManagementState extends State<AgencyManagement> {
                         widget.controller.busy ||
                             game.partnershipLockReason(event.id) != null
                         ? null
-                        : () => widget.controller.command(
-                            (engine) =>
-                                engine.choosePartnership(event.id, choice.id),
-                          ),
+                        : () => _confirmPartnership(event, choice),
                     child: Text(
                       game.partnershipChoices[event.id] == choice.id
                           ? '選択済み'
