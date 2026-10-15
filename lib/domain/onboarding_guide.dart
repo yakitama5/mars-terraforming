@@ -15,11 +15,13 @@ class OnboardingStep {
     required this.status,
     required this.destination,
     required this.target,
+    this.facilityId,
     this.reason = '',
     this.remainingMs = 0,
   });
 
   final String id, title, timeHint, lesson, target, reason;
+  final String? facilityId;
   final OnboardingStatus status;
   final OnboardingDestination destination;
   final int remainingMs;
@@ -83,6 +85,7 @@ class OnboardingGuide {
             ? OnboardingDestination.operations
             : destination,
         target: inspectQueue ? '0' : target,
+        facilityId: inspectQueue ? plan.definition.facilityId : null,
         reason: reason,
         remainingMs: plan?.remainingMs ?? 0,
       );

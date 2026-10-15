@@ -25,6 +25,7 @@ Future<void> _mount(
   List<String> opened,
   Size size, {
   double textScale = 1,
+  double cardWidth = 320,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -41,7 +42,7 @@ Future<void> _mount(
         body: Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
-            width: 320,
+            width: cardWidth,
             child: SingleChildScrollView(
               child: ListenableBuilder(
                 listenable: controller,
@@ -52,7 +53,9 @@ Future<void> _mount(
                         compact: true,
                         onResearch: (id) => opened.add('research:$id'),
                         onCity: (id) => opened.add('city:$id'),
-                        onOperations: (id) => opened.add('operations:$id'),
+                        onOperations: (id, {String? facilityId}) => opened.add(
+                          'operations:$id${facilityId == null ? '' : ':$facilityId'}',
+                        ),
                         onAgency: (id) => opened.add('agency:$id'),
                       ),
               ),
@@ -76,6 +79,8 @@ void main() {
       addTearDown(controller.dispose);
       final opened = <String>[];
       await _mount(tester, controller, opened, size);
+      expect(find.text('手引き'), findsOneWidget);
+      expect(find.byTooltip('導入の手順と達成状況を確認'), findsOneWidget);
       final before = jsonEncode(controller.state.toJson());
       await tester.tap(find.byKey(const Key('guide-roadmap')));
       await tester.pumpAndSettle();
@@ -120,6 +125,24 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('wide guide names the six-step instructions beside progress', (
+    tester,
+  ) async {
+    final controller = GameController(_GuideSave(), now: () => epoch);
+    await controller.initialize(startTimer: false);
+    addTearDown(controller.dispose);
+    await _mount(tester, controller, [], const Size(844, 390), cardWidth: 560);
+    expect(find.text('6工程の手引き'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('6工程の手引き')).dy,
+      closeTo(tester.getCenter(find.text('最初の1時間 · 0/6達成')).dy, 1),
+    );
+    await tester.tap(find.byKey(const Key('guide-roadmap')));
+    await tester.pumpAndSettle();
+    expect(find.text('最初の1時間の手引き · 0/6達成'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'primary action and expanded instructions stay usable with larger text',
@@ -176,7 +199,7 @@ void main() {
     await _mount(tester, controller, opened, const Size(844, 390));
     expect(find.textContaining('予約済み · 共用設備の順番待ち'), findsOneWidget);
     await tester.tap(find.byKey(const Key('next-goal')));
-    expect(opened.last, 'operations:0');
+    expect(opened.last, 'operations:0:lab');
     await tester.tap(find.byKey(const Key('guide-roadmap')));
     await tester.pumpAndSettle();
     expect(find.text('予約済み · 設備の順番待ち'), findsOneWidget);
@@ -185,9 +208,73 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(queued);
     await tester.pumpAndSettle();
-    expect(opened.last, 'operations:0');
+    expect(opened.last, 'operations:0:lab');
     expect(tester.takeException(), isNull);
   });
+
+  for (final (taskId, stepId, facilityId) in [
+    ('habitat_kit', 'first_kit', 'factory'),
+    ('mars_delivery', 'first_landing', 'launch'),
+    ('district_mars_habitat', 'first_habitat', 'mars'),
+  ]) {
+    testWidgets(
+      'current and paused $taskId guide actions preserve the target facility',
+      (tester) async {
+        final controller = GameController(_GuideSave(), now: () => epoch);
+        await controller.initialize(startTimer: false);
+        addTearDown(controller.dispose);
+        controller.state
+          ..money = 100000
+          ..earthLevel = 2
+          ..research.addAll(['life_support', 'urban_planning']);
+        if (taskId == 'mars_delivery') controller.state.earthKits = 1;
+        if (taskId == 'district_mars_habitat') {
+          controller.state
+            ..achievements.add('first_landing')
+            ..habitatChoice = 'dome'
+            ..marsKits = 1;
+        }
+        await controller.command(
+          (engine) => taskId == 'district_mars_habitat'
+              ? engine.enqueueDistrict('mars_arcadia', 0, 'mars_habitat')
+              : engine.enqueue(taskId),
+        );
+        final opened = <String>[];
+        await _mount(tester, controller, opened, const Size(568, 320));
+        final before = jsonEncode(controller.state.toJson());
+        final mainAction = find.byKey(const Key('next-goal'));
+        await tester.ensureVisible(mainAction);
+        await tester.pumpAndSettle();
+        await tester.tap(mainAction);
+        expect(opened.last, 'operations:0:$facilityId');
+        expect(jsonEncode(controller.state.toJson()), before);
+
+        await controller.command(
+          (engine) => engine.setFacilityEnabled(facilityId, false),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('停止理由を確認する'), findsOneWidget);
+        await tester.ensureVisible(mainAction);
+        await tester.pumpAndSettle();
+        await tester.tap(mainAction);
+        expect(opened.last, 'operations:0:$facilityId');
+
+        final roadmap = find.byKey(const Key('guide-roadmap'));
+        await tester.ensureVisible(roadmap);
+        await tester.pumpAndSettle();
+        await tester.tap(roadmap);
+        await tester.pumpAndSettle();
+        final stepAction = find.byKey(Key('onboarding-open-$stepId'));
+        await tester.ensureVisible(stepAction);
+        await tester.pumpAndSettle();
+        await tester.tap(stepAction);
+        await tester.pumpAndSettle();
+        expect(opened.last, 'operations:0:$facilityId');
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('guide sends an unaffordable next action to funding options', (
     tester,

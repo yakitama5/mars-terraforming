@@ -19,7 +19,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
   final GameController controller;
   final bool compact;
   final ValueChanged<String> onResearch, onCity;
-  final ValueChanged<int> onOperations;
+  final void Function(int section, {String? facilityId}) onOperations;
   final ValueChanged<int> onAgency;
   GameState get game => controller.state;
 
@@ -56,7 +56,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       case OnboardingDestination.city:
         onCity(step.target);
       case OnboardingDestination.operations:
-        onOperations(int.parse(step.target));
+        onOperations(int.parse(step.target), facilityId: step.facilityId);
     }
   }
 
@@ -377,11 +377,13 @@ class EarlyDevelopmentGuide extends StatelessWidget {
     if (focusedPlan != null && _isStopped(focusedPlan)) {
       title = '${focusedPlan.definition.name}の停止を確認・再開';
       detail = '停止中 · ${_stopReason(focusedPlan)}';
-      open = () => onOperations(0);
+      open = () =>
+          onOperations(0, facilityId: focusedPlan.definition.facilityId);
       actionLabel = '停止理由を確認する';
       actionIcon = Icons.pause_circle_outline;
     } else if (focusedPlan != null) {
-      open = () => onOperations(0);
+      open = () =>
+          onOperations(0, facilityId: focusedPlan.definition.facilityId);
       actionLabel = '進み具合・予約順を見る';
       actionIcon = Icons.view_timeline_outlined;
     } else if (focusedTask != null &&
@@ -409,29 +411,45 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  guide.isComplete
-                      ? '導入達成 · 次にできること'
-                      : '最初の1時間 · ${guide.completedCount}/${guide.steps.length}達成',
-                  style: TextStyle(
-                    color: strategyMint,
-                    fontSize: compact ? 10 : 11,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final textScale = MediaQuery.textScalerOf(context).scale(11) / 11;
+              final fullLabel = constraints.maxWidth >= 420 * textScale;
+              return Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      guide.isComplete
+                          ? '導入達成 · 次にできること'
+                          : '最初の1時間 · ${guide.completedCount}/${guide.steps.length}達成',
+                      style: TextStyle(
+                        color: strategyMint,
+                        fontSize: compact ? 10 : 11,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              IconButton(
-                key: const Key('guide-roadmap'),
-                tooltip: '導入の手順と達成状況を確認',
-                onPressed: () => _showRoadmap(context),
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.menu_book_outlined, size: 17),
-              ),
-            ],
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: '導入の手順と達成状況を確認',
+                    child: TextButton.icon(
+                      key: const Key('guide-roadmap'),
+                      onPressed: () => _showRoadmap(context),
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, 36),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        foregroundColor: strategyMint,
+                      ),
+                      icon: const Icon(Icons.menu_book_outlined, size: 17),
+                      label: Text(
+                        fullLabel ? '6工程の手引き' : '手引き',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           LinearProgressIndicator(
             key: const Key('onboarding-progress'),
@@ -495,7 +513,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
           if (labWork == null && game.upcomingPlansFor('lab').isNotEmpty)
             TextButton(
               key: const Key('guide-lab-queue'),
-              onPressed: () => onOperations(0),
+              onPressed: () => onOperations(0, facilityId: 'lab'),
               child: const Text(
                 '研究所に予約あり · 設備配分で順番を確認',
                 style: TextStyle(fontSize: 11, color: strategyCopper),

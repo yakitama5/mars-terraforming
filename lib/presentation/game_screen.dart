@@ -580,10 +580,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       earth = GameContent.cities[id]!.planet == 'earth';
       tab = 1;
     }),
-    onOperations: (section) => _guideNavigation(closeDialog, () {
-      facilityTab = section;
-      tab = 3;
-    }),
+    onOperations: (section, {String? facilityId}) =>
+        _guideNavigation(closeDialog, () {
+          facilityTab = section;
+          tab = 3;
+          if (section == 0 && facilityId != null) _focusFacility(facilityId);
+        }),
     onAgency: (section) => _guideNavigation(closeDialog, () {
       agencySection = section;
       tab = 4;
