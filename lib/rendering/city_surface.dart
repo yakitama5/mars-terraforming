@@ -73,6 +73,18 @@ class CitySurface {
           ..metallicFactor = 0
           ..roughnessFactor = .94
           ..normalScale = .28;
+    soil =
+        fs.PhysicallyBasedMaterial(
+            normalTexture: fs.Texture2D.fromPixels(
+              normal,
+              size,
+              size,
+              content: fs.TextureContent.normal,
+            ),
+          )
+          ..metallicFactor = 0
+          ..roughnessFactor = 1
+          ..normalScale = .32;
     water =
         fs.PhysicallyBasedMaterial(
             normalTexture: fs.Texture2D.fromPixels(
@@ -87,7 +99,7 @@ class CitySurface {
           ..normalScale = .55;
   }
 
-  late final fs.PhysicallyBasedMaterial ground, water;
+  late final fs.PhysicallyBasedMaterial ground, water, soil;
 
   static double _hash(int x, int y) {
     // Integer arithmetic stays exactly reproducible in native Dart and JS.
@@ -109,46 +121,141 @@ class CitySurface {
     return (a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy;
   }
 
-  /// A smooth surface over the seabed, following the same authored coast.
-  /// It lies outside the coastal plots' construction pads.
+  /// River and coast share one level, clipped to the same finite circular
+  /// boundary as the terrain. Marching polygons follow each bank continuously.
   fs.MeshGeometry waterGeometry(CityTerrain terrain) {
     final positions = <double>[];
     final normals = <double>[];
     final colors = <double>[];
     final uvs = <double>[];
     final indices = <int>[];
-    const columns = 7;
-    final rows = ((terrain.halfDepth + 10) * 2 / .3).ceil();
-    final west = -terrain.halfWidth - 10;
-    for (var row = 0; row <= rows; row++) {
-      final z = -terrain.halfDepth - 10 + row * .3;
-      // coastDistance is x - shorelineX.
-      final shore = -terrain.coastDistance(0, z) - .20;
-      for (var col = 0; col < columns; col++) {
-        final t = col / (columns - 1);
-        final x = shore + (west - shore) * t;
-        final color = Color.lerp(
-          const Color(0xff6aa899),
-          const Color(0xff20526e),
-          math.sqrt(t),
-        )!;
-        positions.addAll([x, -.045, z]);
-        normals.addAll([0, 1, 0]);
-        uvs.addAll([x / 3, z / 3]);
-        colors.addAll([
-          CityTerrain.linearChannel(color.r),
-          CityTerrain.linearChannel(color.g),
-          CityTerrain.linearChannel(color.b),
-          1,
-        ]);
+    int vertex(double x, double y, double z, vm.Vector3 normal, Color color) {
+      final index = positions.length ~/ 3;
+      positions.addAll([x, y, z]);
+      normals.addAll([normal.x, normal.y, normal.z]);
+      uvs.addAll([x / 2.4, z / 2.4]);
+      colors.addAll([
+        CityTerrain.linearChannel(color.r),
+        CityTerrain.linearChannel(color.g),
+        CityTerrain.linearChannel(color.b),
+        1,
+      ]);
+      return index;
+    }
+
+    Color colorAt(double x, double z) {
+      final riverDepth =
+          (-terrain.riverDistance(x, z) / terrain.riverHalfWidth(x)).clamp(
+            0.0,
+            1.0,
+          );
+      final seaDepth = terrain.hasCoast
+          ? (-terrain.coastDistance(x, z) - .20).clamp(0.0, 1.0)
+          : 0.0;
+      final depth = math.max(riverDepth * .65, seaDepth);
+      return Color.lerp(
+        const Color(0xff63b6ac),
+        const Color(0xff246b83),
+        depth,
+      )!;
+    }
+
+    final up = vm.Vector3(0, 1, 0);
+    final radius = terrain.landRadius;
+    final steps = (radius * 2 / .16).ceil();
+    final step = radius * 2 / steps;
+    for (var row = 0; row < steps; row++) {
+      final z = -radius + row * step;
+      for (var col = 0; col < steps; col++) {
+        final x = -radius + col * step;
+        var polygon = [
+          vm.Vector2(x, z),
+          vm.Vector2(x, z + step),
+          vm.Vector2(x + step, z + step),
+          vm.Vector2(x + step, z),
+        ];
+        polygon = _clip(polygon, (p) => terrain.waterDistance(p.x, p.y));
+        if (polygon.length < 3) continue;
+        polygon = _clip(
+          polygon,
+          (p) => math.sqrt(p.x * p.x + p.y * p.y) - radius,
+        );
+        if (polygon.length < 3) continue;
+        final first = positions.length ~/ 3;
+        for (final p in polygon) {
+          vertex(
+            p.x,
+            CityTerrain.waterLevel + .008,
+            p.y,
+            up,
+            colorAt(p.x, p.y),
+          );
+        }
+        for (var i = 1; i < polygon.length - 1; i++) {
+          indices.addAll([first, first + i, first + i + 1]);
+        }
       }
     }
-    for (var row = 0; row < rows; row++) {
-      for (var col = 0; col < columns - 1; col++) {
-        final a = row * columns + col;
-        final b = a + columns;
-        indices.addAll([a, a + 1, b + 1, a, b + 1, b]);
+    // Close the visible cut where a stream or the coast reaches the glass rim.
+    // This is the water's cross-section, not a waterfall or infinite sea plane.
+    const segments = 384;
+    for (var i = 0; i < segments; i++) {
+      final angle = i / segments * math.pi * 2;
+      final nextAngle = (i + 1) / segments * math.pi * 2;
+      var a = vm.Vector2(math.cos(angle) * radius, math.sin(angle) * radius);
+      var b = vm.Vector2(
+        math.cos(nextAngle) * radius,
+        math.sin(nextAngle) * radius,
+      );
+      final da = terrain.waterDistance(a.x, a.y);
+      final db = terrain.waterDistance(b.x, b.y);
+      if (da >= 0 && db >= 0) continue;
+      if (da >= 0 || db >= 0) {
+        final t = da / (da - db);
+        final crossing = a + (b - a) * t;
+        if (da >= 0) {
+          a = crossing;
+        } else {
+          b = crossing;
+        }
       }
+      final normal = vm.Vector3(math.cos(angle), 0, math.sin(angle));
+      final first = vertex(
+        a.x,
+        CityTerrain.waterLevel + .008,
+        a.y,
+        normal,
+        colorAt(a.x, a.y),
+      );
+      vertex(
+        b.x,
+        CityTerrain.waterLevel + .008,
+        b.y,
+        normal,
+        colorAt(b.x, b.y),
+      );
+      vertex(
+        b.x,
+        math.min(terrain.height(b.x, b.y), CityTerrain.waterLevel),
+        b.y,
+        normal,
+        const Color(0xff1a6476),
+      );
+      vertex(
+        a.x,
+        math.min(terrain.height(a.x, a.y), CityTerrain.waterLevel),
+        a.y,
+        normal,
+        const Color(0xff1a6476),
+      );
+      indices.addAll([
+        first,
+        first + 1,
+        first + 2,
+        first,
+        first + 2,
+        first + 3,
+      ]);
     }
     return fs.MeshGeometry.fromArrays(
       positions: Float32List.fromList(positions),
@@ -158,5 +265,26 @@ class CitySurface {
       indices: indices,
       retainCpuData: false,
     );
+  }
+
+  static List<vm.Vector2> _clip(
+    List<vm.Vector2> polygon,
+    double Function(vm.Vector2) distance,
+  ) {
+    if (polygon.isEmpty) return polygon;
+    final result = <vm.Vector2>[];
+    var previous = polygon.last;
+    var previousDistance = distance(previous);
+    for (final current in polygon) {
+      final currentDistance = distance(current);
+      if ((previousDistance <= 0) != (currentDistance <= 0)) {
+        final t = previousDistance / (previousDistance - currentDistance);
+        result.add(previous + (current - previous) * t);
+      }
+      if (currentDistance <= 0) result.add(current);
+      previous = current;
+      previousDistance = currentDistance;
+    }
+    return result;
   }
 }

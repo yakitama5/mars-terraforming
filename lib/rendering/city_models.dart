@@ -32,12 +32,18 @@ class CityModels {
   static const steel = Color(0xff889491);
 
   fs.Node landscape(CityTerrain terrain, {String? cityId}) {
-    final root = fs.Node(name: '連続した地域の地形');
+    final root = fs.Node(name: '円形に切り出した箱庭の地形');
     root.add(fs.Node(mesh: fs.Mesh(terrain.mesh(), surface.ground)));
-    if (terrain.hasCoast) {
+    root.add(
+      fs.Node(
+        name: '土と岩が重なる地盤の断面',
+        mesh: fs.Mesh(terrain.sideMesh(), surface.soil),
+      ),
+    );
+    if (terrain.earth) {
       root.add(
         fs.Node(
-          name: '海岸の水面',
+          name: '蛇行する川と入り江の水面',
           mesh: fs.Mesh(surface.waterGeometry(terrain), surface.water),
         )..shadowCastingMode = fs.ShadowCastingMode.off,
       );
@@ -48,6 +54,7 @@ class CityModels {
       terrain,
       hasHeadquarters: cityId == 'earth_delta',
     );
+    if (terrain.hasRiver) _riverbank(surroundings, terrain);
     if (cityId == 'earth_delta') _headquarters(root, surroundings, terrain);
     surroundings.attach(root, '周辺景観と区画外の既存市街');
     _cacheShadows(root);
@@ -157,8 +164,10 @@ class CityModels {
           math.sin(seed) * along +
           math.cos(seed) * across +
           .15 * math.cos(seed);
+      if (!terrain.containsLand(x, z, inset: .20) || terrain.isWater(x, z)) {
+        continue;
+      }
       final y = terrain.height(x, z);
-      if (terrain.earth && plot.terrain == 'coast' && y < .025) continue;
       final ice = plot.terrain == 'ice';
       final color = ice
           ? const Color(0xffbfdbda)
@@ -196,8 +205,8 @@ class CityModels {
     required bool hasHeadquarters,
   }) {
     var trees = 0, rocks = 0;
-    // Sparse nearby context; no decorative building or resource enters the
-    // playable hexagons. All props are included in this one static batch.
+    // The countryside is bounded by the cutaway disc. Keep a clean water
+    // channel and clear building pads; props share this single static batch.
     for (var row = -14; row <= 14; row++) {
       for (var col = -16; col <= 16; col++) {
         final seed = (row + 14) * 37 + col + 16;
@@ -210,13 +219,18 @@ class CityModels {
           nearest = math.min(nearest, d);
         }
         if (nearest < 1.40 || nearest > 7.5) continue;
-        if (hasHeadquarters && z > 4.05 && z < 5.90 && x > -2.45 && x < 2.40) {
+        if (!terrain.containsLand(x, z, inset: .30) ||
+            terrain.isWater(x, z) ||
+            (terrain.hasRiver && terrain.riverDistance(x, z) < .16)) {
+          continue;
+        }
+        if (hasHeadquarters && z > 5.45 && z < 6.45 && x > -2.45 && x < 2.40) {
           continue;
         }
         final y = terrain.height(x, z);
         if (terrain.earth && y < .025) continue;
         final density = _forestDensity(x, z);
-        if (terrain.earth && density > .65 && trees < 85) {
+        if (terrain.earth && density > .28 && trees < 100) {
           _tree(
             mesh,
             terrain,
@@ -241,6 +255,151 @@ class CityModels {
     }
   }
 
+  /// Pebbles, reeds and a small timber footbridge explain the watercourse at
+  /// both overview and close range. These are scenery, not extra game assets.
+  void _riverbank(_CityMesh mesh, CityTerrain terrain) {
+    const bridgeX = -.85;
+    for (var i = 0; i <= 36; i++) {
+      final x = -terrain.landRadius + .35 + i * .36;
+      final center = terrain.riverCenterZ(x);
+      final halfWidth = terrain.riverHalfWidth(x);
+      for (final side in [-1, 1]) {
+        final z = center + side * (halfWidth + .13);
+        if (!terrain.containsLand(x, z, inset: .24) ||
+            terrain.isWater(x, z) ||
+            (x - bridgeX).abs() < .30) {
+          continue;
+        }
+        final y = terrain.height(x, z);
+        if (i % 3 != 1) {
+          for (var pebble = 0; pebble < 3; pebble++) {
+            final dx = (pebble - 1) * .060;
+            final dz = (_noise(i * 17 + pebble) - .5) * .13;
+            final size = .065 + _noise(i * 29 + pebble) * .080;
+            mesh.rock(
+              terrain.surfacePoint(x + dx, z + dz, offset: .026),
+              vm.Vector3(size, size * .55, size * .82),
+              pebble.isEven ? const Color(0xffa6aa8a) : const Color(0xff727d68),
+            );
+          }
+        }
+        if (i % 3 == 1) {
+          for (var stem = 0; stem < 5; stem++) {
+            final dx = (stem - 2) * .022;
+            final height = .11 + _noise(i * 13 + stem) * .11;
+            final base = vm.Vector3(x + dx, y + .012, z);
+            final tip = base + vm.Vector3(dx * .3, height, side * .025);
+            mesh.beam(base, tip, .012, const Color(0xff718548));
+            mesh.beam(
+              base + vm.Vector3(0, height * .30, 0),
+              base + vm.Vector3(dx * 1.6, height * .75, side * .074),
+              .014,
+              const Color(0xff89964e),
+            );
+            if (stem.isEven) {
+              mesh.beam(
+                tip,
+                tip + vm.Vector3(0, .038, 0),
+                .024,
+                const Color(0xff8d6b43),
+              );
+            }
+          }
+        }
+      }
+      // A narrow bank-side path visually joins the settlement to the bridge.
+      if (i > 0) {
+        final beforeX = x - .36;
+        final beforeZ =
+            terrain.riverCenterZ(beforeX) +
+            terrain.riverHalfWidth(beforeX) +
+            .37;
+        final pathZ = center + halfWidth + .37;
+        if (terrain.containsLand(x, pathZ, inset: .35) &&
+            terrain.containsLand(beforeX, beforeZ, inset: .35)) {
+          _road(
+            mesh,
+            terrain,
+            beforeX,
+            beforeZ,
+            x,
+            pathZ,
+            width: .065,
+            color: const Color(0xffbdac7d),
+          );
+        }
+      }
+    }
+    _riverBridge(mesh, terrain, bridgeX);
+  }
+
+  void _riverBridge(_CityMesh mesh, CityTerrain terrain, double x) {
+    final middle = terrain.riverCenterZ(x);
+    final halfLength = terrain.riverHalfWidth(x) + .24;
+    final northZ = middle - halfLength;
+    final southZ = middle + halfLength;
+    final deckY =
+        math.max(terrain.height(x, northZ), terrain.height(x, southZ)) + .12;
+    const timber = Color(0xffa67b4d);
+    const rail = Color(0xffd5bd89);
+    const stone = Color(0xff8b917b);
+    const width = .36;
+    // Separate planks leave fine dark seams, and stone abutments meet the bank.
+    final planks = (halfLength * 2 / .066).ceil();
+    for (var i = 0; i < planks; i++) {
+      final z = northZ + (i + .5) * halfLength * 2 / planks;
+      mesh.box(
+        vm.Vector3(x, deckY, z),
+        vm.Vector3(width, .045, halfLength * 2 / planks - .006),
+        i.isEven ? timber : const Color(0xffb38b59),
+      );
+    }
+    for (final z in [northZ + .025, southZ - .025]) {
+      final ground = terrain.height(x, z);
+      mesh.box(
+        vm.Vector3(x, (deckY + ground) / 2, z),
+        vm.Vector3(width + .055, deckY - ground + .055, .16),
+        stone,
+      );
+    }
+    for (final side in [-1, 1]) {
+      final rx = x + side * (width / 2 - .012);
+      mesh.beam(
+        vm.Vector3(rx, deckY - .047, northZ),
+        vm.Vector3(rx, deckY - .047, southZ),
+        .065,
+        timber,
+      );
+      mesh.beam(
+        vm.Vector3(rx, deckY + .19, northZ),
+        vm.Vector3(rx, deckY + .19, southZ),
+        .026,
+        rail,
+      );
+      for (var post = 0; post < 5; post++) {
+        final z = northZ + post * halfLength * .5;
+        mesh.beam(
+          vm.Vector3(rx, deckY - .02, z),
+          vm.Vector3(rx, deckY + .21, z),
+          .035,
+          timber,
+        );
+      }
+    }
+    for (final side in [-1, 1]) {
+      final endZ = middle + side * halfLength;
+      final rampZ = endZ + side * .25;
+      final ramp = [
+        vm.Vector3(x - width / 2, deckY + .024, endZ),
+        vm.Vector3(x + width / 2, deckY + .024, endZ),
+        terrain.surfacePoint(x + width / 2, rampZ, offset: .035),
+        terrain.surfacePoint(x - width / 2, rampZ, offset: .035),
+      ];
+      final top = side > 0 ? ramp.reversed.toList() : ramp;
+      mesh.quad(top[0], top[1], top[2], top[3], timber);
+    }
+  }
+
   void _tree(
     _CityMesh mesh,
     CityTerrain terrain,
@@ -249,6 +408,9 @@ class CityModels {
     double scale = 1,
     Color color = const Color(0xff4d783e),
   }) {
+    if (!terrain.containsLand(x, z, inset: .25) || terrain.isWater(x, z)) {
+      return;
+    }
     final y = terrain.height(x, z);
     final seed = (x * 171 + z * 293).round();
     mesh.box(
@@ -1535,15 +1697,16 @@ class CityModels {
   }
 
   void _headquarters(fs.Node root, _CityMesh mesh, CityTerrain terrain) {
-    // Three irregular blocks occupy the existing strip south of the city.
-    // Even roofs and road shoulders stay beyond the southern hex limit z=4.
+    // The older settlement sits on the southern bank inside the circular cut.
+    // Its compact curved street leaves the whole river and 25 building plots
+    // visible; the footbridge joins it to the development area.
     const mainStreet = [
-      (-2.10, 4.72),
-      (-1.12, 4.58),
-      (-.22, 4.65),
-      (.53, 4.87),
-      (1.23, 4.83),
-      (1.87, 4.72),
+      (-1.96, 6.03),
+      (-1.24, 6.09),
+      (-.50, 6.13),
+      (.20, 6.13),
+      (.90, 6.06),
+      (1.83, 6.02),
     ];
     for (var i = 1; i < mainStreet.length; i++) {
       _road(
@@ -1556,22 +1719,30 @@ class CityModels {
         width: .12,
       );
     }
-    _road(mesh, terrain, -1.04, 4.16, -1.12, 5.44, width: .078);
-    _road(mesh, terrain, -.21, 4.19, -.38, 5.40, width: .083);
-    _road(mesh, terrain, -1.95, 5.12, .92, 5.29, width: .075);
+    const bridgeX = -.85;
+    _road(
+      mesh,
+      terrain,
+      bridgeX,
+      terrain.riverCenterZ(bridgeX) + terrain.riverHalfWidth(bridgeX) + .48,
+      bridgeX,
+      6.10,
+      width: .078,
+      color: const Color(0xffbdac7d),
+    );
     const lots = [
-      (-1.89, 4.37, .24, .30),
-      (-1.47, 4.29, .32, .28),
-      (-1.61, 4.87, .21, .31),
-      (-1.86, 5.36, .19, .23),
-      (-1.28, 5.29, .37, .29),
-      (-.76, 4.31, .29, .25),
-      (-.70, 4.85, .19, .32),
-      (-.57, 5.31, .23, .25),
-      (.08, 4.37, .30, .28),
-      (.16, 4.98, .22, .35),
-      (.54, 5.46, .17, .24),
-      (1.01, 5.27, .24, .31),
+      (-1.82, 5.73, .26, .29),
+      (-1.38, 5.80, .32, .28),
+      (-.95, 5.85, .24, .27),
+      (-.49, 5.87, .27, .30),
+      (-.03, 5.86, .29, .25),
+      (.42, 5.83, .25, .31),
+      (-1.42, 6.34, .29, .26),
+      (-.97, 6.40, .23, .28),
+      (-.49, 6.41, .26, .32),
+      (.01, 6.39, .21, .26),
+      (.46, 6.34, .24, .31),
+      (1.03, 6.29, .26, .29),
     ];
     for (var i = 0; i < lots.length; i++) {
       final (x, z, height, width) = lots[i];
@@ -1581,17 +1752,17 @@ class CityModels {
         x,
         z,
         width: width,
-        depth: .23 + (i % 3) * .04,
+        depth: .23 + (i % 3) * .025,
         height: height,
         color: i.isEven ? walls : warmWalls,
         roofColor: i % 4 == 0 ? roof : const Color(0xffa26d4b),
         pitched: i % 3 != 0,
       );
     }
-    // The civic/research building is the landmark of the older settlement.
-    _building(mesh, terrain, .87, 4.39, width: .50, depth: .38, height: .57);
-    _building(mesh, terrain, .49, 4.39, width: .21, depth: .26, height: .22);
-    final mast = terrain.surfacePoint(.87, 4.39, offset: .86);
+    // Civic tower and launch apron remain the original settlement landmarks.
+    _building(mesh, terrain, 1.05, 5.72, width: .48, depth: .36, height: .57);
+    _building(mesh, terrain, .71, 5.72, width: .19, depth: .26, height: .22);
+    final mast = terrain.surfacePoint(1.05, 5.72, offset: .86);
     mesh.box(mast, vm.Vector3(.027, .42, .027), steel);
     p.part(
       root,
@@ -1600,16 +1771,16 @@ class CityModels {
       mast + vm.Vector3(0, .21, 0),
       vm.Vector3(.25, .06, .21),
     );
-    _road(mesh, terrain, 1.82, 4.24, 1.82, 5.05, width: .63);
+    _road(mesh, terrain, 1.92, 5.66, 1.92, 6.29, width: .63);
     root.add(
       p.rocket()
-        ..position = terrain.surfacePoint(1.82, 4.66, offset: .03)
+        ..position = terrain.surfacePoint(1.92, 5.99, offset: .03)
         ..scale = vm.Vector3.all(.33),
     );
-    _tree(mesh, terrain, -2.06, 4.92, scale: .70);
-    _tree(mesh, terrain, -.88, 5.54, scale: .77);
-    _tree(mesh, terrain, .48, 4.68, scale: .60);
-    _tree(mesh, terrain, 1.28, 5.11, scale: .81);
+    _tree(mesh, terrain, -2.19, 5.72, scale: .70);
+    _tree(mesh, terrain, -1.89, 6.35, scale: .72);
+    _tree(mesh, terrain, .76, 6.40, scale: .62);
+    _tree(mesh, terrain, 1.47, 6.20, scale: .75);
   }
 }
 

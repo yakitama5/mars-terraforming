@@ -37,6 +37,48 @@ class CityTerrain {
   double get halfDepth => rows * .75 + 2.5;
   bool get hasCoast => earth && plots.any((plot) => plot.terrain == 'coast');
 
+  /// A finite circular slice, with enough scenery outside every buildable hex.
+  /// This changes the presentation boundary, never the domain's plot layout.
+  double get landRadius => math.max(
+    2.6,
+    centers.fold<double>(
+          0,
+          (radius, point) => math.max(
+            radius,
+            math.sqrt(point.x * point.x + point.z * point.z),
+          ),
+        ) +
+        2.0,
+  );
+  static const waterLevel = -.045;
+  double get baseY => -1.35;
+  bool get hasRiver => earth;
+
+  bool containsLand(double x, double z, {double inset = 0}) =>
+      x * x + z * z <= math.pow(math.max(0, landRadius - inset), 2);
+
+  /// The stream occupies the scenic strip beyond the final construction row.
+  /// Its wide meanders remain independent of which facilities are constructed.
+  double riverCenterZ(double x) =>
+      (rows - 1) * .75 +
+      1.60 +
+      .32 * math.sin(x * .72 + .45) +
+      .18 * math.cos(x * 1.17 - .65) +
+      .28 * math.exp(-math.pow((x + 2.4) / 1.3, 2));
+  double riverHalfWidth(double x) => .36 + .065 * math.sin(x * .67 + .8);
+  double riverDistance(double x, double z) =>
+      (z - riverCenterZ(x)).abs() - riverHalfWidth(x);
+
+  /// Negative values mean visible liquid water. Mars keeps a dry valley.
+  double waterDistance(double x, double z) => earth
+      ? math.min(
+          hasCoast ? coastDistance(x, z) + .20 : double.infinity,
+          riverDistance(x, z),
+        )
+      : double.infinity;
+  bool isWater(double x, double z) =>
+      containsLand(x, z) && waterDistance(x, z) < 0;
+
   vm.Vector3 center(int index) {
     final offset = plots.indexWhere((plot) => plot.index == index);
     final point = centers[offset];
@@ -133,9 +175,36 @@ class CityTerrain {
             .10 * math.cos(z * .9 - x * .30) +
             .04 * math.sin(x * 2.4 + z * 1.2));
     elevation += craterRim * (1 - footprint);
+    // A northern ridge frames the tiny world without raising facility pads.
+    final ridge =
+        1.55 *
+        math.exp(-math.pow((z + (rows - 1) * .75 + 1.8) / .72, 2)) *
+        (.45 + .55 * math.pow(math.cos(x * .69 + .30), 2));
+    elevation += ridge * (1 - footprint);
     if (hasCoast) {
-      final sea = _smooth(0, .85, -coastDistance(x, z));
-      elevation = elevation * (1 - sea) - .32 * sea;
+      // Match the water mesh's bank exactly. Applying this after the ridge
+      // also prevents a raised, blue-colored mountain underneath the sea.
+      final shore = coastDistance(x, z) + .20;
+      if (shore < .65) {
+        final shoreHeight = shore < 0
+            ? waterLevel - .28 + .28 * _smooth(-.85, 0, shore)
+            : waterLevel + (elevation - waterLevel) * _smooth(0, .65, shore);
+        // Coastal building pads lie inland. Fade their protection out at the
+        // bank, otherwise a tiny pad weight can lift submerged terrain above
+        // the water surface and turn the shoreline into a blue ledge.
+        final padProtection = footprint * _smooth(0, .25, shore);
+        elevation += (shoreHeight - elevation) * (1 - padProtection);
+      }
+    }
+    final channelDistance = riverDistance(x, z);
+    if (channelDistance < .38) {
+      final bed = earth ? waterLevel - .24 : -.12;
+      final edge = earth ? waterLevel : .07;
+      final channelHeight = channelDistance < 0
+          ? bed + (edge - bed) * _smooth(-.34, 0, channelDistance)
+          : edge + (elevation - edge) * _smooth(0, .38, channelDistance);
+      // Protect the complete flat footprint, including small custom test maps.
+      elevation += (channelHeight - elevation) * (1 - footprint);
     }
     return elevation;
   }
@@ -203,10 +272,10 @@ class CityTerrain {
       .12 * patch,
     )!;
     if (hasCoast) {
-      final distance = coastDistance(x, z);
-      final beach = 1 - _smooth(.15, 1.0, distance);
+      final distance = coastDistance(x, z) + .20;
+      final beach = 1 - _smooth(.10, .65, distance);
       base = Color.lerp(base, const Color(0xffb8ae76), beach * .65)!;
-      final water = _smooth(-.04, .45, -distance);
+      final water = _smooth(0, .30, -distance);
       final depth = _smooth(.30, 2.0, -distance);
       final sea = Color.lerp(
         const Color(0xff348782),
@@ -215,9 +284,29 @@ class CityTerrain {
       )!;
       base = Color.lerp(base, sea, water)!;
       // A thin, soft surf line follows the shore without a texture or network.
-      final surf = math.exp(-math.pow((distance + .12) / .075, 2));
+      final surf = math.exp(-math.pow((distance + .03) / .075, 2));
       base = Color.lerp(base, const Color(0xffb3d5ba), surf * .48)!;
     }
+    final river = riverDistance(x, z);
+    final bank = 1 - _smooth(.03, .40, river.abs());
+    base = Color.lerp(
+      base,
+      earth ? const Color(0xffbcb789) : const Color(0xffce9864),
+      bank * .82,
+    )!;
+    if (river < 0) {
+      base = Color.lerp(
+        base,
+        earth ? const Color(0xff348d8b) : const Color(0xff875235),
+        _smooth(0, .16, -river),
+      )!;
+    }
+    final ridge = _smooth(.8, 1.6, height(x, z));
+    base = Color.lerp(
+      base,
+      earth ? const Color(0xff9b9b83) : const Color(0xffb67853),
+      ridge * .70,
+    )!;
     return base;
   }
 
@@ -238,36 +327,54 @@ class CityTerrain {
     ).normalized();
   }
 
+  /// Polar rings end exactly at the round cut, with no rectangular apron.
   fs.MeshGeometry mesh() {
     final positions = <double>[];
     final normals = <double>[];
     final colors = <double>[];
     final uvs = <double>[];
     final indices = <int>[];
-    final xs = _meshAxis(halfWidth);
-    final zs = _meshAxis(halfDepth);
-    for (final z in zs) {
-      for (final x in xs) {
-        final normal = normalAt(x, z);
-        final color = colorAt(x, z);
-        positions.addAll([x, height(x, z), z]);
-        normals.addAll([normal.x, normal.y, normal.z]);
-        // Four world units per repeat: grain remains the same size while
-        // orbiting or changing the city's dimensions, instead of stretching.
-        uvs.addAll([x / 4, z / 4]);
-        colors.addAll([
-          linearChannel(color.r),
-          linearChannel(color.g),
-          linearChannel(color.b),
-          1,
-        ]);
+    const segments = 192;
+    final rings = (landRadius / .20).ceil();
+    void vertex(double x, double z) {
+      final normal = normalAt(x, z);
+      final color = colorAt(x, z);
+      positions.addAll([x, height(x, z), z]);
+      normals.addAll([normal.x, normal.y, normal.z]);
+      uvs.addAll([x / 4, z / 4]);
+      colors.addAll([
+        linearChannel(color.r),
+        linearChannel(color.g),
+        linearChannel(color.b),
+        1,
+      ]);
+    }
+
+    vertex(0, 0);
+    for (var ring = 1; ring <= rings; ring++) {
+      final radius = landRadius * ring / rings;
+      for (var i = 0; i < segments; i++) {
+        final angle = i / segments * math.pi * 2;
+        vertex(math.cos(angle) * radius, math.sin(angle) * radius);
       }
     }
-    for (var iz = 0; iz < zs.length - 1; iz++) {
-      for (var ix = 0; ix < xs.length - 1; ix++) {
-        final a = iz * xs.length + ix;
-        final b = a + xs.length;
-        indices.addAll([a, b, b + 1, a, b + 1, a + 1]);
+    for (var i = 0; i < segments; i++) {
+      final next = (i + 1) % segments;
+      indices.addAll([0, 1 + next, 1 + i]);
+    }
+    for (var ring = 1; ring < rings; ring++) {
+      final inner = 1 + (ring - 1) * segments;
+      final outer = inner + segments;
+      for (var i = 0; i < segments; i++) {
+        final next = (i + 1) % segments;
+        indices.addAll([
+          inner + i,
+          inner + next,
+          outer + next,
+          inner + i,
+          outer + next,
+          outer + i,
+        ]);
       }
     }
     return fs.MeshGeometry.fromArrays(
@@ -280,15 +387,70 @@ class CityTerrain {
     );
   }
 
-  List<double> _meshAxis(double cityExtent) {
-    const apron = 10.0;
-    const outerStep = 1.25;
-    const innerStep = .24;
-    return [
-      for (var x = -cityExtent - apron; x < -cityExtent; x += outerStep) x,
-      for (var x = -cityExtent; x < cityExtent; x += innerStep) x,
-      for (var x = cityExtent; x <= cityExtent + apron; x += outerStep) x,
-    ];
+  /// Visible soil strata make the land read as a thick terrarium slice.
+  /// Adjacent bands duplicate vertices to retain their distinct soil colors.
+  fs.MeshGeometry sideMesh() {
+    final positions = <double>[];
+    final normals = <double>[];
+    final colors = <double>[];
+    final uvs = <double>[];
+    final indices = <int>[];
+    const segments = 192;
+    final palette = earth
+        ? const [
+            Color(0xff515a35),
+            Color(0xff8d7050),
+            Color(0xffbd9a6b),
+            Color(0xff62503d),
+          ]
+        : const [
+            Color(0xff894a31),
+            Color(0xffbe8051),
+            Color(0xff754433),
+            Color(0xff4d3530),
+          ];
+    double level(double top, int band) => switch (band) {
+      0 => top,
+      1 => top - .14,
+      2 => baseY + .58,
+      3 => baseY + .18,
+      _ => baseY,
+    };
+    for (var band = 0; band < 4; band++) {
+      final color = palette[band];
+      for (var i = 0; i <= segments; i++) {
+        final angle = i / segments * math.pi * 2;
+        final x = math.cos(angle) * landRadius;
+        final z = math.sin(angle) * landRadius;
+        final top = height(x, z);
+        for (var edge = 0; edge < 2; edge++) {
+          final y = level(top, band + edge);
+          final taper = 1 - .02 * ((top - y) / (top - baseY));
+          positions.addAll([x * taper, y, z * taper]);
+          normals.addAll([math.cos(angle), 0, math.sin(angle)]);
+          uvs.addAll([angle * landRadius / 2, y]);
+          final variation = .94 + .06 * math.sin(angle * 17 + band);
+          colors.addAll([
+            linearChannel(color.r) * variation,
+            linearChannel(color.g) * variation,
+            linearChannel(color.b) * variation,
+            1,
+          ]);
+        }
+        if (i < segments) {
+          final a = (band * (segments + 1) + i) * 2;
+          indices.addAll([a, a + 2, a + 3, a, a + 3, a + 1]);
+        }
+      }
+    }
+    return fs.MeshGeometry.fromArrays(
+      positions: Float32List.fromList(positions),
+      normals: Float32List.fromList(normals),
+      texCoords: Float32List.fromList(uvs),
+      colors: Float32List.fromList(colors),
+      indices: indices,
+      retainCpuData: false,
+    );
   }
 }
 
@@ -305,14 +467,14 @@ class CityMapProjection {
     this.panZ = 0,
   });
 
-  // A close, oblique neighborhood view makes roofs, walls and streets readable.
-  // Overview is an explicit camera mode, rather than the starting composition.
+  // The initial overview exposes the complete circular land slice. A separate
+  // close view retains readable roofs, walls and streets for placement.
   static const neighborhoodAzimuth = .24;
   static const neighborhoodElevation = .60;
   static const neighborhoodZoom = 2.3;
-  static const overviewElevation = .88;
-  static const overviewZoom = .9;
-  static const minZoom = .8;
+  static const overviewElevation = .68;
+  static const overviewZoom = .70;
+  static const minZoom = .60;
   static const maxZoom = 3.2;
 
   final CityTerrain terrain;
