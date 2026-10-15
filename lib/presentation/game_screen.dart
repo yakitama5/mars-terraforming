@@ -1333,6 +1333,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final unread = game.unreadCompletionNotices.toList();
     final message =
         controller.error ??
+        controller.commandNotice ??
         (game.completionBannersEnabled && unread.isNotEmpty
             ? unread.last.title
             : '${controller.devTools ? '開発用セーブ  ·  ' : ''}${controller.notice}');
@@ -1351,11 +1352,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               child: Semantics(
                 liveRegion:
                     controller.error != null ||
+                    controller.commandNotice != null ||
                     (game.completionBannersEnabled && unread.isNotEmpty),
                 child: Text(
                   message,
                   key: const Key('status-message'),
-                  maxLines: 1,
+                  maxLines: controller.commandNotice == null ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,

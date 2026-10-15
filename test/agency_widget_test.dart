@@ -60,84 +60,87 @@ void main() {
         devTools: true,
         now: () => DateTime.utc(2026, 10, 14),
       );
-      await controller.initialize(startTimer: false);
-      addTearDown(controller.dispose);
-      await tester.pumpWidget(
-        MarsApp(
-          controller: controller,
-          sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
-        ),
-      );
-      expect(find.text('900ドル'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('navigation-4')));
-      await tester.pumpAndSettle();
-      final unchanged = jsonEncode(controller.state.toJson());
-      await _tapDetail(tester, 'staff-research-more', 'agency-staff');
-      expect(controller.state.researchers, 6);
-      expect(jsonEncode(controller.state.toJson()), unchanged);
-      expect(find.text('研究 7人 / 工業 5人に変更'), findsOneWidget);
-      expect(
-        find.byKey(const Key('confirm-staff-allocation')).hitTestable(),
-        findsOneWidget,
-      );
-      await tester.tap(find.byKey(const Key('confirm-staff-allocation')));
-      await tester.pumpAndSettle();
-      expect(controller.state.researchers, 7);
-      expect(controller.state.industrialWorkers, 5);
-      expect(store.data!['researchers'], 7);
+      try {
+        await controller.initialize(startTimer: false);
+        await tester.pumpWidget(
+          MarsApp(
+            controller: controller,
+            sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
+          ),
+        );
+        expect(find.text('900ドル'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('navigation-4')));
+        await tester.pumpAndSettle();
+        final unchanged = jsonEncode(controller.state.toJson());
+        await _tapDetail(tester, 'staff-research-more', 'agency-staff');
+        expect(controller.state.researchers, 6);
+        expect(jsonEncode(controller.state.toJson()), unchanged);
+        expect(find.text('研究 7人 / 工業 5人に変更'), findsOneWidget);
+        expect(
+          find.byKey(const Key('confirm-staff-allocation')).hitTestable(),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const Key('confirm-staff-allocation')));
+        await tester.pumpAndSettle();
+        expect(controller.state.researchers, 7);
+        expect(controller.state.industrialWorkers, 5);
+        expect(store.data!['researchers'], 7);
 
-      // Begin paid research and factory work. Neither department can now
-      // release its reserved people, and opening the panel cannot alter time.
-      await controller.command((engine) {
-        engine.enqueue('life_support');
-        engine.enqueue('factory_contract', repeats: null);
-        return null;
-      });
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('staff-research-less')))
-            .onPressed,
-        isNull,
-      );
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('staff-research-more')))
-            .onPressed,
-        isNull,
-      );
-      final beforeOperations = jsonEncode(controller.state.toJson());
-      await _tapDetail(tester, 'agency-open-operations', 'agency-staff');
-      expect(find.byKey(const Key('operations-list-0')), findsOneWidget);
-      expect(jsonEncode(controller.state.toJson()), beforeOperations);
-      expect(
-        controller.state.currentPlanFor('factory')!.remainingRepeats,
-        isNull,
-      );
-      await tester.tap(find.byKey(const Key('navigation-4')));
-      await tester.pumpAndSettle();
-      final duration = controller.state
-          .currentPlanFor('lab')!
-          .iterationDurationMs;
-      await controller.advanceForDevelopment(
-        duration: const Duration(minutes: 10),
-      );
-      await tester.pumpAndSettle();
-      expect(controller.state.research, contains('life_support'));
-      expect(duration, greaterThan(0));
-      await _tapDetail(tester, 'queue-train_specialists', 'agency-staff');
-      expect(
-        controller.state.plans.where((p) => p.taskId == 'train_specialists'),
-        hasLength(1),
-      );
-      await controller.advanceForDevelopment();
-      await tester.pumpAndSettle();
-      expect(
-        controller.state.specialistCount,
-        GameContent.initialSpecialists + GameContent.specialistTrainingCount,
-      );
-      expect(controller.state.researchers, 7);
-      expect(tester.takeException(), isNull);
+        // Begin paid research and factory work. Neither department can now
+        // release its reserved people, and opening the panel cannot alter time.
+        await controller.command((engine) {
+          engine.enqueue('life_support');
+          engine.enqueue('factory_contract', repeats: null);
+          return null;
+        });
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<IconButton>(find.byKey(const Key('staff-research-less')))
+              .onPressed,
+          isNull,
+        );
+        expect(
+          tester
+              .widget<IconButton>(find.byKey(const Key('staff-research-more')))
+              .onPressed,
+          isNull,
+        );
+        final beforeOperations = jsonEncode(controller.state.toJson());
+        await _tapDetail(tester, 'agency-open-operations', 'agency-staff');
+        expect(find.byKey(const Key('operations-list-0')), findsOneWidget);
+        expect(jsonEncode(controller.state.toJson()), beforeOperations);
+        expect(
+          controller.state.currentPlanFor('factory')!.remainingRepeats,
+          isNull,
+        );
+        await tester.tap(find.byKey(const Key('navigation-4')));
+        await tester.pumpAndSettle();
+        final duration = controller.state
+            .currentPlanFor('lab')!
+            .iterationDurationMs;
+        await controller.advanceForDevelopment(
+          duration: const Duration(minutes: 10),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.state.research, contains('life_support'));
+        expect(duration, greaterThan(0));
+        await _tapDetail(tester, 'queue-train_specialists', 'agency-staff');
+        expect(
+          controller.state.plans.where((p) => p.taskId == 'train_specialists'),
+          hasLength(1),
+        );
+        await controller.advanceForDevelopment();
+        await tester.pumpAndSettle();
+        expect(
+          controller.state.specialistCount,
+          GameContent.initialSpecialists + GameContent.specialistTrainingCount,
+        );
+        expect(controller.state.researchers, 7);
+        expect(tester.takeException(), isNull);
+      } finally {
+        controller.dispose();
+      }
     });
 
     testWidgets(

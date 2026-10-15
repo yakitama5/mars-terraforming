@@ -21,10 +21,13 @@ class GameController extends ChangeNotifier {
   GameState get state => engine!.state;
   String? error;
   String notice = '端末内に自動保存します';
+  String? get commandNotice => _commandNotice;
   bool busy = false;
   bool _disposed = false;
   bool _saveConflict = false;
   Timer? _timer;
+  Timer? _commandNoticeTimer;
+  String? _commandNotice;
   int _ticks = 0;
   Future<void> _saving = Future.value();
 
@@ -62,17 +65,32 @@ class GameController extends ChangeNotifier {
   }
 
   Future<void> command(String? Function(GameEngine) action) async {
-    if (engine == null || busy) return;
+    if (_disposed || engine == null || busy) return;
     busy = true;
     try {
       engine!.advanceTo(now());
       final message = action(engine!);
-      if (message != null) notice = message;
+      if (message != null) {
+        notice = message;
+        _showCommandNotice(message);
+      }
       await save();
     } finally {
       busy = false;
       _emit();
     }
+  }
+
+  void _showCommandNotice(String message) {
+    _commandNoticeTimer?.cancel();
+    _commandNotice = message;
+    _commandNoticeTimer = Timer(const Duration(seconds: 8), () {
+      _commandNoticeTimer = null;
+      _commandNotice = null;
+      _emit();
+    });
+    // Report rejected actions even while their unchanged snapshot is saving.
+    _emit();
   }
 
   Future<void> advanceForDevelopment({
@@ -128,6 +146,8 @@ class GameController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _commandNoticeTimer?.cancel();
+    _commandNoticeTimer = null;
     super.dispose();
   }
 }

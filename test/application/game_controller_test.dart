@@ -69,6 +69,126 @@ void main() {
   );
 
   testWidgets(
+    'command notices expire once without saving or replacing the final notice',
+    (tester) async {
+      final store = _Repository();
+      final controller = GameController(store, now: () => epoch);
+      try {
+        await controller.initialize(startTimer: false);
+        expect(controller.commandNotice, isNull);
+        var notifications = 0;
+        controller.addListener(() => notifications++);
+        await controller.command((_) => '資金が不足しています');
+        expect(controller.commandNotice, '資金が不足しています');
+        expect(controller.notice, '資金が不足しています');
+        final commandNotifications = notifications;
+        final saved = _copy(store.data!);
+        final saveAttempts = store.saveAttempts;
+
+        await tester.pump(const Duration(seconds: 7));
+        expect(controller.commandNotice, '資金が不足しています');
+        expect(notifications, commandNotifications);
+        await tester.pump(const Duration(seconds: 1));
+        expect(controller.commandNotice, isNull);
+        expect(controller.notice, '資金が不足しています');
+        expect(notifications, commandNotifications + 1);
+        await tester.pump(const Duration(minutes: 1));
+        expect(notifications, commandNotifications + 1);
+        expect(store.saveAttempts, saveAttempts);
+        expect(store.data, saved);
+      } finally {
+        controller.dispose();
+      }
+    },
+  );
+
+  testWidgets('repeating the same command notice restarts its full duration', (
+    tester,
+  ) async {
+    final controller = GameController(_Repository(), now: () => epoch);
+    try {
+      await controller.initialize(startTimer: false);
+      await controller.command((_) => '予約が上限に達しています');
+      await tester.pump(const Duration(seconds: 6));
+      await controller.command((_) => '予約が上限に達しています');
+      await tester.pump(const Duration(seconds: 2));
+      expect(controller.commandNotice, '予約が上限に達しています');
+      await tester.pump(const Duration(milliseconds: 5999));
+      expect(controller.commandNotice, '予約が上限に達しています');
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(controller.commandNotice, isNull);
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  testWidgets(
+    'a newer message replaces the old timer and a silent command does not extend it',
+    (tester) async {
+      final controller = GameController(_Repository(), now: () => epoch);
+      try {
+        await controller.initialize(startTimer: false);
+        await controller.command((_) => '最初の操作結果');
+        await tester.pump(const Duration(seconds: 6));
+        await controller.command((_) => '次の操作結果');
+        await tester.pump(const Duration(seconds: 2));
+        expect(controller.commandNotice, '次の操作結果');
+        await controller.command((_) => null);
+        expect(controller.commandNotice, '次の操作結果');
+        await tester.pump(const Duration(seconds: 6));
+        expect(controller.commandNotice, isNull);
+        expect(controller.notice, '次の操作結果');
+      } finally {
+        controller.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'a command result is visible during saving and disposal cancels its timer',
+    (tester) async {
+      final store = _Repository();
+      final controller = GameController(store, now: () => epoch);
+      final committing = Completer<void>();
+      var disposed = false;
+      Future<void>? pending;
+      try {
+        await controller.initialize(startTimer: false);
+        final observed = <String?>[];
+        controller.addListener(() => observed.add(controller.commandNotice));
+        store.beforeSave = (_) => committing.future;
+        pending = controller.command((_) => '設備の再開には資金が必要です');
+        await tester.pump();
+        expect(controller.busy, isTrue);
+        expect(observed, ['設備の再開には資金が必要です']);
+        expect(controller.commandNotice, '設備の再開には資金が必要です');
+
+        controller.dispose();
+        disposed = true;
+        await tester.pump(const Duration(seconds: 9));
+        // The cancelled callback must neither clear the result nor notify.
+        expect(controller.commandNotice, '設備の再開には資金が必要です');
+        expect(observed, ['設備の再開には資金が必要です']);
+        committing.complete();
+        await pending;
+        var commandRan = false;
+        await controller.command((_) {
+          commandRan = true;
+          return '破棄後の操作';
+        });
+        expect(commandRan, isFalse);
+        expect(store.saveAttempts, 2);
+        expect(observed, ['設備の再開には資金が必要です']);
+        expect(tester.takeException(), isNull);
+      } finally {
+        if (!committing.isCompleted) committing.complete();
+        await pending;
+        if (!disposed) controller.dispose();
+      }
+    },
+  );
+
+  testWidgets(
     'failed first save cannot expose a playable world or start the clock',
     (tester) async {
       final store = _Repository()..saveFailure = StateError('quota exceeded');

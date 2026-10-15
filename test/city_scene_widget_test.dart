@@ -443,83 +443,86 @@ void main() {
           devTools: true,
           now: () => DateTime.utc(2026, 10, 14),
         );
-        await controller.initialize(startTimer: false);
-        addTearDown(controller.dispose);
-        await tester.pumpWidget(
-          MarsApp(controller: controller, renderScene: false),
-        );
-        await tester.tap(find.byKey(const Key('navigation-1')));
-        await tester.pumpAndSettle();
-        final map = find.byType(CityScene);
-        CityScene current() => tester.widget<CityScene>(map);
-        Future<void> tapGround(int index) async {
-          final scene = current();
-          final terrain = CityTerrain(
-            earth: scene.earth,
-            columns: scene.columns,
-            rows: scene.rows,
-            plots: scene.plots,
+        try {
+          await controller.initialize(startTimer: false);
+          await tester.pumpWidget(
+            MarsApp(controller: controller, renderScene: false),
           );
-          final screen = CityMapProjection(
-            terrain: terrain,
-            elevation: CityMapProjection.overviewElevation,
-            zoom: CityMapProjection.overviewZoom,
-          ).center(index, tester.getSize(map));
-          await tester.tapAt(tester.getTopLeft(map) + screen);
+          await tester.tap(find.byKey(const Key('navigation-1')));
           await tester.pumpAndSettle();
-          expect(current().selectedPlot, index);
-        }
+          final map = find.byType(CityScene);
+          CityScene current() => tester.widget<CityScene>(map);
+          Future<void> tapGround(int index) async {
+            final scene = current();
+            final terrain = CityTerrain(
+              earth: scene.earth,
+              columns: scene.columns,
+              rows: scene.rows,
+              plots: scene.plots,
+            );
+            final screen = CityMapProjection(
+              terrain: terrain,
+              elevation: CityMapProjection.overviewElevation,
+              zoom: CityMapProjection.overviewZoom,
+            ).center(index, tester.getSize(map));
+            await tester.tapAt(tester.getTopLeft(map) + screen);
+            await tester.pumpAndSettle();
+            expect(current().selectedPlot, index);
+          }
 
-        final before = jsonEncode(controller.state.toJson());
-        expect(current().constructionMode, isFalse);
-        expect(current().selectedPlot, -1);
-        await tester.tap(find.byKey(const Key('district-option-housing')));
-        await tester.pumpAndSettle();
-        expect(current().constructionMode, isTrue);
-        expect(current().buildablePlots, hasLength(25));
-        expect(
-          tester
-              .widget<FilledButton>(find.byKey(const Key('confirm-district')))
-              .onPressed,
-          isNull,
-        );
-        await tester.tap(find.byTooltip('都市全体を表示'));
-        await tester.pumpAndSettle();
-        await tapGround(4);
-        expect(find.text('区画 5  ·  高台'), findsOneWidget);
-        await tester.drag(map, const Offset(45, 16));
-        await tester.pumpAndSettle();
-        expect(current().selectedPlot, 4);
-        await tester.tap(find.byTooltip('都市全体を表示'));
-        await tester.pumpAndSettle();
-        final narrow = tester.getSize(map).width;
-        await tester.tap(find.byKey(const Key('city-inspector-toggle')));
-        await tester.pumpAndSettle();
-        expect(tester.getSize(map).width, greaterThan(narrow));
-        expect(find.byKey(const Key('confirm-district')), findsNothing);
-        await tapGround(0);
-        expect(
-          find.byKey(const Key('confirm-district')).hitTestable(),
-          findsOneWidget,
-        );
-        expect(jsonEncode(controller.state.toJson()), before);
-        await tester.tap(find.byKey(const Key('confirm-district')));
-        await tester.pumpAndSettle();
-        final plan = controller.state.districtPlanAt('earth_delta', 0)!;
-        expect(plan.plotIndex, 0);
-        expect(current().plots[0].workState, SceneWorkState.building);
-        expect(current().plots[0].level, 0);
-        expect(find.byKey(const Key('district-work-status')), findsOneWidget);
-        expect(find.text('建設前の見積もり'), findsNothing);
-        final remaining = plan.remainingMs;
-        await controller.advanceForDevelopment(
-          duration: Duration(milliseconds: remaining),
-        );
-        await tester.pumpAndSettle();
-        expect(current().plots[0].workState, SceneWorkState.none);
-        expect(current().plots[0].level, 1);
-        expect(current().plots[1].level, 0);
-        expect(tester.takeException(), isNull);
+          final before = jsonEncode(controller.state.toJson());
+          expect(current().constructionMode, isFalse);
+          expect(current().selectedPlot, -1);
+          await tester.tap(find.byKey(const Key('district-option-housing')));
+          await tester.pumpAndSettle();
+          expect(current().constructionMode, isTrue);
+          expect(current().buildablePlots, hasLength(25));
+          expect(
+            tester
+                .widget<FilledButton>(find.byKey(const Key('confirm-district')))
+                .onPressed,
+            isNull,
+          );
+          await tester.tap(find.byTooltip('都市全体を表示'));
+          await tester.pumpAndSettle();
+          await tapGround(4);
+          expect(find.text('区画 5  ·  高台'), findsOneWidget);
+          await tester.drag(map, const Offset(45, 16));
+          await tester.pumpAndSettle();
+          expect(current().selectedPlot, 4);
+          await tester.tap(find.byTooltip('都市全体を表示'));
+          await tester.pumpAndSettle();
+          final narrow = tester.getSize(map).width;
+          await tester.tap(find.byKey(const Key('city-inspector-toggle')));
+          await tester.pumpAndSettle();
+          expect(tester.getSize(map).width, greaterThan(narrow));
+          expect(find.byKey(const Key('confirm-district')), findsNothing);
+          await tapGround(0);
+          expect(
+            find.byKey(const Key('confirm-district')).hitTestable(),
+            findsOneWidget,
+          );
+          expect(jsonEncode(controller.state.toJson()), before);
+          await tester.tap(find.byKey(const Key('confirm-district')));
+          await tester.pumpAndSettle();
+          final plan = controller.state.districtPlanAt('earth_delta', 0)!;
+          expect(plan.plotIndex, 0);
+          expect(current().plots[0].workState, SceneWorkState.building);
+          expect(current().plots[0].level, 0);
+          expect(find.byKey(const Key('district-work-status')), findsOneWidget);
+          expect(find.text('建設前の見積もり'), findsNothing);
+          final remaining = plan.remainingMs;
+          await controller.advanceForDevelopment(
+            duration: Duration(milliseconds: remaining),
+          );
+          await tester.pumpAndSettle();
+          expect(current().plots[0].workState, SceneWorkState.none);
+          expect(current().plots[0].level, 1);
+          expect(current().plots[1].level, 0);
+          expect(tester.takeException(), isNull);
+        } finally {
+          controller.dispose();
+        }
       },
     );
   }
