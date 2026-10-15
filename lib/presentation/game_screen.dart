@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../application/game_controller.dart';
 import '../domain/game_content.dart';
+import '../domain/contextual_tips.dart';
 import '../domain/game_state.dart';
 import '../rendering/base_scene.dart';
 import 'city_development.dart';
 import 'command_hud.dart';
+import 'completion_center.dart';
+import 'contextual_tips.dart';
 import 'agency_management.dart';
 import 'early_development_guide.dart';
 import 'facility_queue_card.dart';
@@ -38,6 +41,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   String cityId = 'earth_delta';
   String researchId = 'life_support';
   InvestmentCandidate? savedInvestment;
+  final facilityKeys = {
+    for (final id in GameContent.facilities.keys) id: GlobalKey(),
+  };
   GameController get controller => widget.controller;
   GameState get game => controller.state;
   bool get _compactLandscape => MediaQuery.sizeOf(context).height < 450;
@@ -402,7 +408,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ? const EdgeInsets.fromLTRB(14, 10, 14, 12)
           : const EdgeInsets.all(18),
       children: [
-        _nextGoal(),
+        if (!game.tutorialHidden) _nextGoal(),
+        if (game.tipsEnabled) ...[const SizedBox(height: 8), _contextualTips()],
         SizedBox(height: _compactLandscape ? 8 : 20),
         if (_compactLandscape)
           const Padding(
@@ -523,23 +530,23 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _nextGoal() => EarlyDevelopmentGuide(
+  Widget _nextGoal({bool closeDialog = false}) => EarlyDevelopmentGuide(
     controller: controller,
     compact: _compactLandscape,
-    onResearch: (id) => setState(() {
+    onResearch: (id) => _guideNavigation(closeDialog, () {
       researchId = id;
       tab = 2;
     }),
-    onCity: (id) => setState(() {
+    onCity: (id) => _guideNavigation(closeDialog, () {
       cityId = id;
       earth = GameContent.cities[id]!.planet == 'earth';
       tab = 1;
     }),
-    onOperations: (section) => setState(() {
+    onOperations: (section) => _guideNavigation(closeDialog, () {
       facilityTab = section;
       tab = 3;
     }),
-    onAgency: (section) => setState(() {
+    onAgency: (section) => _guideNavigation(closeDialog, () {
       agencySection = section;
       tab = 4;
     }),
@@ -606,6 +613,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+              if (activePlan != null) ...[
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  key: const Key('research-open-queue'),
+                  onPressed: () {
+                    setState(() {
+                      tab = 3;
+                      facilityTab = 0;
+                    });
+                    _focusFacility('lab');
+                  },
+                  icon: const Icon(Icons.view_timeline_outlined, size: 17),
+                  label: const Text('研究の予約順・停止理由を確認'),
+                ),
+              ],
               const SizedBox(height: 8),
               TextButton.icon(
                 key: const Key('research-parallel-city'),
@@ -689,11 +711,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               : null,
           child: FilledButton.icon(
             key: Key('queue-${task.id}'),
-            onPressed:
-                status == '研究済み' ||
-                    status == '研究中' ||
-                    status == '予約済み' ||
-                    controller.busy
+            onPressed: status == '研究済み' || activePlan != null || controller.busy
                 ? null
                 : () => _reserve(task.id),
             icon: const Icon(Icons.science_outlined, size: 18),
@@ -788,11 +806,31 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     ),
   );
 
+  void _focusFacility(String? id) {
+    if (id == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || tab != 3 || facilityTab != 0) return;
+      final target = facilityKeys[id]?.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 250),
+        );
+      }
+    });
+  }
+
   List<Widget> _queueOverview() => [
     const StrategyHeading(
       '共用設備の稼働計画',
       '↑↓で予約順を変更。設備を休止すると、対応する地区の効果と維持費も停止します。',
     ),
+    Text(
+      '有効な計画 ${game.activePlanCount}/${GameContent.maxActivePlans}件 · 研究・建設・反復予約を含みます',
+      key: const Key('active-plan-count'),
+      style: const TextStyle(fontSize: 12, color: strategyMuted),
+    ),
+    const SizedBox(height: 8),
     Align(
       alignment: Alignment.centerLeft,
       child: OutlinedButton.icon(
@@ -820,6 +858,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               SizedBox(
                 width: width,
                 child: FacilityQueueCard(
+                  key: facilityKeys[id],
                   controller: controller,
                   facilityId: id,
                 ),
@@ -1056,24 +1095,215 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       ),
   ];
 
-  Widget _footer() => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
-    decoration: const BoxDecoration(
-      color: Color(0xff10202a),
-      border: Border(top: BorderSide(color: strategyLine)),
-    ),
-    child: Text(
-      controller.error ??
-          '${controller.devTools ? '開発用セーブ  ·  ' : ''}${controller.notice}',
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: 11,
-        color: controller.error == null ? strategyMuted : Colors.orangeAccent,
+  void _guideNavigation(bool closeDialog, VoidCallback action) {
+    if (closeDialog) Navigator.pop(context);
+    setState(action);
+  }
+
+  Widget _contextualTips({bool closeDialog = false}) => ContextualTipsPanel(
+    game: game,
+    compact: _compactLandscape,
+    dismissedIds: game.dismissedTipIds,
+    onDismiss: (id) => controller.command((engine) {
+      engine.state.dismissedTipIds.add(id);
+      return null;
+    }),
+    onOpen: (tip) => _guideNavigation(closeDialog, () {
+      switch (tip.destination) {
+        case ContextualTipDestination.operations:
+          tab = 3;
+          facilityTab = tip.operationsSection.index;
+          if (facilityTab == 0) _focusFacility(tip.facilityId);
+        case ContextualTipDestination.research:
+          researchId = tip.taskId ?? 'life_support';
+          tab = 2;
+        case ContextualTipDestination.city:
+          cityId = tip.cityId ?? 'earth_delta';
+          earth = GameContent.cities[cityId]!.planet == 'earth';
+          tab = 1;
+        case ContextualTipDestination.agency:
+          agencySection = tip.agencySection.index;
+          tab = 4;
+      }
+    }),
+  );
+
+  void _showGuidance() => showDialog<void>(
+    context: context,
+    builder: (context) => ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => AlertDialog(
+        title: const Text('開発ガイド・Tips'),
+        content: SizedBox(
+          width: 560,
+          child: controller.engine == null
+              ? const Text('保存状態を確認してください。')
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (controller.error != null)
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                '表示設定を保存できていません。',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: strategyCopper,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              key: const Key('retry-guidance-save'),
+                              onPressed: controller.busy
+                                  ? null
+                                  : controller.save,
+                              child: const Text('再保存'),
+                            ),
+                          ],
+                        ),
+                      _nextGoal(closeDialog: true),
+                      if (game.tipsEnabled) ...[
+                        const SizedBox(height: 12),
+                        _contextualTips(closeDialog: true),
+                      ],
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          '惑星マップに導入ガイドを表示',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        value: !game.tutorialHidden,
+                        onChanged: controller.busy
+                            ? null
+                            : (value) => controller.command((engine) {
+                                engine.state.tutorialHidden = !value;
+                                return null;
+                              }),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          '状況に応じたTipsを表示',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        value: game.tipsEnabled,
+                        onChanged: controller.busy
+                            ? null
+                            : (value) => controller.command((engine) {
+                                engine.state.tipsEnabled = value;
+                                return null;
+                              }),
+                      ),
+                      TextButton(
+                        key: const Key('restore-dismissed-tips'),
+                        onPressed:
+                            controller.busy || game.dismissedTipIds.isEmpty
+                            ? null
+                            : () => controller.command((engine) {
+                                engine.state.dismissedTipIds.clear();
+                                return '非表示にしたTipsを戻しました';
+                              }),
+                        child: const Text('非表示にしたTipsを戻す'),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('閉じる'),
+          ),
+        ],
       ),
     ),
   );
+
+  void _showCompletions() => showDialog<void>(
+    context: context,
+    builder: (_) => CompletionCenter(
+      controller: controller,
+      onOpen: (notice) => setState(() {
+        if (notice.cityId != null) {
+          cityId = notice.cityId!;
+          earth = GameContent.cities[cityId]!.planet == 'earth';
+          tab = 1;
+        } else if (notice.definition.unique) {
+          researchId = notice.taskId;
+          tab = 2;
+        } else {
+          facilityTab = 0;
+          tab = 3;
+          _focusFacility(notice.definition.facilityId);
+        }
+      }),
+    ),
+  );
+
+  Widget _footer() {
+    final unread = game.unreadCompletionNotices.toList();
+    final message =
+        controller.error ??
+        (game.completionBannersEnabled && unread.isNotEmpty
+            ? unread.last.title
+            : '${controller.devTools ? '開発用セーブ  ·  ' : ''}${controller.notice}');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xff10202a),
+        border: Border(top: BorderSide(color: strategyLine)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Tooltip(
+              message: message,
+              child: Semantics(
+                liveRegion:
+                    controller.error != null ||
+                    (game.completionBannersEnabled && unread.isNotEmpty),
+                child: Text(
+                  message,
+                  key: const Key('status-message'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: controller.error == null
+                        ? strategyMuted
+                        : Colors.orangeAccent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          TextButton.icon(
+            key: const Key('open-guidance'),
+            onPressed: _showGuidance,
+            icon: const Icon(Icons.help_outline, size: 17),
+            label: const Text('ガイド', style: TextStyle(fontSize: 11)),
+          ),
+          TextButton.icon(
+            key: const Key('open-completions'),
+            onPressed: _showCompletions,
+            icon: Icon(
+              unread.isEmpty
+                  ? Icons.notifications_none
+                  : Icons.notifications_active_outlined,
+              size: 17,
+            ),
+            label: Text(
+              '通知${unread.isEmpty ? '' : ' ${unread.length}'}',
+              style: const TextStyle(fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _science(TaskDefinition task) => showDialog<void>(
     context: context,

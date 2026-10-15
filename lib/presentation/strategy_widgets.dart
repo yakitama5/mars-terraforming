@@ -153,7 +153,8 @@ class StrategySplit extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      if (constraints.maxWidth < 650) {
+      if (constraints.maxWidth < 650 &&
+          constraints.maxHeight >= constraints.maxWidth) {
         return Column(
           children: [
             Expanded(child: overview),
@@ -167,7 +168,11 @@ class StrategySplit extends StatelessWidget {
           Expanded(child: overview),
           const VerticalDivider(width: 1, color: strategyLine),
           SizedBox(
-            width: constraints.maxWidth > 1100 ? 360 : 310,
+            width: constraints.maxWidth > 1100
+                ? 360
+                : constraints.maxWidth < 650
+                ? constraints.maxWidth * .48
+                : 310,
             child: ColoredBox(color: const Color(0xff102129), child: detail),
           ),
         ],
