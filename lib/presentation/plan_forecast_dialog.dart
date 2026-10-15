@@ -163,44 +163,16 @@ class _PlanForecastDialogState extends State<PlanForecastDialog> {
                       style: TextStyle(color: strategyCopper, fontSize: 13),
                     )
                   else ...[
-                    const Text(
-                      '開始・予約済みの作業だけを試算します。未指定の研究・建設や居住方式は選びません。この画面を開いている間も実際の計画は進行します。',
-                      style: TextStyle(color: strategyMuted, fontSize: 12),
-                    ),
-                    const SizedBox(height: 12),
                     _summary(),
+                    if (_attentionFacilities.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _attention(),
+                    ],
                     const SizedBox(height: 16),
                     Text(
-                      '${gameDuration(forecast.horizon.inMilliseconds)}後の設備',
+                      '完了する作業 ${forecast.completions.length}件・${forecast.completedRuns}回',
+                      key: const Key('forecast-completion-summary'),
                       style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final columns = constraints.maxWidth >= 650 ? 2 : 1;
-                        final width =
-                            (constraints.maxWidth - (columns - 1) * 10) /
-                            columns;
-                        return Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            for (final facility in forecast.facilities)
-                              SizedBox(
-                                width: width,
-                                child: _facility(facility),
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'この期間に完了する予約',
-                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
@@ -208,7 +180,7 @@ class _PlanForecastDialogState extends State<PlanForecastDialog> {
                     const SizedBox(height: 8),
                     if (forecast.completions.isEmpty)
                       const Text(
-                        'この期間に完成する予約はありません。設備の停止理由や残り時間を確認してください。',
+                        'この期間に完成する作業はありません。停止理由や残り時間を確認してください。',
                         style: TextStyle(color: strategyMuted, fontSize: 12),
                       ),
                     for (final completion in forecast.completions)
@@ -220,6 +192,40 @@ class _PlanForecastDialogState extends State<PlanForecastDialog> {
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),
+                    _details(),
+                    ExpansionTile(
+                      key: const Key('forecast-equipment-details'),
+                      tilePadding: EdgeInsets.zero,
+                      title: Text(
+                        '${gameDuration(forecast.horizon.inMilliseconds)}後の設備を詳しく',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      children: [
+                        for (final facility in forecast.facilities)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _facility(facility),
+                          ),
+                      ],
+                    ),
+                    const ExpansionTile(
+                      key: Key('forecast-rules'),
+                      tilePadding: EdgeInsets.zero,
+                      title: Text('見通しの計算について', style: TextStyle(fontSize: 13)),
+                      children: [
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            '開始・予約済みの作業だけを試算します。未指定の研究・建設や居住方式は選びません。\n\n'
+                            '受注の完了収入は資金見込みに含みます。この画面を開いている間も実際の計画は進行します。',
+                            style: TextStyle(
+                              color: strategyMuted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ],
               ),
@@ -247,39 +253,24 @@ class _PlanForecastDialogState extends State<PlanForecastDialog> {
           '${dollars(forecast.money - forecast.moneyDelta)} → ${dollars(forecast.money)}（${signedDollars(forecast.moneyDelta)}）',
           key: const Key('forecast-money'),
         ),
-        StrategyFact(
-          '定常収支',
-          '${signedDollars(forecast.netPerMinute)}/分（税収−維持費）',
-        ),
-        const Text(
-          '受注の完了収入は、上の資金見込みに含みます。',
-          style: TextStyle(color: strategyMuted, fontSize: 11),
-        ),
-        StrategyFact(
-          '完成地区',
-          '${forecast.districtCount}区画（${signedNumber(forecast.districtDelta)}） · 総Lv.${forecast.totalDistrictLevels}（${signedNumber(forecast.districtLevelDelta)}）',
-        ),
-        StrategyFact(
-          '地球人口',
-          '${forecast.population}人（${signedNumber(forecast.populationDelta)}）',
-        ),
-        StrategyFact(
-          '火星居住者',
-          '${forecast.marsResidents}人（${signedNumber(forecast.marsResidentsDelta)}）',
-        ),
-        StrategyFact(
-          'キット在庫',
-          '地球 ${forecast.earthKits}基 · 火星 ${forecast.marsKits}基',
-        ),
-        StrategyFact(
-          '研究の完成',
-          forecast.completedResearch.isEmpty
-              ? 'なし'
-              : forecast.completedResearch
-                    .map((id) => GameContent.tasks[id]!.name)
-                    .join('・'),
-          key: const Key('forecast-research'),
-        ),
+        if (forecast.districtDelta != 0 || forecast.districtLevelDelta != 0)
+          StrategyFact(
+            '地区の成長',
+            '${signedNumber(forecast.districtDelta)}区画 · 総Lv.${signedNumber(forecast.districtLevelDelta)}',
+          ),
+        if (forecast.marsResidentsDelta != 0)
+          StrategyFact(
+            '火星に入居',
+            '${signedNumber(forecast.marsResidentsDelta)}人',
+          ),
+        if (forecast.completedResearch.isNotEmpty)
+          StrategyFact(
+            '研究の完成',
+            forecast.completedResearch
+                .map((id) => GameContent.tasks[id]!.name)
+                .join('・'),
+            key: const Key('forecast-research'),
+          ),
         if (forecast.newAchievements.isNotEmpty)
           StrategyFact(
             '新しい実績',
@@ -289,6 +280,66 @@ class _PlanForecastDialogState extends State<PlanForecastDialog> {
           ),
       ],
     ),
+  );
+
+  List<ForecastFacility> get _attentionFacilities => forecast.facilities
+      .where(
+        (facility) =>
+            facility.status == ForecastFacilityStatus.waiting ||
+            facility.status == ForecastFacilityStatus.paused,
+      )
+      .toList();
+
+  Widget _attention() => StrategyCard(
+    key: const Key('forecast-attention'),
+    padding: const EdgeInsets.all(12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '${gameDuration(forecast.horizon.inMilliseconds)}後に条件待ち・休止の設備',
+          style: const TextStyle(
+            color: strategyCopper,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        for (final facility in _attentionFacilities)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              '${GameContent.facilities[facility.facilityId]!.name} · ${facility.stopReason}',
+              key: Key('forecast-attention-${facility.facilityId}'),
+              style: const TextStyle(color: strategyCopper, fontSize: 12),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _details() => ExpansionTile(
+    key: const Key('forecast-resource-details'),
+    tilePadding: EdgeInsets.zero,
+    title: const Text('収支・人口・在庫の内訳', style: TextStyle(fontSize: 13)),
+    children: [
+      StrategyFact('定常収支', '${signedDollars(forecast.netPerMinute)}/分（税収−維持費）'),
+      StrategyFact(
+        '完成地区',
+        '${forecast.districtCount}区画（${signedNumber(forecast.districtDelta)}） · 総Lv.${forecast.totalDistrictLevels}（${signedNumber(forecast.districtLevelDelta)}）',
+      ),
+      StrategyFact(
+        '地球人口',
+        '${forecast.population}人（${signedNumber(forecast.populationDelta)}）',
+      ),
+      StrategyFact(
+        '火星居住者',
+        '${forecast.marsResidents}人（${signedNumber(forecast.marsResidentsDelta)}）',
+      ),
+      StrategyFact(
+        'キット在庫',
+        '地球 ${forecast.earthKits}基 · 火星 ${forecast.marsKits}基',
+      ),
+    ],
   );
 
   Widget _facility(ForecastFacility facility) {
