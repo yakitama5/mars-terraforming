@@ -71,6 +71,8 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('open-completions')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('completion-settings-toggle')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byType(SwitchListTile));
       await tester.pumpAndSettle();
       expect(controller.state.completionBannersEnabled, isFalse);
