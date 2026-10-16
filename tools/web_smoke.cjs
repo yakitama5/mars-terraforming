@@ -3,6 +3,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { completeFirstRun, firstRunControl } = require('./complete_first_run.cjs');
 const url = process.env.MARS_BASE_URL || 'http://127.0.0.1:8765/';
 const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../docs/screenshots');
 const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
@@ -46,7 +47,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
       const intro = target.getByRole('button', { name: '物語をスキップ', exact: true });
       const game = target.getByRole('button', { name: '設備・進行', exact: true });
       const movie = target.getByRole('button', { name: '物語へ', exact: true });
-      await movie.or(intro).or(game).first().waitFor({ timeout: 60000 });
+      await movie.or(intro).or(game).or(firstRunControl(target)).first().waitFor({ timeout: 60000 });
       if (await movie.count()) {
         await movie.click();
         await intro.waitFor();
@@ -55,6 +56,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
         await intro.click();
         await target.getByRole('button', { name: '名前は後で決める', exact: true }).click();
       }
+      await completeFirstRun(target);
       await target.getByRole('button', { name: '開発 +5分' }).waitFor({ timeout: 60000 });
       await target.waitForTimeout(400);
     };
@@ -211,7 +213,11 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
     await page.waitForTimeout(200);
     await page.screenshot({ path: path.join(output, 'strategy-web-research.png') });
-    await click('生命維持の実証を予約');
+    const researchStart = await snapshot();
+    if (!researchStart.research.includes('life_support') &&
+        !researchStart.plans.some(p => p.taskId === 'life_support' && !['completed', 'cancelled'].includes(p.status))) {
+      await click('生命維持の実証を予約');
+    }
     await reserve('居住キット製造', '1回');
     await reserve('火星へ輸送', '1回');
     await page.getByRole('button', { name: '設備・進行', exact: true }).click();
@@ -287,7 +293,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await page.getByRole('button', { name: '惑星マップ', exact: true }).click();
     await page.getByRole('checkbox', { name: '地球', exact: true }).click();
     await page.getByRole('button', { name: '都市開発', exact: true }).click();
-    await page.getByText(/^候補地 · 完成 0\/25区画/).waitFor();
+    await page.getByText(/^拠点 · 完成 1\/25区画 · 総Lv\.1/).waitFor();
     await chooseFacility('住宅地区');
     await ground('デルタ湾岸', 13);
     await click('この区画に建設を予約');
@@ -300,7 +306,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     }
     assert.ok((await snapshot()).districts.some(d => d.cityId === 'earth_delta' && d.plotIndex === 12));
     await page.getByRole('button', { name: '都市開発', exact: true }).click();
-    await page.getByText(/^拠点 · 完成 1\/25区画 · 総Lv\.1/).waitFor();
+    await page.getByText(/^拠点 · 完成 2\/25区画 · 総Lv\.2/).waitFor();
     await ground('デルタ湾岸', 13);
     await compareInvestment('investment-web-comparison');
     console.log('CHECK OK: city growth and live upgrade/new-city comparison');
@@ -423,7 +429,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     assert.deepEqual(afterCamera.plans.map(p => p.id), beforeCamera.plans.map(p => p.id));
     await page.getByRole('button', { name: '全域', exact: true }).click();
     await page.getByRole('button', { name: '地図を広く表示', exact: true }).click();
-    console.log('CHECK OK: facility-first placement, five districts, closeup/overview/edge focus/orbit without mutation');
+    console.log('CHECK OK: facility-first placement, tutorial coast plus five districts, closeup/overview/edge focus/orbit without mutation');
 
     // The second tab must stop before loading or advancing the shared world.
     const second = await context.newPage();

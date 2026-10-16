@@ -105,7 +105,7 @@ void main() {
   testWidgets('typing reveals complete graphemes and a tap never advances', (
     tester,
   ) async {
-    const text = 'ミナと火星へ。👩‍🚀 新しい暮らしを始めましょう。';
+    const text = 'ルナと火星へ。👩‍🚀 新しい暮らしを始めましょう。';
     final bundle = _DialogueAssets();
     var nextCount = 0;
     final semantics = tester.ensureSemantics();
@@ -114,7 +114,7 @@ void main() {
         _host(bundle: bundle, text: text, onNext: () => nextCount++),
       );
       expect(_visibleText(tester), isNot(text));
-      expect(find.bySemanticsLabel('ミナ。$text'), findsOneWidget);
+      expect(find.bySemanticsLabel('ルナ。$text'), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 200));
       expect(_visibleText(tester), isNotEmpty);
       final prefixes = [
@@ -122,7 +122,7 @@ void main() {
           text.characters.take(length).join(),
       ];
       expect(prefixes, contains(_visibleText(tester)));
-      expect(find.bySemanticsLabel('ミナ。$text'), findsOneWidget);
+      expect(find.bySemanticsLabel('ルナ。$text'), findsOneWidget);
       await tester.tap(find.byKey(const Key('mission-dialogue-reveal')));
       await tester.pump();
       expect(_visibleText(tester), text);

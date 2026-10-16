@@ -111,7 +111,7 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
               MinaAvatar(
                 size: 32,
                 expression: _expressionFor(tip),
-                semanticLabel: '秘書ミナからのアドバイス',
+                semanticLabel: '秘書ルナからのアドバイス',
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -163,7 +163,7 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
                 key: const Key('toggle-contextual-tip-detail'),
                 onPressed: () => _showExplanation(tip),
                 child: const Text(
-                  'ミナの説明',
+                  'ルナの説明',
                   style: TextStyle(fontSize: 11, color: strategyMuted),
                 ),
               ),

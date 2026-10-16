@@ -12,7 +12,7 @@ class MissionDialogue extends StatefulWidget {
     super.key,
     required this.text,
     this.expression = MinaExpression.normal,
-    this.speaker = 'ミナ',
+    this.speaker = 'ルナ',
     this.title,
     this.actions,
     this.dialogueKey,

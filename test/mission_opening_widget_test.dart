@@ -88,7 +88,12 @@ void main() {
       expect(controller.state.cityName('earth_delta'), '青空市');
       expect(controller.state.rocketName, 'はるか');
       expect(find.byKey(const Key('mission-opening')), findsNothing);
-      expect(find.byKey(const Key('navigation-1')), findsOneWidget);
+      expect(find.byKey(const Key('first-run-city')), findsOneWidget);
+      expect(find.byKey(const Key('navigation-1')), findsNothing);
+      expect(
+        controller.state.firstRunTutorial,
+        FirstRunTutorialStep.placeHousing,
+      );
       expect(GameState.fromJson(store.data!).cityName('earth_delta'), '青空市');
       expect(tester.takeException(), isNull);
     });
@@ -109,7 +114,8 @@ void main() {
       expect(controller.state.openingSeen, isTrue);
       expect(controller.state.rocketName, 'あかつき');
       expect(controller.state.plans, isEmpty);
-      expect(find.byKey(const Key('navigation-1')), findsOneWidget);
+      expect(find.byKey(const Key('first-run-city')), findsOneWidget);
+      expect(find.byKey(const Key('navigation-1')), findsNothing);
     },
   );
 
@@ -152,13 +158,17 @@ void main() {
       final store = _OpeningSave()
         ..data = (GameState.initial(epoch).toJson()
           ..remove('openingSeen')
-          ..remove('missionIdentity'));
+          ..remove('missionIdentity')
+          ..remove('firstRunTutorial')
+          ..remove('firstRunTutorialPlanId'));
       final controller = GameController(store, now: () => epoch);
       await controller.initialize(startTimer: false);
       addTearDown(controller.dispose);
       await mount(tester, controller);
       expect(find.byKey(const Key('mission-opening')), findsNothing);
+      expect(find.byKey(const Key('first-run-city')), findsNothing);
       expect(find.byKey(const Key('navigation-1')), findsOneWidget);
+      expect(controller.state.firstRunTutorial, FirstRunTutorialStep.completed);
     },
   );
 
@@ -180,6 +190,7 @@ void main() {
     await tester.tap(find.byKey(const Key('mission-names-save')));
     await tester.pumpAndSettle();
     expect(controller.state.openingSeen, isFalse);
+    expect(find.byKey(const Key('first-run-city')), findsNothing);
     expect(find.text('保存できませんでした。名前を残したまま再試行できます。'), findsOneWidget);
     expect(
       find.byKey(const Key('mission-names-save')).hitTestable(),
@@ -190,6 +201,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.state.openingSeen, isTrue);
     expect(controller.state.cityName('earth_delta'), '青空市');
+    expect(find.byKey(const Key('first-run-city')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
   testWidgets(
@@ -264,11 +276,17 @@ void main() {
       await tester.pump();
       expect(controller.finishingOpening, isTrue);
       expect(find.byKey(const Key('mission-names-save')), findsOneWidget);
+      expect(find.byKey(const Key('first-run-city')), findsNothing);
       expect(find.byKey(const Key('navigation-1')), findsNothing);
       store.gate!.complete();
       await tester.pumpAndSettle();
       expect(controller.finishingOpening, isFalse);
-      expect(find.byKey(const Key('navigation-1')), findsOneWidget);
+      expect(find.byKey(const Key('first-run-city')), findsOneWidget);
+      expect(find.byKey(const Key('navigation-1')), findsNothing);
+      expect(
+        GameState.fromJson(store.data!).firstRunTutorial,
+        FirstRunTutorialStep.placeHousing,
+      );
     },
   );
   testWidgets(

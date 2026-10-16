@@ -1,6 +1,7 @@
 // Run against the published Pages site or a local server containing both paths.
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
+const { completeFirstRun, firstRunControl } = require('./complete_first_run.cjs');
 const base = process.env.MARS_PAGES_TEST_URL || 'http://127.0.0.1:8766/mars-terraforming/';
 const mainKey = 'mars_terraforming.save.mars-terraforming-main_normal';
 const developKey = 'mars_terraforming.save.mars-terraforming-develop_development';
@@ -28,7 +29,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
       const intro = page.getByRole('button', { name: '物語をスキップ', exact: true });
       const game = page.getByRole('button', { name: '設備・進行', exact: true });
       const movie = page.getByRole('button', { name: '物語へ', exact: true });
-      await movie.or(intro).or(game).first().waitFor({ timeout: 60000 });
+      await movie.or(intro).or(game).or(firstRunControl(page)).first().waitFor({ timeout: 60000 });
       if (await movie.count()) {
         await movie.click();
         await intro.waitFor();
@@ -37,6 +38,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
         await intro.click();
         await page.getByRole('button', { name: '名前は後で決める', exact: true }).click();
       }
+      await completeFirstRun(page);
       await page.getByRole('button', { name: '設備・進行', exact: true }).waitFor({ timeout: 60000 });
       await page.waitForFunction(() => navigator.serviceWorker.controller?.scriptURL === new URL('offline_worker.js', document.baseURI).href, null, { timeout: 60000 });
       await page.evaluate(() => navigator.serviceWorker.ready);
@@ -55,6 +57,9 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     assert.equal(mainBefore.contentVersion, 'district-6');
     assert.equal(mainBefore.researchers, 7);
     assert.equal(mainBefore.specialistCount, 12);
+    assert.equal(mainBefore.firstRunTutorial, 'completed');
+    assert.ok(mainBefore.districts.some(d => d.cityId === 'earth_delta' && d.plotIndex === 1 && d.districtId === 'housing'));
+    assert.ok(mainBefore.plans.some(p => p.taskId === 'life_support'));
     // Both releases expose the new map placement, including normal-time main.
     const inspectPlacement = async (target, saveKey) => {
       const before = await snapshot(target, saveKey);
@@ -77,23 +82,26 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
       await target.getByRole('button', { name: 'ガイド', exact: true }).click();
       await target.getByText('開発ガイド・Tips', { exact: true }).waitFor();
       // The map also has a guide. Select the focusable entry in the open dialog.
-      await target.getByRole('button', { name: /^(?:6工程の手引き|導入の手順と達成状況を確認)$/ }).and(target.locator('[tabindex="0"]')).click();
+      await target.getByRole('button', { name: /^(?:手引き|6工程の手引き|導入の手順と達成状況を確認)$/ }).and(target.locator('[tabindex="0"]')).click();
+      await target.getByRole('button', { name: '6工程', exact: true }).click();
       await target.getByText(/^最初の1時間の手引き · \d\/6達成$/).waitFor();
       await target.getByRole('button', { name: '閉じて開発を続ける', exact: true }).click();
       await target.getByRole('button', { name: '閉じる', exact: true }).and(target.locator('[tabindex="0"]')).click();
       await target.getByText('開発ガイド・Tips', { exact: true }).waitFor({ state: 'hidden' });
 
       await target.getByRole('button', { name: /^通知(?: \d+)?$/ }).click();
-      await target.getByText('完了通知 · 未読 0件', { exact: true }).waitFor();
-      await target.getByText(/建設・研究・製造・輸送が完了すると\s*ここに記録されます。/).waitFor();
+      await target.getByText(/^完了通知 · 未読 \d+件$/).waitFor();
+      await target.getByRole('button', { name: /住宅地区を建設が完了/ }).first().waitFor();
       await target.getByRole('button', { name: '閉じる', exact: true }).and(target.locator('[tabindex="0"]')).click();
-      await target.getByText('完了通知 · 未読 0件', { exact: true }).waitFor({ state: 'hidden' });
+      await target.getByText(/^完了通知 · 未読 \d+件$/).waitFor({ state: 'hidden' });
       const after = await snapshot(target, saveKey);
       assert.equal(after.worldId, before.worldId);
-      assert.deepEqual(after.plans, before.plans);
-      assert.deepEqual(after.research, before.research);
+      // 稼働中研究は時計で進む。案内の閲覧による新しい予約・地区変更はない。
+      assert.deepEqual(after.plans.map(p => [p.id, p.taskId]), before.plans.map(p => [p.id, p.taskId]));
+      assert.ok(before.research.every(id => after.research.includes(id)));
       assert.deepEqual(after.districts, before.districts);
-      assert.deepEqual(after.completionNotices, []);
+      assert.ok(after.completionNotices.some(notice => notice.taskId === 'district_housing'));
+      assert.equal(after.readCompletionNoticeId, before.readCompletionNoticeId);
     };
     await inspectPlacement(main, mainKey);
     await inspectGuidance(main, mainKey);
@@ -152,7 +160,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
     assert.deepEqual(errors, []);
-    result = { result: 'PASS', main: base, develop: developUrl, checks: ['facility-first map placement and cancel on both branches', 'six-step onboarding guide and empty completion history on both branches', 'guide and notification entries work after offline reload', 'district-6 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
+    result = { result: 'PASS', main: base, develop: developUrl, checks: ['first housing and research tutorial completed through UI on both branches', 'facility-first map placement and cancel on both branches', 'six-step onboarding guide and tutorial completion receipt on both branches', 'guide and notification entries work after offline reload', 'district-6 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
   } finally {
     try {
       // Restore networking and close the context before waiting for browser exit.

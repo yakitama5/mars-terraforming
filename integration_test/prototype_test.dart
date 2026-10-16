@@ -7,6 +7,7 @@ import 'package:flutter_scene/scene.dart' as fs;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
+import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/infrastructure/file_save_store.dart';
 import 'package:mars_terraforming/main.dart';
 import 'package:mars_terraforming/rendering/city_scene.dart';
@@ -95,6 +96,29 @@ void main() {
       expect(controller.state.cityName('earth_delta'), '蒼海市');
       expect(controller.state.rocketName, 'ひかり');
       await sceneReady();
+      await tapKey('district-option-housing');
+      await tapKey('plot-earth_delta-1');
+      await tapKey('confirm-district');
+      expect(
+        controller.state.firstRunTutorial,
+        FirstRunTutorialStep.finishConstruction,
+      );
+      await tapKey('tutorial-complete-construction');
+      expect(controller.state.districtAt('earth_delta', 1)?.level, 1);
+      expect(controller.state.netPerMinute, greaterThan(0));
+      await tapKey('tutorial-continue-income');
+      await tapKey('queue-life_support');
+      expect(
+        controller.state.firstRunTutorial,
+        FirstRunTutorialStep.researchStarted,
+      );
+      await tapKey('tutorial-finish');
+      expect(controller.state.firstRunTutorial, FirstRunTutorialStep.completed);
+      expect(find.text('開発ガイド・Tips'), findsOneWidget);
+      await tester.tap(find.text('閉じる'));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tapKey('navigation-0');
+      await sceneReady();
       await capture('strategy-ios-earth');
       await tapKey('open-guidance');
       await capture('guidance-ios-guide');
@@ -104,7 +128,11 @@ void main() {
       await tapKey('navigation-2');
       await tapKey('research-fit');
       await capture('strategy-ios-research');
-      await tapKey('queue-life_support');
+      expect(
+        controller.state.plans.where((plan) => plan.taskId == 'life_support'),
+        hasLength(1),
+      );
+      await tapKey('navigation-3');
       await controller.command((engine) {
         engine.enqueue('factory_contract', repeats: null);
         engine.enqueue('habitat_kit');
@@ -245,7 +273,7 @@ void main() {
         tester
             .widget<Text>(find.byKey(const Key('city-development-summary')))
             .data,
-        contains('拠点 · 完成 1/25区画 · 総Lv.1'),
+        contains('拠点 · 完成 2/25区画 · 総Lv.2'),
       );
       expect(
         tester.widget<CityScene>(find.byType(CityScene)).plots[12].level,
@@ -452,6 +480,8 @@ void main() {
       expect(resumed.state.cityName('earth_delta'), '蒼海市');
       expect(resumed.state.cityName('mars_arcadia'), '夜明け基地');
       expect(resumed.state.rocketName, 'ひかり');
+      expect(resumed.state.firstRunTutorial, FirstRunTutorialStep.completed);
+      expect(resumed.state.districtAt('earth_delta', 1)?.level, 1);
       expect(
         resumed.state.districtAt('earth_delta', 12)?.districtId,
         'housing',

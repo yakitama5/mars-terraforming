@@ -174,7 +174,7 @@ class _CaptureScreen extends StatelessWidget {
                       key: _avatarKey,
                       size: _portraitSize,
                       expression: expression,
-                      semanticLabel: 'ミナの$labelの表情',
+                      semanticLabel: 'ルナの$labelの表情',
                     ),
                     const SizedBox(width: 40),
                     Expanded(
@@ -183,7 +183,7 @@ class _CaptureScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '秘書ミナ',
+                            '秘書ルナ',
                             style: TextStyle(fontSize: 18, color: strategyBlue),
                           ),
                           const SizedBox(height: 12),

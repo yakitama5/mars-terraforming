@@ -41,7 +41,7 @@ class _MissionOpeningState extends State<MissionOpening> {
   static const stories = [
     (
       '青い星から、次の故郷へ',
-      'はじめまして、指揮官。秘書のミナです。\n今見た未来へ、私たちの小さな街から一歩ずつ近づいていきましょう。',
+      'はじめまして、指揮官。秘書のルナです。\n今見た未来へ、私たちの小さな街から一歩ずつ近づいていきましょう。',
       '地球で育てた技術を、火星の暮らしへ。',
       MinaExpression.delight,
     ),

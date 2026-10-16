@@ -16,8 +16,10 @@ class ResearchTree extends StatefulWidget {
     required this.selectedId,
     required this.onSelected,
     required this.requirementReasons,
+    this.controlsVisible = true,
   });
   final GameState game;
+  final bool controlsVisible;
   final String selectedId;
   final ValueChanged<String> onSelected;
   final List<String> Function(String) requirementReasons;
@@ -60,7 +62,12 @@ class _ResearchTreeState extends State<ResearchTree> {
   void _focusNode(String id) {
     final position = nodePositions[id];
     if (position == null || viewportSize.isEmpty || nodeSize.isEmpty) return;
-    final scale = ((viewportSize.width - 24) / nodeSize.width).clamp(.8, 1.0);
+    final widthScale = (viewportSize.width - 24) / nodeSize.width;
+    final scale = widget.controlsVisible
+        ? widthScale.clamp(.8, 1.0)
+        : math
+              .min(widthScale, (viewportSize.height - 16) / nodeSize.height)
+              .clamp(.3, 1.0);
     transformation.value = Matrix4.diagonal3Values(scale, scale, 1)
       ..setTranslationRaw(
         (viewportSize.width - nodeSize.width * scale) / 2 - position.dx * scale,
@@ -161,95 +168,100 @@ class _ResearchTreeState extends State<ResearchTree> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 8, 0),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  '研究航路',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                ),
-              ),
-              IconButton(
-                key: const Key('research-futures'),
-                tooltip: '居住編のその先',
-                onPressed: () => showDialog<void>(
-                  context: context,
-                  builder: (context) => const _ResearchFuturesDialog(),
-                ),
-                icon: const Icon(Icons.auto_awesome_outlined, size: 20),
-              ),
-              TextButton.icon(
-                key: const Key('research-fit'),
-                onPressed: () {
-                  setState(() => branchFilter = null);
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) _fit();
-                  });
-                },
-                icon: const Icon(Icons.zoom_out_map, size: 16),
-                label: const Text(
-                  '全体',
-                  semanticsLabel: '全体表示',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ),
-              IconButton(
-                key: const Key('research-reset-zoom'),
-                tooltip: '選択した研究を読みやすい大きさで表示',
-                onPressed: () => _focusNode(selectedId),
-                icon: const Icon(Icons.center_focus_strong, size: 20),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 38,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+        if (widget.controlsVisible)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 8, 0),
             child: Row(
               children: [
-                for (final entry in const <String?, String>{
-                  null: 'すべて',
-                  '都市・産業': '産業',
-                  '輸送': '輸送',
-                  '居住・現地生産': '暮らし',
-                }.entries)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      key: Key('research-filter-${entry.key ?? 'all'}'),
-                      label: Text(entry.value),
-                      selected: branchFilter == entry.key,
-                      onSelected: (_) {
-                        final target =
-                            entry.key == null ||
-                                GameContent.tasks[selectedId]!.researchBranch ==
-                                    entry.key
-                            ? selectedId
-                            : allResearch
-                                  .firstWhere(
-                                    (task) => task.researchBranch == entry.key,
-                                  )
-                                  .id;
-                        setState(() => branchFilter = entry.key);
-                        widget.onSelected(target);
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) _focusNode(target);
-                        });
-                      },
-                      visualDensity: VisualDensity.compact,
-                      labelStyle: const TextStyle(fontSize: 12),
-                    ),
+                const Expanded(
+                  child: Text(
+                    '研究航路',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
+                ),
+                IconButton(
+                  key: const Key('research-futures'),
+                  tooltip: '居住編のその先',
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (context) => const _ResearchFuturesDialog(),
+                  ),
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 20),
+                ),
+                TextButton.icon(
+                  key: const Key('research-fit'),
+                  onPressed: () {
+                    setState(() => branchFilter = null);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _fit();
+                    });
+                  },
+                  icon: const Icon(Icons.zoom_out_map, size: 16),
+                  label: const Text(
+                    '全体',
+                    semanticsLabel: '全体表示',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+                IconButton(
+                  key: const Key('research-reset-zoom'),
+                  tooltip: '選択した研究を読みやすい大きさで表示',
+                  onPressed: () => _focusNode(selectedId),
+                  icon: const Icon(Icons.center_focus_strong, size: 20),
+                ),
               ],
             ),
           ),
-        ),
+        if (widget.controlsVisible)
+          SizedBox(
+            height: 38,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  for (final entry in const <String?, String>{
+                    null: 'すべて',
+                    '都市・産業': '産業',
+                    '輸送': '輸送',
+                    '居住・現地生産': '暮らし',
+                  }.entries)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        key: Key('research-filter-${entry.key ?? 'all'}'),
+                        label: Text(entry.value),
+                        selected: branchFilter == entry.key,
+                        onSelected: (_) {
+                          final target =
+                              entry.key == null ||
+                                  GameContent
+                                          .tasks[selectedId]!
+                                          .researchBranch ==
+                                      entry.key
+                              ? selectedId
+                              : allResearch
+                                    .firstWhere(
+                                      (task) =>
+                                          task.researchBranch == entry.key,
+                                    )
+                                    .id;
+                          setState(() => branchFilter = entry.key);
+                          widget.onSelected(target);
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) _focusNode(target);
+                          });
+                        },
+                        visualDensity: VisualDensity.compact,
+                        labelStyle: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -319,13 +331,14 @@ class _ResearchTreeState extends State<ResearchTree> {
             },
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-          child: Text(
-            '${game.research.length}/${allResearch.length}研究済み · 線は前提研究${branchFilter == null ? ' · ドラッグで移動' : ' · 前提分野も表示'}',
-            style: const TextStyle(color: strategyMuted, fontSize: 11),
+        if (widget.controlsVisible)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+            child: Text(
+              '${game.research.length}/${allResearch.length}研究済み · 線は前提研究${branchFilter == null ? ' · ドラッグで移動' : ' · 前提分野も表示'}',
+              style: const TextStyle(color: strategyMuted, fontSize: 11),
+            ),
           ),
-        ),
       ],
     );
   }
