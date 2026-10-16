@@ -25,6 +25,13 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
       return result;
     };
     const ready = async page => {
+      const intro = page.getByRole('button', { name: '物語をスキップ', exact: true });
+      const game = page.getByRole('button', { name: '設備・進行', exact: true });
+      await intro.or(game).first().waitFor({ timeout: 60000 });
+      if (await intro.count()) {
+        await intro.click();
+        await page.getByRole('button', { name: '名前は後で決める', exact: true }).click();
+      }
       await page.getByRole('button', { name: '設備・進行', exact: true }).waitFor({ timeout: 60000 });
       await page.waitForFunction(() => navigator.serviceWorker.controller?.scriptURL === new URL('offline_worker.js', document.baseURI).href, null, { timeout: 60000 });
       await page.evaluate(() => navigator.serviceWorker.ready);
@@ -40,7 +47,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     await main.getByRole('button', { name: '人員配分を確定', exact: true }).click();
     await main.waitForTimeout(300);
     const mainBefore = await snapshot(main, mainKey);
-    assert.equal(mainBefore.contentVersion, 'district-5');
+    assert.equal(mainBefore.contentVersion, 'district-6');
     assert.equal(mainBefore.researchers, 7);
     assert.equal(mainBefore.specialistCount, 12);
     // Both releases expose the new map placement, including normal-time main.
@@ -95,7 +102,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     await inspectGuidance(develop, developKey);
     await develop.getByRole('button', { name: '機関運営', exact: true }).click();
     const devBefore = await snapshot(develop, developKey);
-    assert.equal(devBefore.contentVersion, 'district-5');
+    assert.equal(devBefore.contentVersion, 'district-6');
     assert.equal(devBefore.researchers, 6);
     assert.notEqual(mainBefore.worldId, devBefore.worldId);
     await develop.getByRole('button', { name: '開発 +5分' }).click();
@@ -140,7 +147,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
     assert.deepEqual(errors, []);
-    result = { result: 'PASS', main: base, develop: developUrl, checks: ['facility-first map placement and cancel on both branches', 'six-step onboarding guide and empty completion history on both branches', 'guide and notification entries work after offline reload', 'district-5 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
+    result = { result: 'PASS', main: base, develop: developUrl, checks: ['facility-first map placement and cancel on both branches', 'six-step onboarding guide and empty completion history on both branches', 'guide and notification entries work after offline reload', 'district-6 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
   } finally {
     try {
       // Restore networking and close the context before waiting for browser exit.

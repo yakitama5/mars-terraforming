@@ -159,4 +159,24 @@ void main() {
     expect(result.toJson()['status'], 'passed');
     expect(result.milestones.last['step'], 'regional_habitats');
   });
+
+  test('public commands fund all six frontiers without changing the established route', () {
+    final established = runProgressionVerification();
+    final extended = runProgressionVerification(includeFrontiers: true);
+    expect(
+      extended.milestones.take(established.milestones.length).toList(),
+      established.milestones,
+    );
+    expect(extended.state.research, hasLength(19));
+    expect(extended.state.developedMarsCityIds, hasLength(2));
+    expect(extended.state.marsHabitats, 2);
+    expect(extended.state.districtCount('mars_lab'), 1);
+    expect(extended.state.marsKits, 2);
+    expect(extended.milestones.last['step'], 'regolith_printing');
+    expect(extended.toJson()['optionalResearchIncluded'], isTrue);
+    expect(
+      extended.state.simulatedMs,
+      greaterThan(established.state.simulatedMs),
+    );
+  });
 }

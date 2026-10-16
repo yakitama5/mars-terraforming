@@ -382,7 +382,7 @@ void main() {
   test('branch research has staged unlocks and only explicitly requested work proceeds', () {
     final game = ready();
     final research = GameContent.tasks.values.where((t) => t.unique);
-    expect(research, hasLength(13));
+    expect(research, hasLength(19));
     expect(
       research.where((r) => r.durationSeconds >= 24 * 3600).length,
       greaterThanOrEqualTo(3),

@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'application/game_controller.dart';
 import 'infrastructure/save_factory.dart';
 import 'presentation/game_screen.dart';
+import 'presentation/strategy_colors.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,9 +48,11 @@ class MarsApp extends StatelessWidget {
     required this.controller,
     this.sceneBuilder,
     this.renderScene = true,
+    this.showIntroduction = true,
   });
   final GameController controller;
   final bool renderScene;
+  final bool showIntroduction;
   final Widget Function(bool earth, int earthLevel, int habitats, bool cargo)?
   sceneBuilder;
 
@@ -64,21 +67,20 @@ class MarsApp extends StatelessWidget {
       fontFamily: kIsWeb ? 'NotoSansJP' : null,
       brightness: Brightness.dark,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xff9ddbc5),
+        seedColor: strategyBlue,
         brightness: Brightness.dark,
-        surface: const Color(0xff14212b),
-        primary: const Color(0xffa2dfc8),
-        secondary: const Color(0xffe8a57c),
+        surface: strategySurface,
+        primary: strategyBlue,
+        onPrimary: strategyBackground,
+        secondary: strategyBenefit,
+        error: strategyDanger,
+        onSurface: strategyText,
       ),
-      scaffoldBackgroundColor: const Color(0xff0b151e),
+      scaffoldBackgroundColor: strategyBackground,
       useMaterial3: true,
       textTheme: const TextTheme(
         bodyMedium: TextStyle(fontSize: 13, height: 1.45),
-        bodySmall: TextStyle(
-          fontSize: 11,
-          height: 1.4,
-          color: Color(0xffb6c4cc),
-        ),
+        bodySmall: TextStyle(fontSize: 11, height: 1.4, color: strategyMuted),
         titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
       ),
       visualDensity: VisualDensity.compact,
@@ -117,25 +119,25 @@ class MarsApp extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(2)),
         ),
-        side: BorderSide(color: Color(0xff52645e)),
+        side: BorderSide(color: strategyLine),
         labelStyle: TextStyle(
           fontFamily: kIsWeb ? 'NotoSansJP' : null,
           fontSize: 12,
-          color: Color(0xffdce8df),
+          color: strategyText,
         ),
         secondaryLabelStyle: TextStyle(
           fontFamily: kIsWeb ? 'NotoSansJP' : null,
           fontSize: 12,
-          color: Color(0xffe8f3e9),
+          color: strategyText,
         ),
-        backgroundColor: Color(0xff17272e),
-        selectedColor: Color(0xff355047),
+        backgroundColor: strategyPanel,
+        selectedColor: strategySelected,
         padding: EdgeInsets.symmetric(horizontal: 5, vertical: 5),
       ),
       dialogTheme: const DialogThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(4)),
-          side: BorderSide(color: Color(0xff52645e)),
+          side: BorderSide(color: strategyLine),
         ),
       ),
     ),
@@ -143,6 +145,7 @@ class MarsApp extends StatelessWidget {
       controller: controller,
       sceneBuilder: sceneBuilder,
       renderScene: renderScene,
+      showIntroduction: showIntroduction,
     ),
   );
 }

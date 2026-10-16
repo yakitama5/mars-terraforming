@@ -49,7 +49,7 @@ class _AgencyManagementState extends State<AgencyManagement> {
                           ? strategyMint
                           : strategyMuted,
                       backgroundColor: section == index
-                          ? const Color(0xff20383d)
+                          ? strategySelected
                           : null,
                     ),
                     child: Text(label),

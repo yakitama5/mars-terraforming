@@ -52,6 +52,13 @@ class DistrictEffects {
     this.mars = 0,
   });
   final int tax, upkeep, research, factory, launch, mars;
+  bool get isEmpty =>
+      tax == 0 &&
+      upkeep == 0 &&
+      research == 0 &&
+      factory == 0 &&
+      launch == 0 &&
+      mars == 0;
   DistrictEffects operator +(DistrictEffects other) => DistrictEffects(
     tax: tax + other.tax,
     upkeep: upkeep + other.upkeep,
@@ -94,6 +101,8 @@ class DistrictPreview {
     required this.rawFactoryBonusDelta,
     required this.rawLaunchBonusDelta,
     required this.rawMarsBonusDelta,
+    this.terrainEffects = const DistrictEffects(),
+    this.adjacencyEffects = const DistrictEffects(),
     this.blockedReason,
   });
   final int cost,
@@ -117,6 +126,12 @@ class DistrictPreview {
       rawMarsBonusDelta;
   int get netDeltaPerMinute => taxDeltaPerMinute - upkeepDeltaPerMinute;
   final List<String> bonuses;
+
+  /// Changes attributable to location, including effects on existing neighbors.
+  /// Efficiency values precede the current research-stage cap. Terrain is
+  /// applied after adjacency so a ridge-powered solar district is attributed
+  /// to the land, while its ordinary support is attributed to adjacency.
+  final DistrictEffects terrainEffects, adjacencyEffects;
   final String? blockedReason;
   bool get isValid => blockedReason == null;
 }

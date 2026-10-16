@@ -36,9 +36,9 @@ class CommandHud extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xff20333a), Color(0xff111c25)],
+            colors: [strategyPanel, strategyBackground],
           ),
-          border: Border(bottom: BorderSide(color: Color(0xff697264))),
+          border: Border(bottom: BorderSide(color: strategyLine)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -47,7 +47,7 @@ class CommandHud extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: wide ? 16 : 10),
               child: Row(
                 children: [
-                  const Icon(Icons.public, size: 23, color: strategyCopper),
+                  const Icon(Icons.public, size: 23, color: strategyBlue),
                   if (wide) ...[
                     const SizedBox(width: 10),
                     const Text(
@@ -76,11 +76,11 @@ class CommandHud extends StatelessWidget {
             Expanded(
               flex: 16,
               child: _Resource(
-                label: '毎分収支',
+                label: game.netPerMinute < 0 ? '毎分収支 · 赤字' : '毎分収支',
                 value: '${signedDollars(game.netPerMinute)}/分',
                 description:
                     '税収 ${dollars(game.taxPerMinute)} − 維持費 ${dollars(game.upkeepPerMinute)} = ${signedDollars(game.netPerMinute)}/分',
-                color: game.netPerMinute < 0 ? strategyCopper : strategyMint,
+                color: game.netPerMinute < 0 ? strategyDanger : strategyBenefit,
                 onTap: onOpenResources,
               ),
             ),
@@ -146,7 +146,7 @@ class _Resource extends StatelessWidget {
     required this.value,
     this.description,
     this.valueKey,
-    this.color = const Color(0xffe4e7e1),
+    this.color = strategyText,
     required this.onTap,
   });
 

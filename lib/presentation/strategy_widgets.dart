@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 
-const strategyMint = Color(0xffa2dfc8);
-const strategyMuted = Color(0xffa4b6c1);
-const strategyCopper = Color(0xffedb48c);
-const strategyLine = Color(0xff2d434f);
-const strategyPanel = Color(0xff142630);
+import 'strategy_colors.dart';
+export 'strategy_colors.dart';
 
 String gameDuration(int ms) {
   final seconds = (ms / 1000).ceil();
@@ -52,7 +49,7 @@ class StrategyCard extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: padding,
     decoration: BoxDecoration(
-      color: selected ? const Color(0xff203d40) : strategyPanel,
+      color: selected ? strategySelected : strategyPanel,
       border: Border.all(color: selected ? strategyMint : strategyLine),
       borderRadius: BorderRadius.circular(2),
     ),
@@ -173,11 +170,45 @@ class StrategySplit extends StatelessWidget {
                 : constraints.maxWidth < 650
                 ? constraints.maxWidth * .48
                 : 310,
-            child: Material(color: const Color(0xff102129), child: detail),
+            child: Material(color: strategySurface, child: detail),
           ),
         ],
       );
     },
+  );
+}
+
+/// A signed result stays understandable in grayscale and to screen readers.
+class StrategyOutcome extends StatelessWidget {
+  const StrategyOutcome(
+    this.label, {
+    super.key,
+    required this.tone,
+    this.fontSize = 12,
+  });
+  final String label;
+  final StrategyTone tone;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      ExcludeSemantics(
+        child: Icon(
+          strategyToneIcon(tone),
+          color: strategyToneColor(tone),
+          size: 16,
+        ),
+      ),
+      const SizedBox(width: 5),
+      Expanded(
+        child: Text(
+          label,
+          style: TextStyle(color: strategyToneColor(tone), fontSize: fontSize),
+        ),
+      ),
+    ],
   );
 }
 

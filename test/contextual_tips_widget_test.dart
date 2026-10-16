@@ -97,7 +97,7 @@ void main() {
           ),
         ),
       );
-      expect(tester.widget<Text>(find.text(tip.detail)).maxLines, 2);
+      expect(find.text(tip.detail), findsNothing);
       await tester.tap(find.byKey(const Key('toggle-contextual-tip-detail')));
       await tester.pumpAndSettle();
       expect(tester.widget<Text>(find.text(tip.detail)).maxLines, isNull);
@@ -105,7 +105,7 @@ void main() {
       expect(engine.state.currentPlanFor('lab'), isNotNull);
       await tester.tap(find.byKey(const Key('toggle-contextual-tip-detail')));
       await tester.pumpAndSettle();
-      expect(tester.widget<Text>(find.text(tip.detail)).maxLines, 2);
+      expect(find.text(tip.detail), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );

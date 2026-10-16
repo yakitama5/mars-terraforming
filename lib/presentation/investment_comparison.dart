@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/game_content.dart';
 import '../domain/game_state.dart';
+import 'district_location_impact.dart';
 import 'strategy_widgets.dart';
 
 /// A comparison keeps the player's intended placement, never a stale quote.
@@ -17,6 +18,8 @@ class InvestmentCandidate {
   bool get upgrade => targetLevel > 1;
   String get title =>
       '${GameContent.cities[cityId]!.name} · 区画 ${plotIndex + 1}';
+  String titleFor(GameState game) =>
+      '${game.cityName(cityId)} · 区画 ${plotIndex + 1}';
   String get action =>
       '${GameContent.districts[districtId]!.name} ${upgrade ? 'Lv.${targetLevel - 1} → $targetLevel' : '新設 Lv.1'}';
 
@@ -147,7 +150,11 @@ class InvestmentComparison extends StatelessWidget {
         'cost',
         '費用',
         cost == 0 ? '同額' : '${dollars(cost.abs())}${cost > 0 ? '高い' : '安い'}',
-        cost > 0 ? strategyCopper : strategyMint,
+        cost > 0
+            ? strategyDanger
+            : cost < 0
+            ? strategyBenefit
+            : strategyMuted,
       ),
       (
         'duration',
@@ -155,19 +162,31 @@ class InvestmentComparison extends StatelessWidget {
         duration == 0
             ? '同じ'
             : '${gameDuration(duration.abs())}${duration > 0 ? '長い' : '短い'}',
-        duration > 0 ? strategyCopper : strategyMint,
+        duration > 0
+            ? strategyDanger
+            : duration < 0
+            ? strategyBenefit
+            : strategyMuted,
       ),
       (
         'income',
         '毎分の収支',
         income == 0 ? '同じ' : '${signedDollars(income)}/分',
-        income < 0 ? strategyCopper : strategyMint,
+        income < 0
+            ? strategyDanger
+            : income > 0
+            ? strategyBenefit
+            : strategyMuted,
       ),
       (
         'plots',
         '使う土地',
         plots == 0 ? '同じ' : '${plots.abs()}区画${plots > 0 ? '多い' : '少ない'}',
-        plots > 0 ? strategyCopper : strategyMint,
+        plots > 0
+            ? strategyDanger
+            : plots < 0
+            ? strategyBenefit
+            : strategyMuted,
       ),
     ];
     return StrategyCard(
@@ -245,7 +264,7 @@ class InvestmentComparison extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            candidate.title,
+            candidate.titleFor(game),
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
           Text(candidate.action, style: const TextStyle(fontSize: 13)),
@@ -272,6 +291,7 @@ class InvestmentComparison extends StatelessWidget {
               game: game,
               preview: preview,
               cityId: city.id,
+              plotIndex: candidate.plotIndex,
               collapsibleDetails: true,
               detailsKey: Key('investment-details-$id'),
             ),
@@ -312,12 +332,14 @@ class InvestmentEstimate extends StatelessWidget {
     required this.cityId,
     this.collapsibleDetails = false,
     this.detailsKey,
+    this.plotIndex,
   });
   final GameState game;
   final DistrictPreview preview;
   final String cityId;
   final bool collapsibleDetails;
   final Key? detailsKey;
+  final int? plotIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -386,7 +408,11 @@ class InvestmentEstimate extends StatelessWidget {
         StrategyFact(
           '純収支の変化',
           '${signedDollars(preview.netDeltaPerMinute)}/分',
-          color: preview.netDeltaPerMinute >= 0 ? strategyMint : strategyCopper,
+          color: preview.netDeltaPerMinute > 0
+              ? strategyBenefit
+              : preview.netDeltaPerMinute < 0
+              ? strategyDanger
+              : strategyMuted,
         ),
         if (collapsibleDetails)
           Material(
@@ -397,19 +423,13 @@ class InvestmentEstimate extends StatelessWidget {
               title: const Text('費用・効果と立地の内訳', style: TextStyle(fontSize: 12)),
               children: [
                 ...details,
-                for (final bonus in preview.bonuses)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        bonus,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: strategyMuted,
-                        ),
-                      ),
-                    ),
+                if (plotIndex != null)
+                  DistrictLocationImpact(
+                    game: game,
+                    cityId: cityId,
+                    plotIndex: plotIndex!,
+                    preview: preview,
+                    expanded: true,
                   ),
               ],
             ),

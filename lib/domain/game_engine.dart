@@ -127,7 +127,7 @@ class GameEngine {
       ),
     );
     _record(
-      '${GameContent.cities[cityId]!.name}の区画${plotIndex + 1}に${definition.name} Lv.${preview.targetLevel}を予約',
+      '${state.cityName(cityId)}の区画${plotIndex + 1}に${definition.name} Lv.${preview.targetLevel}を予約',
     );
     _stabilize();
     return null;
