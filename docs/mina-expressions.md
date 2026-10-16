@@ -36,7 +36,7 @@
 - 親と別担当で原画、Webの40px/34px表示、iOSの表情一覧と瞬き画像を目視確認。通常絵 `mission_control.png`、依存の採用版、lockfileは変更していない。
 - iOS検証は表情コンポーネント用ギャラリー。ゲーム全体の `prototype_test.dart` は今回は再実行していない。実機での電池/長時間負荷、Android、Safari/Firefoxは未実施。
 - 表情差分は内蔵生成によるPNG。パーツ分割モデル・視線追従・髪の変形・口パク・音声同期は未実装。本格的なリグが必要になった段階で別途素材分けと方式を検討する。
-- ローカルに実装・検証済み。公開リポジトリへのpushと配信は引き続き未実施。
+- 表情の実装完了時点ではローカル検証までで公開を保留。その後、実動作動画の確認を受けてユーザーが今回分の本番反映を明示承認。公開の経緯は [改善記録](blue-horizon-improvements.md#公開反映の状態) を参照。
 
 実画面: [5表情](screenshots/mina-ios-five-expressions.png)、[瞬き](screenshots/mina-ios-normal-blink.png)、[有限動作](screenshots/mina-ios-finite-gesture.png)、[動きを減らす](screenshots/mina-ios-reduced-motion.png)、[Web OP](screenshots/mina-expression-web-opening.png)、[通常説明](screenshots/mina-expression-web-normal.png)、[ガイド](screenshots/mina-expression-web-guide.png)。
 
