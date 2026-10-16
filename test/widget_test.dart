@@ -53,6 +53,7 @@ void main() {
         await controller.initialize(startTimer: false);
         await tester.pumpWidget(
           MarsApp(
+            showIntroduction: false,
             controller: controller,
             sceneBuilder: (_, _, _, _) => const ColoredBox(color: Colors.black),
           ),
@@ -116,6 +117,7 @@ void main() {
       addTearDown(controller.dispose);
       await tester.pumpWidget(
         MarsApp(
+          showIntroduction: false,
           controller: controller,
           sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
         ),
@@ -174,6 +176,7 @@ void main() {
       addTearDown(controller.dispose);
       await tester.pumpWidget(
         MarsApp(
+          showIntroduction: false,
           controller: controller,
           sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
         ),
@@ -194,7 +197,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.descendant(
           of: find.byKey(const Key('district-detail')),
-          matching: find.text('立地・隣接ボーナス'),
+          matching: find.text('土地・隣接の効果'),
         ),
         140,
         scrollable: find.descendant(
@@ -205,7 +208,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const Key('district-detail')),
-          matching: find.text('立地・隣接ボーナス'),
+          matching: find.text('土地・隣接の効果'),
         ),
         findsOneWidget,
       );
@@ -248,6 +251,7 @@ void main() {
       controller.state.districts[house.key] = house;
       await tester.pumpWidget(
         MarsApp(
+          showIntroduction: false,
           controller: controller,
           sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
         ),
@@ -353,6 +357,7 @@ void main() {
     controller.state.districts[house.key] = house;
     await tester.pumpWidget(
       MarsApp(
+        showIntroduction: false,
         controller: controller,
         sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
       ),
@@ -400,6 +405,7 @@ void main() {
       });
       await tester.pumpWidget(
         MarsApp(
+          showIntroduction: false,
           controller: controller,
           sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
         ),

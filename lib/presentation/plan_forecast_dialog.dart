@@ -188,7 +188,7 @@ class _PlanForecastDialogState extends State<PlanForecastDialog> {
                         padding: const EdgeInsets.only(bottom: 7),
                         child: Text(
                           '${GameContent.tasks[completion.taskId]!.name} ×${completion.runs}'
-                          '${completion.cityId == null ? '' : ' · ${GameContent.cities[completion.cityId]!.name} 区画 ${completion.plotIndex! + 1} Lv.${completion.targetLevel}'}',
+                          '${completion.cityId == null ? '' : ' · ${widget.controller.state.cityName(completion.cityId!)} 区画 ${completion.plotIndex! + 1} Lv.${completion.targetLevel}'}',
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),

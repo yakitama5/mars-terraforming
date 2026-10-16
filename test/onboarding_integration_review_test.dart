@@ -24,7 +24,13 @@ Future<void> _smallScreen(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
-  await tester.pumpWidget(MarsApp(controller: controller, renderScene: false));
+  await tester.pumpWidget(
+    MarsApp(
+      showIntroduction: false,
+      controller: controller,
+      renderScene: false,
+    ),
+  );
 }
 
 Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
@@ -93,7 +99,11 @@ void main() {
       expect(restored.state.tutorialHidden, isTrue);
       expect(restored.state.tipsEnabled, isFalse);
       await tester.pumpWidget(
-        MarsApp(controller: restored, renderScene: false),
+        MarsApp(
+          showIntroduction: false,
+          controller: restored,
+          renderScene: false,
+        ),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('open-guidance')));

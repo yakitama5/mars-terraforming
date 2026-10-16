@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/contextual_tips.dart';
 import '../domain/game_state.dart';
+import 'mission_adviser.dart';
 import 'strategy_widgets.dart';
 
 /// Shows one suggestion at a time. The host owns dismissal persistence and
@@ -29,6 +30,24 @@ class ContextualTipsPanel extends StatefulWidget {
 class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
   String? expandedTipId;
 
+  // Tip IDs carry a stable category before the optional plan/facility ID.
+  // Serious cautions concern the queue rule, never the player's choices.
+  MinaExpression _expressionFor(ContextualTip tip) =>
+      switch (tip.id.split(':').first) {
+        'paused' ||
+        'staff' ||
+        'budget' ||
+        'resource' ||
+        'unassigned' ||
+        'low-operating-funds' => MinaExpression.sorrow,
+        'unlimited' || 'training-limit' => MinaExpression.anger,
+        'habitat-choice' => MinaExpression.joy,
+        'partnership' ||
+        'parallel-city' ||
+        'parallel-research' => MinaExpression.delight,
+        _ => MinaExpression.normal,
+      };
+
   @override
   Widget build(BuildContext context) {
     final tip = evaluateContextualTips(
@@ -39,7 +58,7 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
     if (tip == null) return const SizedBox.shrink();
     final needsAttention = tip.priority >= 80;
     final expanded = needsAttention || expandedTipId == tip.id;
-    final accent = needsAttention ? strategyCopper : strategyMuted;
+    final accent = needsAttention ? strategyWarning : strategyBlue;
     return StrategyCard(
       key: const Key('contextual-tips-panel'),
       padding: EdgeInsets.all(widget.compact ? 8 : 12),
@@ -48,10 +67,10 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
         children: [
           Row(
             children: [
-              Icon(
-                needsAttention ? Icons.info_outline : Icons.lightbulb_outline,
-                size: 17,
-                color: accent,
+              MinaAvatar(
+                size: 32,
+                expression: _expressionFor(tip),
+                semanticLabel: '秘書ミナからのアドバイス',
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -74,16 +93,15 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
               ),
             ],
           ),
-          Text(
-            tip.detail,
-            maxLines: expanded ? null : 2,
-            overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: strategyMuted,
-              fontSize: 12,
-              height: 1.45,
+          if (expanded)
+            Text(
+              tip.detail,
+              style: const TextStyle(
+                color: strategyMuted,
+                fontSize: 12,
+                height: 1.45,
+              ),
             ),
-          ),
           const SizedBox(height: 4),
           Wrap(
             alignment: WrapAlignment.spaceBetween,

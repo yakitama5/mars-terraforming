@@ -155,7 +155,11 @@ void main() {
         (engine) => engine.enqueueDistrict('earth_delta', 1, 'housing'),
       );
       await tester.pumpWidget(
-        MarsApp(controller: controller, renderScene: false),
+        MarsApp(
+          showIntroduction: false,
+          controller: controller,
+          renderScene: false,
+        ),
       );
       await tester.tap(find.byKey(const Key('navigation-1')));
       await tester.pumpAndSettle();
@@ -208,7 +212,7 @@ void main() {
       await select(0);
       expect(scene().constructionMode, isFalse);
       expect(find.text('住宅地区 Lv.1'), findsOneWidget);
-      expect(find.text('この地区を強化する'), findsOneWidget);
+      expect(find.text('地区を強化'), findsOneWidget);
       await select(1);
       expect(find.byKey(const Key('district-work-status')), findsOneWidget);
       expect(find.byKey(const Key('district-open-operations')), findsOneWidget);
@@ -249,7 +253,11 @@ void main() {
       await controller.initialize(startTimer: false);
       addTearDown(controller.dispose);
       await tester.pumpWidget(
-        MarsApp(controller: controller, renderScene: false),
+        MarsApp(
+          showIntroduction: false,
+          controller: controller,
+          renderScene: false,
+        ),
       );
       await tester.tap(find.byKey(const Key('navigation-1')));
       await tester.pumpAndSettle();
@@ -311,7 +319,11 @@ void main() {
       );
       controller.state.districts[campus.key] = campus;
       await tester.pumpWidget(
-        MarsApp(controller: controller, renderScene: false),
+        MarsApp(
+          showIntroduction: false,
+          controller: controller,
+          renderScene: false,
+        ),
       );
       await tester.tap(find.byKey(const Key('navigation-1')));
       await tester.pumpAndSettle();
@@ -352,7 +364,11 @@ void main() {
         addTearDown(controller.dispose);
         final savedBefore = jsonEncode(store.data);
         await tester.pumpWidget(
-          MarsApp(controller: controller, renderScene: false),
+          MarsApp(
+            showIntroduction: false,
+            controller: controller,
+            renderScene: false,
+          ),
         );
         await tester.tap(find.byKey(const Key('navigation-1')));
         await tester.pumpAndSettle();
@@ -446,7 +462,11 @@ void main() {
         try {
           await controller.initialize(startTimer: false);
           await tester.pumpWidget(
-            MarsApp(controller: controller, renderScene: false),
+            MarsApp(
+              showIntroduction: false,
+              controller: controller,
+              renderScene: false,
+            ),
           );
           await tester.tap(find.byKey(const Key('navigation-1')));
           await tester.pumpAndSettle();

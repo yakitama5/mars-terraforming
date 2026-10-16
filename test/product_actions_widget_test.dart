@@ -20,7 +20,11 @@ void main() {
     await controller.initialize(startTimer: false);
     addTearDown(controller.dispose);
     await tester.pumpWidget(
-      MarsApp(controller: controller, renderScene: false),
+      MarsApp(
+        showIntroduction: false,
+        controller: controller,
+        renderScene: false,
+      ),
     );
     return controller;
   }
@@ -99,6 +103,42 @@ void main() {
       expect(find.byKey(const Key('queue-life_support')), findsOneWidget);
       expect(find.byKey(const Key('research-unlocks')), findsOneWidget);
       expect(jsonEncode(controller.state.toJson()), before);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'research unlocks use player city names without cascading replacements',
+    (tester) async {
+      final controller = await open(tester);
+      await controller.updateMissionIdentity(
+        cities: {
+          'earth_highland': 'エリシウム研究都市',
+          'mars_elysium': 'ヘラス・第2港',
+          'mars_hellas': '新しい空',
+        },
+        rocket: controller.state.rocketName,
+      );
+      await tester.tap(find.byKey(const Key('navigation-2')));
+      await tester.pumpAndSettle();
+      for (final (id, expected) in [
+        ('urban_planning', '住宅Lv.2・研究地区・工業地区・エリシウム研究都市'),
+        ('orbital_logistics', '軌道補給受注・火星へ6基輸送・ヘラス・第2港・輸送効率上限45%'),
+        ('intercity_logistics', '全輸送の効率を追加+15%・新しい空・輸送効率上限60%'),
+      ]) {
+        tester.widget<ResearchTree>(find.byType(ResearchTree)).onSelected(id);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<Text>(find.byKey(const Key('research-unlocks'))).data,
+          expected,
+        );
+        expect(
+          tester.widget<Text>(find.byKey(Key('research-progress-$id'))).data,
+          expected,
+        );
+      }
+      await tester.pump(const Duration(seconds: 8));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },
   );

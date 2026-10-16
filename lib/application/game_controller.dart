@@ -23,6 +23,7 @@ class GameController extends ChangeNotifier {
   String notice = '端末内に自動保存します';
   String? get commandNotice => _commandNotice;
   bool busy = false;
+  bool finishingOpening = false;
   bool _disposed = false;
   bool _saveConflict = false;
   Timer? _timer;
@@ -41,7 +42,12 @@ class GameController extends ChangeNotifier {
           : GameState.fromJson(loaded.data!);
       // Keep the playable world private until its first complete save succeeds.
       // A failed initial save must never start an unsaved game or its timer.
-      final candidate = GameEngine(initial)..advanceTo(now());
+      final candidate = GameEngine(initial);
+      if (initial.openingStarted && !initial.openingSeen) {
+        initial.lastWallClockMs = now().millisecondsSinceEpoch;
+      } else {
+        candidate.advanceTo(now());
+      }
       await repository.save(candidate.state.toJson());
       if (_disposed) return;
       engine = candidate;
@@ -50,7 +56,7 @@ class GameController extends ChangeNotifier {
       if (startTimer && !_disposed) {
         _timer = Timer.periodic(const Duration(seconds: 1), (_) {
           if (busy || engine == null) return;
-          engine!.advanceTo(now());
+          _advanceClock();
           _emit();
           if (++_ticks % 5 == 0) unawaited(save());
         });
@@ -68,7 +74,7 @@ class GameController extends ChangeNotifier {
     if (_disposed || engine == null || busy) return;
     busy = true;
     try {
-      engine!.advanceTo(now());
+      _advanceClock();
       final message = action(engine!);
       if (message != null) {
         notice = message;
@@ -79,6 +85,71 @@ class GameController extends ChangeNotifier {
       busy = false;
       _emit();
     }
+  }
+
+  /// Initial story reading is outside the economy; replaying a story is not.
+  /// Persist the started flag so a closed app cannot spend its opening budget.
+  void beginOpening() {
+    if (engine == null || state.openingSeen || state.openingStarted) return;
+    state.openingStarted = true;
+    state.lastWallClockMs = now().millisecondsSinceEpoch;
+    unawaited(save());
+  }
+
+  void _advanceClock() {
+    if (state.openingStarted && !state.openingSeen) {
+      state.lastWallClockMs = now().millisecondsSinceEpoch;
+    } else {
+      engine!.advanceTo(now());
+    }
+  }
+
+  Future<bool> updateMissionIdentity({
+    required Map<String, String> cities,
+    required String rocket,
+    bool finishOpening = false,
+  }) async {
+    if (_disposed || engine == null || busy) return false;
+    final wasSeen = state.openingSeen;
+    finishingOpening = finishOpening && !wasSeen;
+    var accepted = false;
+    await command((game) {
+      try {
+        final identity = game.state.identity.renamed(
+          cities: cities,
+          rocket: rocket,
+        );
+        game.state.identity = identity;
+        accepted = true;
+        if (finishOpening) game.state.openingSeen = true;
+        return finishOpening ? null : '名前を保存しました';
+      } on FormatException {
+        return '名前を確認してください。1〜24文字で設定できます。';
+      }
+    });
+    if (finishOpening && !wasSeen && engine != null && error != null) {
+      // Keep the naming screen open until the whole snapshot is durable.
+      state.openingSeen = false;
+      _emit();
+    }
+    finishingOpening = false;
+    _emit();
+    return accepted && engine != null && error == null;
+  }
+
+  Future<void> skipOpening() async {
+    if (_disposed || engine == null || busy) return;
+    final wasSeen = state.openingSeen;
+    finishingOpening = !wasSeen;
+    await command((game) {
+      game.state.openingSeen = true;
+      return null;
+    });
+    if (!wasSeen && engine != null && error != null) {
+      state.openingSeen = false;
+    }
+    finishingOpening = false;
+    _emit();
   }
 
   void _showCommandNotice(String message) {
@@ -110,7 +181,7 @@ class GameController extends ChangeNotifier {
 
   Future<void> resume() async {
     if (engine == null || busy) return;
-    engine!.advanceTo(now());
+    _advanceClock();
     await save();
     _emit();
   }

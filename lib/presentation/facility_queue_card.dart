@@ -5,9 +5,9 @@ import '../domain/game_content.dart';
 import '../domain/game_state.dart';
 import 'strategy_widgets.dart';
 
-const _mint = Color(0xffa2dfc8);
-const _muted = Color(0xff98adb9);
-const _copper = Color(0xffe8a57c);
+const _mint = strategyBlue;
+const _muted = strategyMuted;
+const _copper = strategyWarning;
 
 /// The current paid iteration is displayed separately from future starts.
 class FacilityQueueCard extends StatelessWidget {
@@ -38,8 +38,8 @@ class FacilityQueueCard extends StatelessWidget {
       key: Key('facility-$facilityId'),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xff172731),
-        border: Border.all(color: const Color(0xff2a3c48)),
+        color: strategyPanel,
+        border: Border.all(color: strategyLine),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -84,7 +84,7 @@ class FacilityQueueCard extends StatelessWidget {
               ),
             ],
           ),
-          const Divider(color: Color(0xff2a3c48)),
+          const Divider(color: strategyLine),
           if (current != null)
             _current(current, enabled)
           else
@@ -126,7 +126,7 @@ class FacilityQueueCard extends StatelessWidget {
     key: Key('current-${plan.id}'),
     padding: const EdgeInsets.all(10),
     decoration: BoxDecoration(
-      color: const Color(0xff223a3c),
+      color: strategySelected,
       borderRadius: BorderRadius.circular(7),
     ),
     child: Column(
@@ -152,7 +152,7 @@ class FacilityQueueCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              _location(plan),
+              _location(plan, controller.state),
               style: const TextStyle(fontSize: 12, color: _mint),
             ),
           ),
@@ -161,7 +161,7 @@ class FacilityQueueCard extends StatelessWidget {
           value: plan.progress.clamp(0, 1),
           semanticsLabel: '${plan.definition.name}の進捗',
           minHeight: 4,
-          backgroundColor: const Color(0xff2a3c48),
+          backgroundColor: strategyLine,
         ),
         const SizedBox(height: 6),
         Text(
@@ -191,7 +191,7 @@ class FacilityQueueCard extends StatelessWidget {
       margin: const EdgeInsets.only(top: 7),
       padding: const EdgeInsets.fromLTRB(9, 7, 0, 7),
       decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xff2a3c48)),
+        border: Border.all(color: strategyLine),
         borderRadius: BorderRadius.circular(7),
       ),
       child: Column(
@@ -223,7 +223,7 @@ class FacilityQueueCard extends StatelessWidget {
                     ),
                     if (plan.cityId != null)
                       Text(
-                        _location(plan),
+                        _location(plan, controller.state),
                         style: const TextStyle(fontSize: 11, color: _mint),
                       ),
                   ],
@@ -319,7 +319,7 @@ class FacilityQueueCard extends StatelessWidget {
         title: Text(running ? 'この1回で反復を終了しますか？' : '予約を取り消しますか？'),
         content: Text(
           '${plan.definition.name}\n'
-          '${plan.cityId == null ? '' : '${_location(plan)}\n'}'
+          '${plan.cityId == null ? '' : '${_location(plan, controller.state)}\n'}'
           '${running ? '進行中の1回は完成まで続き、その後の反復を終了します。確保済みの費用と進捗は維持されます。' : '未着手の予約を取り消します。まだ費用は支払っていません。確認中に作業が始まった場合、その1回は完成まで続きます。'}',
         ),
         actions: [
@@ -390,5 +390,5 @@ String _purpose(PlannedTask plan) => plan.taskId.endsWith('_contract')
     ? '地球開発'
     : '火星計画';
 
-String _location(PlannedTask plan) =>
-    '${GameContent.cities[plan.cityId]!.name} · 区画 ${plan.plotIndex! + 1} · Lv.${plan.targetLevel}';
+String _location(PlannedTask plan, GameState game) =>
+    '${game.cityName(plan.cityId!)} · 区画 ${plan.plotIndex! + 1} · Lv.${plan.targetLevel}';

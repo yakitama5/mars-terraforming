@@ -73,6 +73,26 @@ void main() {
         expect(tester.takeException(), isNull);
       }
 
+      await tester.pump(const Duration(seconds: 1));
+      await capture('blue-ios-opening');
+      await tapKey('opening-next');
+      await tapKey('opening-next');
+      await tapKey('opening-next');
+      for (final (key, value) in [
+        ('mission-city-earth_delta', '蒼海市'),
+        ('mission-rocket', 'ひかり'),
+        ('mission-city-mars_arcadia', '夜明け基地'),
+      ]) {
+        final field = find.byKey(Key(key));
+        await tester.ensureVisible(field);
+        await tester.enterText(field, value);
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      await capture('blue-ios-naming');
+      await tapKey('mission-names-save');
+      expect(controller.state.openingSeen, isTrue);
+      expect(controller.state.cityName('earth_delta'), '蒼海市');
+      expect(controller.state.rocketName, 'ひかり');
       await sceneReady();
       await capture('strategy-ios-earth');
       await tapKey('open-guidance');
@@ -386,6 +406,17 @@ void main() {
       expect(controller.state.marsHabitats, 1);
       expect(controller.state.marsResidents, 24);
       expect(controller.state.achievements, contains('dome_habitat'));
+      await tapKey('open-completions');
+      await tapKey('completion-open-endings');
+      await tapKey('play-ending-dome_habitat');
+      await capture('blue-ios-colony-ending');
+      final endingSnapshot = jsonEncode(controller.state.toJson());
+      await tapKey('ending-next');
+      await tapKey('ending-next');
+      await tapKey('ending-next');
+      expect(jsonEncode(controller.state.toJson()), endingSnapshot);
+      await tester.tap(find.text('閉じる'));
+      await tester.pump(const Duration(milliseconds: 500));
       await tapKey('navigation-0');
       await sceneReady();
       await capture('strategy-ios-settlement');
@@ -417,6 +448,9 @@ void main() {
       final resumed = GameController(FileSaveStore(directory));
       addTearDown(resumed.dispose);
       await resumed.initialize(startTimer: false);
+      expect(resumed.state.cityName('earth_delta'), '蒼海市');
+      expect(resumed.state.cityName('mars_arcadia'), '夜明け基地');
+      expect(resumed.state.rocketName, 'ひかり');
       expect(
         resumed.state.districtAt('earth_delta', 12)?.districtId,
         'housing',

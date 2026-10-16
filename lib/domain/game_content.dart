@@ -31,6 +31,7 @@ class TaskDefinition {
     this.researchBranch = '',
     this.researchStage = 0,
     this.unlockSummary = '',
+    this.researchPromise = '',
     this.districtId,
     this.isDistrictUpgrade = false,
     this.inputAmount = 1,
@@ -55,6 +56,9 @@ class TaskDefinition {
   final String researchBranch;
   final int researchStage;
   final String unlockSummary;
+
+  /// Short benefit on the graph; full effects and evidence remain in details.
+  final String researchPromise;
   final String? districtId;
   final bool isDistrictUpgrade;
   final int inputAmount;
@@ -64,7 +68,7 @@ class TaskDefinition {
 }
 
 abstract final class GameContent {
-  static const version = 'district-5';
+  static const version = 'district-6';
   static const initialSpecialists = 12;
   static const baselineDepartmentStaff = 6;
   static const maxSpecialists = 36;
@@ -350,7 +354,7 @@ abstract final class GameContent {
       requiredResearch: 'reusable_launch',
       researchBranch: '輸送',
       researchStage: 2,
-      unlockSummary: '軌道補給受注・火星へ6基輸送・エリシウム都市・輸送効率上限45%',
+      unlockSummary: '軌道補給受注・火星へ6基輸送・エリシウム・輸送効率上限45%',
       description: '輸送をまとめて実行し、複数の火星都市へ展開する余力を作る。',
       science: '構想：補給拠点を利用する輸送網。ゲーム上の仮定：軌道設備を独立建設せず研究完了で利用可能とします。',
     ),
@@ -364,7 +368,7 @@ abstract final class GameContent {
       requiredResearch: 'orbital_logistics',
       researchBranch: '輸送',
       researchStage: 3,
-      unlockSummary: '全輸送の効率を追加+15%・ヘラス都市・輸送効率上限60%',
+      unlockSummary: '全輸送の効率を追加+15%・ヘラス・輸送効率上限60%',
       description: '異なる地形の火星都市へ設備を送り、土地の使い方を分担する。',
       science: 'ゲーム上の仮定：惑星間・都市間の物流を共通在庫と輸送効率へ集約しています。',
     ),
@@ -419,6 +423,141 @@ abstract final class GameContent {
       description: '複数都市の限られた土地を増強し、閉鎖居住の長期運営を目指す。',
       science: 'ゲーム上の仮定：閉鎖居住設備を地域へ展開する段階。屋外居住・全球テラフォーミングの達成ではありません。',
     ),
+    TaskDefinition(
+      id: 'oxygen_pilot',
+      name: '火星の空気から酸素へ',
+      facilityId: 'lab',
+      durationSeconds: 2700,
+      cost: 14000,
+      unique: true,
+      requiredResearch: 'life_support',
+      researchRequirements: ResearchRequirements(marsHabitats: 1),
+      researchBranch: '居住・現地生産',
+      researchStage: 1,
+      researchPromise: '火星建設効率 +4%',
+      unlockSummary: '火星建設効率+4%（次の着工から・既存の上限内）',
+      description: '居住区に小さな酸素製造実験室を置く。地球から運ぶ技術を、現地で作る技術へ育てる。',
+      science:
+          '実証：NASAのMOXIEは火星の二酸化炭素から酸素を取り出し、2021〜2023年に計122gを生成しました。\n'
+          '応用構想：連続運転、大型化、酸素の貯蔵が次の課題です。火星の大気全体を呼吸可能にした実験ではありません。\n'
+          'ゲーム上の仮定：設備組立の知見を火星建設効率+4%に集約します。酸素在庫や大気組成は変えません。\n'
+          '出典：NASA/JPL-Caltech（2023）\n'
+          'https://www.nasa.gov/solar-system/nasas-oxygen-generating-experiment-moxie-completes-mars-mission/',
+    ),
+    TaskDefinition(
+      id: 'radiation_shelters',
+      name: '宇宙線から守る住まい',
+      facilityId: 'lab',
+      durationSeconds: 3600,
+      cost: 18000,
+      unique: true,
+      requiredResearch: 'life_support',
+      researchRequirements: ResearchRequirements(marsHabitats: 1),
+      researchBranch: '居住・現地生産',
+      researchStage: 1,
+      researchPromise: '火星建設効率 +5%',
+      unlockSummary: '火星建設効率+5%（次の着工から・既存の上限内）',
+      description: '土と複合材を重ねた防護構造を設計する。窓の向こうの赤い世界を眺めながら、安心して眠れる街を目指す。',
+      science:
+          '数値モデル：GakisとAtriは観測値と照合したGeant4モデルで、火星表面の放射線と材料による遮蔽を検討しました。\n'
+          '応用構想：レゴリス（土）だけで完全に防げるという結論ではなく、複合材、厚さ、二次粒子などの検討が必要です。\n'
+          'ゲーム上の仮定：防護構造の標準化を火星建設効率+5%へ集約。被曝量、事故率、屋外居住条件は変えません。\n'
+          '出典：Gakis & Atri（2022、2024改訂）\n'
+          'https://arxiv.org/abs/2205.13786',
+    ),
+    TaskDefinition(
+      id: 'electric_tugs',
+      name: '青い光の電気推進',
+      facilityId: 'lab',
+      durationSeconds: 7200,
+      cost: 40000,
+      unique: true,
+      requiredResearch: 'reusable_launch',
+      researchRequirements: ResearchRequirements(
+        districtCounts: {'spaceport': 1},
+      ),
+      researchBranch: '輸送',
+      researchStage: 1,
+      researchPromise: '輸送効率 +6%',
+      unlockSummary: '共用宇宙港の輸送効率+6%（次の着手から・既存の上限内）',
+      description: '小さな推力を積み重ねて宇宙を渡る。化学ロケットと電気推進を組み合わせる貨物運用を研究する。',
+      science:
+          '実証：電気推進は探査機や人工衛星で使われています。太陽電池などの電力で推進剤を加速し、少ない推進剤で運用できますが、推力は小さくなります。\n'
+          '応用構想：大型の惑星間貨物輸送には電源、長期間の運転、航路設計が必要です。地表からの打上げを置き換えません。\n'
+          'ゲーム上の仮定：運用全体を共用宇宙港の効率+6%へ簡略化。実際の飛行時間短縮を示す数値ではありません。\n'
+          '出典：NASA Solar Electric Propulsion（技術概要・2026年10月確認）\n'
+          'https://www.nasa.gov/space-technology-mission-directorate/tdm/solar-electric-propulsion/',
+    ),
+    TaskDefinition(
+      id: 'surface_fission',
+      name: '長い夜を越える電源',
+      facilityId: 'lab',
+      durationSeconds: 21600,
+      cost: 150000,
+      unique: true,
+      requiredResearch: 'closed_ecology',
+      researchRequirements: ResearchRequirements(
+        districtCounts: {'mars_lab': 1},
+      ),
+      researchBranch: '都市・産業',
+      researchStage: 1,
+      researchPromise: '研究 +6%・火星建設 +4%',
+      unlockSummary: '研究効率+6%・火星建設効率+4%（次の着手から・既存の上限内）',
+      description: '火星の現地研究地区で小型原子炉の利用計画を作る。日照に頼りきらず、実験と暮らしを支える。',
+      science:
+          '地上実証：NASAと米国エネルギー省は2018年にKRUSTY試験を実施し、小型核分裂電源の運転を地上で検証しました。\n'
+          '応用構想：火星への輸送、設置、放熱、防護、保守は別の課題です。本研究は火星での利用案であり、月面拠点を開設するものではありません。\n'
+          'ゲーム上の仮定：安定電源の効果を研究+6%と火星建設+4%へ集約。電力在庫や独立した原子炉施設は追加しません。\n'
+          '出典：NASA（2018）KRUSTY地上試験\n'
+          'https://www.nasa.gov/news-release/demonstration-proves-nuclear-fission-system-can-provide-space-exploration-power/',
+    ),
+    TaskDefinition(
+      id: 'orbital_gardens',
+      name: '赤い星に育つ食卓',
+      facilityId: 'lab',
+      durationSeconds: 28800,
+      cost: 180000,
+      unique: true,
+      requiredResearch: 'closed_ecology',
+      researchRequirements: ResearchRequirements(
+        districtCounts: {'greenhouse': 1},
+      ),
+      researchBranch: '居住・現地生産',
+      researchStage: 1,
+      researchPromise: '研究 +5%・火星建設 +5%',
+      unlockSummary: '研究効率+5%・火星建設効率+5%（次の着手から・既存の上限内）',
+      description: '温室で種から次の種へ命をつなぐ。初めて収穫した葉を食卓に並べ、補給に頼る暮らしを少しずつ変えていく。',
+      science:
+          '実証：ISSのVeggieでは管理された環境で作物を栽培しています。\n'
+          '応用構想：火星での農業には光、水、栄養、病害対策が必要です。少量の栽培成功は、食料の完全自給や火星屋外での生育を意味しません。\n'
+          'ゲーム上の仮定：栽培データを研究+5%と現地施工の効率+5%へ集約。食料、人口、生態系は自動的に増えません。\n'
+          '出典：NASA（2014）VeggieのISS稼働報告\n'
+          'https://www.nasa.gov/missions/station/veggie-plant-growth-system-activated-on-international-space-station/',
+    ),
+    TaskDefinition(
+      id: 'regolith_printing',
+      name: '赤土から街を刷る',
+      facilityId: 'lab',
+      durationSeconds: 43200,
+      cost: 480000,
+      unique: true,
+      requiredResearch: 'local_resources',
+      prerequisites: ['automated_fabrication'],
+      researchRequirements: ResearchRequirements(
+        districtCounts: {'extractor': 1},
+      ),
+      researchBranch: '都市・産業',
+      researchStage: 2,
+      researchPromise: '製造 +5%・火星建設 +8%',
+      unlockSummary: '製造効率+5%・火星建設効率+8%（次の着工から・既存の上限内）',
+      description: '地球で育てた自動化と、火星で得た資源を結ぶ。赤い土を積み重ね、次の街の壁を現地で作る。',
+      science:
+          '地上実証：NASAの3D-Printed Habitat Challengeは2019年までに材料・構造・縮小居住構造物の自動造形を競いました。\n'
+          '応用構想：実際の火星の土、低温、低圧、粉塵の下で作る居住施設は未実証です。気密性と設備は別途必要です。\n'
+          'ゲーム上の仮定：材料加工を製造+5%と火星建設+8%へ集約。居住キットは従来どおり必要です。\n'
+          '出典：NASA（2019）3D-Printed Habitat Challenge\n'
+          'https://www.nasa.gov/prizes-challenges-and-crowdsourcing/centennial-challenges/3d-printed-habitat-challenge/',
+    ),
   ];
 
   /// Efficiency grows with demonstrated research, rather than filling its
@@ -457,7 +596,21 @@ abstract final class GameContent {
     'reusable_launch': {'launch': 10},
     'intercity_logistics': {'launch': 15},
     'regional_habitats': {'mars': 10},
+    'oxygen_pilot': {'mars': 4},
+    'radiation_shelters': {'mars': 5},
+    'electric_tugs': {'launch': 6},
+    'surface_fission': {'lab': 6, 'mars': 4},
+    'orbital_gardens': {'lab': 5, 'mars': 5},
+    'regolith_printing': {'factory': 5, 'mars': 8},
   };
+  static const optionalFrontierResearchIds = [
+    'oxygen_pilot',
+    'radiation_shelters',
+    'electric_tugs',
+    'surface_fission',
+    'orbital_gardens',
+    'regolith_printing',
+  ];
 
   static const agencyMetricDescriptions = {
     'fame': '知名度：研究1件+4、完成地区1区画+2、居住・輸送実績1件+8、提携選択1件+3。上限100。提携の解禁と活動の目安に使います。独立した収益効果はありません。',

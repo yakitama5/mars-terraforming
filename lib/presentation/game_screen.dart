@@ -13,11 +13,14 @@ import 'completion_center.dart';
 import 'contextual_tips.dart';
 import 'agency_management.dart';
 import 'early_development_guide.dart';
+import 'mission_opening.dart';
+import 'colony_endings.dart';
 import 'facility_queue_card.dart';
 import 'investment_comparison.dart';
 import 'habitat_choice_dialog.dart';
 import 'plan_forecast_dialog.dart';
 import 'research_tree.dart';
+import 'research_display.dart';
 import 'resource_overview_dialog.dart';
 import 'strategy_widgets.dart';
 
@@ -27,9 +30,11 @@ class GameScreen extends StatefulWidget {
     required this.controller,
     this.sceneBuilder,
     this.renderScene = true,
+    this.showIntroduction = true,
   });
   final GameController controller;
   final bool renderScene;
+  final bool showIntroduction;
   final Widget Function(bool, int, int, bool)? sceneBuilder;
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -89,6 +94,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ),
           ),
         );
+      }
+      if (widget.showIntroduction &&
+          (!game.openingSeen || controller.finishingOpening)) {
+        return MissionOpening(controller: controller);
       }
       return Scaffold(
         body: SafeArea(
@@ -179,7 +188,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       gradient: LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [Color(0xff1c3039), Color(0xff101c24)],
+        colors: [strategyPanel, strategySurface],
       ),
       border: Border(top: BorderSide(color: strategyLine)),
     ),
@@ -209,12 +218,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               selected: tab == index,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: tab == index
-                      ? const Color(0xff28403f)
-                      : Colors.transparent,
+                  color: tab == index ? strategySelected : Colors.transparent,
                   border: Border(
                     top: BorderSide(
-                      color: tab == index ? strategyCopper : Colors.transparent,
+                      color: tab == index ? strategyBlue : Colors.transparent,
                       width: 2,
                     ),
                     right: const BorderSide(color: strategyLine),
@@ -226,7 +233,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     onPressed: () => setState(() => tab = index),
                     style: TextButton.styleFrom(
                       foregroundColor: tab == index
-                          ? const Color(0xfff0d8ad)
+                          ? strategyBlue
                           : strategyMuted,
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       shape: const RoundedRectangleBorder(),
@@ -295,7 +302,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       ))
                         SceneCity(
                           id: city.id,
-                          name: city.name,
+                          name: game.cityName(city.id),
                           latitude: city.latitude,
                           longitude: city.longitude,
                           development: _cityDevelopment(city),
@@ -305,7 +312,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     selectedCityId: cityId,
                     onCitySelected: _selectCity,
                   )
-                : const ColoredBox(color: Color(0xff0b151e))),
+                : const ColoredBox(color: strategyBackground)),
       ),
       Positioned(
         left: 18,
@@ -329,7 +336,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       ),
                     ),
                     Text(
-                      '全球 / ${GameContent.cities[cityId]!.name}',
+                      '全球 / ${game.cityName(cityId)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -405,7 +412,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   Widget _tag(String text) => DecoratedBox(
     decoration: BoxDecoration(
-      color: const Color(0xe9142630),
+      color: strategyPanel,
       border: Border.all(color: strategyLine),
       borderRadius: BorderRadius.circular(2),
     ),
@@ -461,7 +468,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         if (!_compactLandscape) ...[
           const SizedBox(height: 14),
           Text(
-            city.name,
+            game.cityName(city.id),
             style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
@@ -506,7 +513,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final unlocked = game.cityUnlocked(city.id);
     final development = game.cityDevelopment(city.id);
     return Material(
-      color: selected ? const Color(0xff243d3e) : const Color(0xff12252d),
+      color: selected ? strategySelected : strategySurface,
       child: InkWell(
         key: Key('select-city-${city.id}'),
         onTap: () => _selectCity(city.id),
@@ -516,7 +523,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           decoration: BoxDecoration(
             border: Border(
               left: BorderSide(
-                color: selected ? strategyCopper : Colors.transparent,
+                color: selected ? strategyBlue : Colors.transparent,
                 width: 3,
               ),
               bottom: const BorderSide(color: strategyLine),
@@ -535,7 +542,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      city.name,
+                      game.cityName(city.id),
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -639,7 +646,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      task.unlockSummary,
+                      researchUnlockSummary(game, task),
                       key: const Key('research-unlocks'),
                       style: const TextStyle(fontSize: 14, color: strategyMint),
                     ),
@@ -803,7 +810,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                         ? strategyMint
                         : strategyMuted,
                     backgroundColor: facilityTab == index
-                        ? const Color(0xff223a3c)
+                        ? strategySelected
                         : Colors.transparent,
                   ),
                   child: Text(label, style: const TextStyle(fontSize: 12)),
@@ -990,7 +997,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 9),
             Text(
-              task.description,
+              ['mars_delivery', 'cargo_delivery'].contains(task.id)
+                  ? '輸送船「${game.rocketName}」で、${game.cityName('mars_arcadia')}へ。${task.description}'
+                  : task.description,
               style: const TextStyle(color: strategyMuted, fontSize: 12),
             ),
             const SizedBox(height: 10),
@@ -1245,6 +1254,47 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                         const SizedBox(height: 12),
                         _contextualTips(closeDialog: true),
                       ],
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton.icon(
+                            key: const Key('edit-mission-names'),
+                            onPressed: controller.busy
+                                ? null
+                                : () => showMissionNames(context, controller),
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            label: const Text('都市・ロケットの名前'),
+                          ),
+                          TextButton.icon(
+                            key: const Key('open-colony-endings'),
+                            onPressed: () =>
+                                showColonyEndings(context, game: game),
+                            icon: const Icon(
+                              Icons.auto_stories_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('物語の記録'),
+                          ),
+                          TextButton.icon(
+                            key: const Key('replay-opening'),
+                            onPressed: () => showDialog<void>(
+                              context: context,
+                              builder: (replayContext) => Dialog.fullscreen(
+                                child: MissionOpening(
+                                  controller: controller,
+                                  replay: true,
+                                  onClose: () => Navigator.pop(replayContext),
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(
+                              Icons.play_circle_outline,
+                              size: 16,
+                            ),
+                            label: const Text('物語を振り返る'),
+                          ),
+                        ],
+                      ),
                       ExpansionTile(
                         key: const Key('guidance-display-settings'),
                         tilePadding: EdgeInsets.zero,
@@ -1341,7 +1391,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: const BoxDecoration(
-        color: Color(0xff10202a),
+        color: strategySurface,
         border: Border(top: BorderSide(color: strategyLine)),
       ),
       child: Row(

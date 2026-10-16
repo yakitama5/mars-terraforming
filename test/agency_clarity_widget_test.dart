@@ -35,7 +35,11 @@ void main() {
       await controller.initialize(startTimer: false);
       addTearDown(controller.dispose);
       await tester.pumpWidget(
-        MarsApp(controller: controller, renderScene: false),
+        MarsApp(
+          showIntroduction: false,
+          controller: controller,
+          renderScene: false,
+        ),
       );
       await tester.tap(find.byKey(const Key('navigation-4')));
       await tester.pumpAndSettle();

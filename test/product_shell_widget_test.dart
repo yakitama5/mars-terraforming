@@ -28,7 +28,11 @@ void main() {
                 .copyWith(textScaler: const TextScaler.linear(1.4)),
             child: child!,
           ),
-          home: GameScreen(controller: controller, renderScene: false),
+          home: GameScreen(
+            showIntroduction: false,
+            controller: controller,
+            renderScene: false,
+          ),
         ),
       );
       await tester.pumpAndSettle();
