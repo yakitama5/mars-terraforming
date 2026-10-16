@@ -3,14 +3,36 @@
 2026-10-16。ユーザーの依頼に基づき内蔵 image_gen（imagegen スキル、CLI/APIは未使用）で生成し、リポジトリ内の assets/images にコピーしたオリジナル画像。新しい外部依存は追加していない。4枚ともオフライン配布物に同梱する。
 
 - OP: 地球を望むキービジュアルと、有限のズーム・手動字幕による3幕。動画ファイルや音声は生成していない。
-- 秘書: ミナ（仮名）。ユーザーの追加希望を受け、写実的な初稿から、丸メガネを掛けたかわいらしいデフォルメ絵へ変更。案内・Tips・導入・EDで同じ顔を使う。透過PNG、顔を大きく取ったほぼ正方形の構図。
+- 秘書: ミナ（仮名）。写実的な初稿、光沢のあるデフォルメ稿を経て、ツヤを抑えたシンプルなデフォルメ絵へ変更。丸メガネ、ウルフカット、少しつり目、口元のほくろが現行の特徴。案内・Tips・導入・EDで同じ顔を使う。透過PNG、顔を大きく取った正方形の構図。
 - ED: 窓越しのドーム生活と、赤い岩盤に守られた地下生活の専用背景。方式ごとの結末を別の情景で表す。屋外の呼吸可能化や完全自立を描いた科学資料ではない。
 - 生成画の地球/火星の距離や視直径、室内設備は演出。科学の説明・出典は研究カードを優先する。
 - ファイル: [blue_horizon.png](../assets/images/blue_horizon.png)、[mission_control.png](../assets/images/mission_control.png)、[colony_home.png](../assets/images/colony_home.png)、[underground_home.png](../assets/images/underground_home.png)。
 
 ## 使用した最終プロンプト
 
-### mission_control.png 改訂版（メガネ・デフォルメ）
+### mission_control.png 現行版（マットなウルフカット）
+
+2026-10-16の追加評価を反映。内蔵 image_gen の編集モードで、c59395c時点のデフォルメ稿を参照して髪型・目元・ほくろを変更した後、2回目の編集で目の光点と服の細部を減らした。丸メガネとかわいらしい頭身を残し、ツヤと描き込みを抑えている。口元のほくろは画面から見て右側。左右はユーザー指定ではない。
+
+現行ファイルの生成元は `exec-a768aefc-329a-4e8f-af59-2762fe3a3da3.png`。2回目の参照画像は1回目の出力 `exec-86cedf6f-4a30-421f-9dad-e25a1c7aae6d.png`。いずれも同会話の内蔵生成画像として保持し、最終画像だけをゲームに同梱する。
+
+#### 1回目: 髪型と顔の特徴
+
+Use case: style-transfer character redesign. Edit input image 1, the fictional adult mission secretary Mina, into a MUCH SIMPLER matte, flat 2D cartoon portrait. The client dislikes the glossy, over-rendered, generic AI illustration appearance. This should be a concise character drawing with confident dark outline, deliberately simple shapes, a limited muted palette, solid fills, and at most ONE small hard-edged flat shadow per area. No gradients, no airbrush, no glossy highlights, no rim lighting, no shiny skin, no shiny fabric, no 3D volume, no painterly detail, no blush gradients. Avoid the reference's giant sparkling round eyes and smooth shiny bob.
+Required new character features:
+1. Clearly recognizable dark navy WOLF CUT: shaggy layered crown, short choppy face-framing pieces, slightly outward flicking sides, and longer tapered nape visible beside the neck. Broad, simple locks and a distinctive silhouette, NOT a smooth round bob; no individual hair strand rendering. Hair is one dark matte solid fill, without reflective bands.
+2. Slightly upturned almond-shaped brown eyes, gently raised outer corners, half-relaxed confident friendly expression, not angry. Small solid irises with no sparkle clusters. Cute adult chibi face, large head and small shoulders, simple nose and a small warm asymmetric closed smile.
+3. Clearly drawn ROUND GLASSES, medium-thick dark navy rims, transparent glare-free lenses; the eye shape remains fully visible.
+4. One small solid dark BEAUTY MARK next to the LEFT corner of her mouth as seen by the viewer, separated clearly from both mouth and cheek contour. No other freckles or dots on the face.
+Keep her approachable competent adviser personality and a very simplified navy/Earth-blue mission uniform with a plain pale blue collar. Reduce the headset to a tiny simple earpiece if necessary; no ornate machinery, no badges or lettering. Overall feel: an original charming Japanese indie game mascot, flat graphic illustration with a few slightly angular hair shapes and calm expressive face. SQUARE canvas, face-focused head-and-shoulders composition, entire head inside frame with 5 percent margins, hair width about 78 percent of canvas, eyes about 43 percent down, only upper shoulders at bottom. Clear at 32–40 pixel circular-avatar size. Genuine fully transparent background, crisp alpha edges. No paper texture, no background, no frame, no cast shadow outside character, no text, no watermark. Preserve the reference's identity as a cute glasses-wearing female mission adviser, but change the haircut, eye shape and rendering decisively as instructed.
+
+#### 2回目: 塗りと細部の簡素化（採用）
+
+Edit the provided Mina portrait. KEEP the established character features and composition: cute big head/small shoulders, shaggy dark wolf cut with outward flicks and long nape, slightly upturned eyes, round dark glasses, beauty mark beside the mouth on the viewer's RIGHT, friendly small closed smile, simple navy blue mission collar, square head-and-shoulders framing, transparent background.
+The sole goal of this refinement is to make the drawing dramatically SIMPLER AND FLATTER. The current reference still has gradients across the hair, skin and clothes, too many shaded hair locks, and glossy anime polish. Remove that remaining polish. Think a very simple flat 2D character sticker drawn with crisp broad outlines and only a handful of solid ink colors, suitable for an indie game's dialogue mascot.
+STRICT rendering constraints: 100 percent SOLID color fills with NO gradients anywhere, NO softly modelled lighting, NO textures, NO specular light, NO glossy sheen. Hair should read as ONE connected solid deep navy silhouette, with just 5 to 7 simple internal dark line strokes marking the wolf-cut layers; do NOT shade each separate lock, do NOT put lighter color bands inside hair. Face is ONE flat warm cream color, no blush, with at most a single small hard flat neck shadow. Eyes have solid brown irises and simple black pupils, no white shine dots, no glitter; simplify eyelashes to one small upswept outer tip each. The glasses have ONE flat dark rim color without highlights, clear lenses. Clothes use one flat muted blue fill with a plain pale blue collar stripe; remove decorative seams and shaded panels. Retain only a very tiny simple earpiece, without luminous surfaces. Use confident medium-weight dark outlines, clean corners and friendly rounded cheek shapes. Keep the mouth-side mole visible as an isolated small dark dot. Preserve the cute wolf-cut glasses character; this is a rendering simplification, not a different character. Genuine transparent background. No text, watermark, frame, background or shadow outside the character.
+
+### mission_control.png 旧稿（メガネ・デフォルメ、追加修正前）
 
 2026-10-16のユーザー評価に基づき、内蔵 image_gen の編集で再生成。参照画像は9430869時点の同ファイルの初稿。元のボブと青い制服を引き継ぎ、絵柄・頭身・メガネ・顔中心の構図を変更した。
 
