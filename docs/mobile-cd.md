@@ -21,6 +21,8 @@
   `upload.jks` と `android-upload.json` は所有者だけが読める権限で保管し、Gitには含めない。
   ストア登録後に別の鍵を生成し直さず、この一式を安全にバックアップする。
 - ストアの新規登録、初回アップロード、内部グループへの配信成功はまだ確認できていない。
+- CD基盤は [draft PR #28](https://github.com/yakitama5/mars-terraforming/pull/28) に保存。
+  develop / mainへはまだマージしておらず、ストア認証と登録内容の確認待ち。
 
 ## 配信経路
 
@@ -72,6 +74,10 @@ Androidの長期サービスアカウントJSONキーは使わず、GitHub OIDC 
    内部テストのためだけに無料の公開設定を確定しない。有料アプリも内部テスターは無料で利用できる。
 2. 専用upload鍵で最初のrelease AABを作る。debug署名は使わない。
    同じ鍵・alias・passwordを維持し、ローカルの秘密保管先もバックアップする。
+   ローカル容量が不足する場合は、main上の `android-bootstrap.yaml` を手動実行する。
+   必要なのは確定IDと署名の4 Secretsだけで、Google APIや配信の有効化フラグは不要。
+   build 1のAABを3日間のArtifactに保存し、ストアへはアップロードしない。
+   このAABをダウンロードして初回登録に使用する。以降は通常CDの新しい番号を使う。
 3. Consoleで最初のAABをアップロードし、Play App Signingの設定を確認する。
    利用規約への同意、署名権限の新設などは、その時点で内容を提示し必要な確認を取る。
 4. 内部テストの対象者を設定し、初回リリースを開始する。
@@ -132,7 +138,7 @@ Webのセーブは今回のID変更の対象外。
 - `mise exec -- bash tools/check.sh`: 依存方向・整形・静的解析と434テストが成功。
   既知の `agency_widget_test.dart` の画面外tap警告はあるが、失敗はない。
 - 候補Bundle IDでiOS Simulatorのdebugビルド成功。privacy manifest追加後は再検証する。
-- CDガードのPython5件、実fastlane 2.240.1のRuby4件・8 assertions、actionlint、
+- CDガードのPython6件、実fastlane 2.240.1のRuby4件・8 assertions、actionlint、
   Ruby構文、依存解決・lane読込、plist構文が成功。
   ローカルRubyは4.0.6。CIの3.4.11での実行は別途Actionsで確認する。
 - Android debugビルドは初回のGradle 9.3.1依存生成中にホストの空きが383MiBまで低下したため中断
@@ -150,6 +156,14 @@ Webのセーブは今回のID変更の対象外。
 - 修正後のlocked Pod installは成功。Xcode 26.1.1でのSimulator設定取得は失敗したため、
   runnerに対応runtimeがある26.2へCI/CDの固定値を揃え、診断付きで再確認する。
   runnerのXcodeとSimulator runtimeは独立して搭載されるため、Xcodeの存在だけでは選ばない。
+- 2回目のAndroid CIはdebug APKと署名なしreleaseの拒否が両方成功。
+  [確認run](https://github.com/yakitama5/mars-terraforming/actions/runs/38897437582)のAndroid jobを参照。
+- [両OS成功run](https://github.com/yakitama5/mars-terraforming/actions/runs/38898044310)
+  （コード `3edcbfc`）でAndroid APK・署名必須チェック、Xcode 26.2によるiOS Simulatorビルド、
+  privacy manifestの同梱・Bundle ID一致が成功。Ruby 3.4.11での4件・8 assertionsも成功した。
+  Xcodeの選択と利用可能destinationを揃えることで解消したが、26.1.1の失敗の内部原因は未確定。
+- 初回AABワークフローはactionlintとPythonのbuild-only検査を実施。署名AABの実生成は、
+  確定IDを設定してmainへ反映した後に実行する。
 - 未実施: 署名済みiOS archive / IPAの検証、両ストアの初回登録・実配信、
   実機でのストア経由インストール、Android/iOSの長時間GPU・性能・電池検証。
 

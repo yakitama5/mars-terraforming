@@ -12,11 +12,13 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+ANDROID_BUILD_REQUIRED = (
+    "MOBILE_APP_IDENTIFIER", "ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD",
+    "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD",
+)
 REQUIRED = {
-    "android": (
-        "MOBILE_APP_IDENTIFIER", "GOOGLE_WORKLOAD_IDENTITY_PROVIDER",
-        "GOOGLE_PLAY_SERVICE_ACCOUNT", "ANDROID_KEYSTORE_BASE64",
-        "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD",
+    "android": ANDROID_BUILD_REQUIRED + (
+        "GOOGLE_WORKLOAD_IDENTITY_PROVIDER", "GOOGLE_PLAY_SERVICE_ACCOUNT",
     ),
     "ios": (
         "MOBILE_APP_IDENTIFIER", "IOS_TEAM_ID", "ASC_KEY_ID", "ASC_ISSUER_ID",
@@ -58,8 +60,11 @@ def build_numbers(run, attempt):
             "ios_build_number": f"{run_number}.{run_attempt}"}
 
 
-def preflight(platform, env, root=ROOT):
-    missing = [key for key in REQUIRED[platform] if not env.get(key, "").strip()]
+def preflight(platform, env, root=ROOT, *, build_only=False):
+    if build_only and platform != "android":
+        raise ValueError("--build-only は Android の初回ビルド専用です。")
+    required = ANDROID_BUILD_REQUIRED if build_only else REQUIRED[platform]
+    missing = [key for key in required if not env.get(key, "").strip()]
     if missing:
         raise ValueError("不足している設定: " + ", ".join(missing))
     identifier = env["MOBILE_APP_IDENTIFIER"]
@@ -105,7 +110,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("select", "numbers", "preflight", "materialize"))
     parser.add_argument("platform", nargs="?", choices=("android", "ios"))
+    parser.add_argument("--build-only", action="store_true",
+                        help="Android の初回署名ビルド用。Google Play API 設定を要求しない。")
     args = parser.parse_args()
+    if args.build_only and (args.command not in ("preflight", "materialize") or args.platform != "android"):
+        parser.error("--build-only は preflight/materialize android で指定してください。")
     if args.command == "select":
         emit(selection(os.environ.get("GITHUB_EVENT_NAME"),
                        os.environ.get("REQUESTED_PLATFORM", "both"),
@@ -118,7 +127,7 @@ def main():
     elif args.platform is None:
         parser.error("android または ios を指定してください。")
     else:
-        preflight(args.platform, os.environ)
+        preflight(args.platform, os.environ, build_only=args.build_only)
         if args.command == "materialize":
             directory = Path(os.environ["RUNNER_TEMP"]) / "mars-mobile-signing"
             directory.mkdir(mode=0o700, parents=True, exist_ok=True)

@@ -65,6 +65,30 @@ class MobileCdTest(unittest.TestCase):
             info.write_bytes(plistlib.dumps({"ITSAppUsesNonExemptEncryption": False}))
             preflight("ios", env, root)
 
+    def test_android_build_only_requires_id_and_signing_but_no_google_authorization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "android/app/build.gradle.kts"
+            target.parent.mkdir(parents=True)
+            target.write_text('applicationId = "dev.example.mars"')
+            env = {
+                "MOBILE_APP_IDENTIFIER": "dev.example.mars",
+                "ANDROID_KEYSTORE_BASE64": base64.b64encode(b"sample").decode(),
+                "ANDROID_KEYSTORE_PASSWORD": "test-only",
+                "ANDROID_KEY_ALIAS": "upload",
+                "ANDROID_KEY_PASSWORD": "test-only",
+            }
+            preflight("android", env, root, build_only=True)
+            with self.assertRaisesRegex(ValueError, "GOOGLE_WORKLOAD_IDENTITY_PROVIDER"):
+                preflight("android", env, root)
+            for key in env:
+                missing = dict(env)
+                missing.pop(key)
+                with self.assertRaisesRegex(ValueError, key):
+                    preflight("android", missing, root, build_only=True)
+            with self.assertRaisesRegex(ValueError, "Android"):
+                preflight("ios", env, root, build_only=True)
+
 
 if __name__ == "__main__":
     unittest.main()

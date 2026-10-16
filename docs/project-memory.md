@@ -169,7 +169,8 @@
 - ユーザーがGoogle Play / App Storeの新規アプリ登録と内部テストまでの自動デプロイを依頼。
   従来のAndroid後段という順序から、両OSの内部配信を並行して準備する方針へ更新する。
   一般公開や収益化を承認したものとしては扱わない。
-- GitHub Actionsとfastlaneで、チェック済みmainをPlay内部テスト / TestFlightへ送る構成を準備中。
+- GitHub Actionsとfastlaneで、チェック済みmainをPlay内部テスト / TestFlightへ送る基盤を実装し、
+  [draft PR #28](https://github.com/yakitama5/mars-terraforming/pull/28) に保存。develop/mainへの反映はまだ行っていない。
   `android-internal` / `ios-testflight` Environmentを作成し、mainだけに制限。
   配信フラグは両方falseで、ストア初期設定前に自動アップロードしない。
 - 登録名「火星開発計画」とID `io.github.yakitama5.marsterraforming` はユーザー確認中。
@@ -177,3 +178,7 @@
 - Chromeで両ストアの認証が必要な状態を確認し、所有者アカウントでのログインを依頼中。
   Android upload鍵の生成とGitHub Secretsへの保存は完了。Apple Distribution / profile / ASC APIキー、
   Google Play API認可は未設定。詳細と作業終了時の検証は [モバイル内部配信](mobile-cd.md) に記録する。
+- 434テスト・解析・Webビルドと、CIでのAndroid APK／署名必須チェック、iOS Simulatorビルド／
+  manifest同梱が成功。CIはRuby 3.4.11・CocoaPods 1.17.0・Xcode 26.2で固定し、既存のCocoaPods方式を維持。
+  ローカルXcode 26.1.1は更新していない。初回Play登録用にはGoogle認可なしで署名AABを生成する
+  main限定の手動ワークフローを追加。ストア登録・署名済みIPA・実配信・実機インストールは未実施。
