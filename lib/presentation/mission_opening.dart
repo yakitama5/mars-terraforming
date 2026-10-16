@@ -37,16 +37,19 @@ class _MissionOpeningState extends State<MissionOpening>
       '青い星から、次の故郷へ',
       '地球の空を見上げるたび、人類は問い続けてきました。\nあの赤い星にも、いつか日常をつくれるだろうか。',
       '地球で育てた技術を、火星の暮らしへ。',
+      MinaExpression.delight,
     ),
     (
       'あなたは、計画の指揮官',
       '国際宇宙開発機関に託されたのは、小さな街と最初の研究所。\n街の収入で研究を進め、工場でつくり、ロケットで届けましょう。',
       '街を育てる → 研究する → つくる → 届ける',
+      MinaExpression.normal,
     ),
     (
       '最初の灯りを、火星に',
       '最初の目標は、人が暮らす閉鎖居住区。\nその先に、空気も水も守られた屋外の暮らしを目指す長い開発計画が待っています。',
       '最初の約1時間は、秘書ミナが一歩ずつ案内します。',
+      MinaExpression.delight,
     ),
   ];
 
@@ -230,7 +233,7 @@ class _MissionOpeningState extends State<MissionOpening>
                                 const SizedBox(height: 18),
                                 Row(
                                   children: [
-                                    const MinaAvatar(size: 40),
+                                    MinaAvatar(size: 40, expression: story.$4),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Text(

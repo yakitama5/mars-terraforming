@@ -1,6 +1,6 @@
 # 導入と居住編の生成素材
 
-2026-10-16。ユーザーの依頼に基づき内蔵 image_gen（imagegen スキル、CLI/APIは未使用）で生成し、リポジトリ内の assets/images にコピーしたオリジナル画像。新しい外部依存は追加していない。4枚ともオフライン配布物に同梱する。
+2026-10-16。ユーザーの依頼に基づき内蔵 image_gen（imagegen スキル、CLI/APIは未使用）で生成し、リポジトリ内の assets/images にコピーしたオリジナル画像。新しい外部依存は追加していない。全素材をオフライン配布物に同梱する。
 
 - OP: 地球を望むキービジュアルと、有限のズーム・手動字幕による3幕。動画ファイルや音声は生成していない。
 - 秘書: ミナ（仮名）。写実的な初稿、光沢のあるデフォルメ稿を経て、ツヤを抑えたシンプルなデフォルメ絵へ変更。丸メガネ、ウルフカット、少しつり目、口元のほくろが現行の特徴。案内・Tips・導入・EDで同じ顔を使う。透過PNG、顔を大きく取った正方形の構図。
@@ -9,6 +9,8 @@
 - ファイル: [blue_horizon.png](../assets/images/blue_horizon.png)、[mission_control.png](../assets/images/mission_control.png)、[colony_home.png](../assets/images/colony_home.png)、[underground_home.png](../assets/images/underground_home.png)。
 
 ## 使用した最終プロンプト
+
+通常絵はユーザーの「めっちゃいい感じ」という評価を受けて採用。追加した喜怒哀楽と瞬きの5差分、用途、個別プロンプトは [ミナの表情](mina-expressions.md) を参照。通常画像そのものは維持する。
 
 ### mission_control.png 現行版（マットなウルフカット）
 

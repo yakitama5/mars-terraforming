@@ -30,6 +30,11 @@ flutter:
   assets:
     - assets/images/blue_horizon.png
     - assets/images/mission_control.png
+    - assets/images/mina_joy.png
+    - assets/images/mina_anger.png
+    - assets/images/mina_sorrow.png
+    - assets/images/mina_delight.png
+    - assets/images/mina_blink.png
     - assets/images/colony_home.png
     - assets/images/underground_home.png
   fonts:

@@ -25,6 +25,15 @@ class _ColonyEndingsDialogState extends State<_ColonyEndingsDialog> {
   ColonyEnding? selected;
   int scene = 0;
 
+  MinaExpression get expression => switch ((selected?.id, scene)) {
+    ('dome_habitat', 1) || ('underground_habitat', 1) => MinaExpression.delight,
+    ('dome_habitat', 0) ||
+    ('dome_habitat', 2) ||
+    ('underground_habitat', 0) ||
+    ('underground_habitat', 2) => MinaExpression.joy,
+    _ => MinaExpression.normal,
+  };
+
   @override
   Widget build(BuildContext context) {
     final ending = selected;
@@ -58,7 +67,7 @@ class _ColonyEndingsDialogState extends State<_ColonyEndingsDialog> {
                 children: [
                   Row(
                     children: [
-                      const MinaAvatar(size: 36),
+                      MinaAvatar(size: 36, expression: expression),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(

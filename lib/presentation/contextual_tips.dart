@@ -30,6 +30,24 @@ class ContextualTipsPanel extends StatefulWidget {
 class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
   String? expandedTipId;
 
+  // Tip IDs carry a stable category before the optional plan/facility ID.
+  // Serious cautions concern the queue rule, never the player's choices.
+  MinaExpression _expressionFor(ContextualTip tip) =>
+      switch (tip.id.split(':').first) {
+        'paused' ||
+        'staff' ||
+        'budget' ||
+        'resource' ||
+        'unassigned' ||
+        'low-operating-funds' => MinaExpression.sorrow,
+        'unlimited' || 'training-limit' => MinaExpression.anger,
+        'habitat-choice' => MinaExpression.joy,
+        'partnership' ||
+        'parallel-city' ||
+        'parallel-research' => MinaExpression.delight,
+        _ => MinaExpression.normal,
+      };
+
   @override
   Widget build(BuildContext context) {
     final tip = evaluateContextualTips(
@@ -49,7 +67,11 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
         children: [
           Row(
             children: [
-              const MinaAvatar(size: 32, semanticLabel: '秘書ミナからのアドバイス'),
+              MinaAvatar(
+                size: 32,
+                expression: _expressionFor(tip),
+                semanticLabel: '秘書ミナからのアドバイス',
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(

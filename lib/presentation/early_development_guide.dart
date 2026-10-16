@@ -314,6 +314,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
     late VoidCallback open;
     var actionLabel = '研究を開く';
     var actionIcon = Icons.science_outlined;
+    var expression = MinaExpression.normal;
     String? focusedTask;
     if (!game.research.contains('life_support')) {
       focusedTask = 'life_support';
@@ -328,6 +329,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
     } else if (!game.achievements.contains('first_landing')) {
       final delivery = _plan('mars_delivery') ?? _plan('cargo_delivery');
       final preparingDelivery = game.earthKits > 0 || delivery != null;
+      if (preparingDelivery) expression = MinaExpression.delight;
       focusedTask = preparingDelivery
           ? delivery?.taskId ?? 'mars_delivery'
           : _plan('batch_habitat_kit')?.taskId ?? 'habitat_kit';
@@ -339,6 +341,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
           ? Icons.rocket_launch_outlined
           : Icons.inventory_2_outlined;
     } else if (game.habitatChoice == null) {
+      expression = MinaExpression.joy;
       title = '火星の居住方式を選ぶ';
       detail = '初輸送は完了 · ドームか地下居住を選べます';
       open = () => onOperations(2);
@@ -368,11 +371,13 @@ class EarlyDevelopmentGuide extends StatelessWidget {
         actionIcon = Icons.groups_outlined;
       }
     } else if (shortResearch.isNotEmpty) {
+      expression = MinaExpression.delight;
       title = '短い応用研究を選ぶ（任意）';
       detail =
           '${shortResearch.first.name}：${_taskStatus(shortResearch.first.id)}';
       open = () => onResearch(shortResearch.first.id);
     } else if (game.specialistCount == GameContent.initialSpecialists) {
+      expression = MinaExpression.delight;
       focusedTask = 'train_specialists';
       title = '次の研究に向け人員育成も検討';
       detail = _taskStatus('train_specialists');
@@ -380,12 +385,15 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       actionLabel = '人員育成を確認する';
       actionIcon = Icons.groups_outlined;
     } else {
+      expression = MinaExpression.delight;
       title = '研究と都市の次の投資を選ぶ';
       detail = '地区の実証を重ねて増強・新都市・長期受注へ';
       open = () => onResearch('automated_fabrication');
     }
+    if (guide.isComplete) expression = MinaExpression.joy;
     final focusedPlan = focusedTask == null ? null : _plan(focusedTask);
     if (focusedPlan != null && _isStopped(focusedPlan)) {
+      expression = MinaExpression.sorrow;
       title = '${focusedPlan.definition.name}の停止を確認・再開';
       detail = '停止中 · ${_stopReason(focusedPlan)}';
       open = () =>
@@ -399,6 +407,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       actionIcon = Icons.view_timeline_outlined;
     } else if (focusedTask != null &&
         GameContent.tasks[focusedTask]!.cost > game.money) {
+      expression = MinaExpression.sorrow;
       title = '${GameContent.tasks[focusedTask]!.name}の資金を準備';
       detail = '${_taskStatus(focusedTask)} · 受注や提携支援を確認';
       open = game.availablePartnerships.isNotEmpty
@@ -474,7 +483,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              const MinaAvatar(size: 34),
+              MinaAvatar(size: 34, expression: expression),
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
