@@ -86,3 +86,9 @@ Web試遊は既定で開発用の別セーブと時間送りを使います。
 
 検証: `mise exec -- bash tools/check.sh`。
 Google連携・全球環境・ED・周回・火星復元は今後の段階です。
+
+## ライセンス
+
+本プロジェクトは [MIT License](LICENSE) で公開しています。
+第三者のライブラリ・素材には、それぞれのライセンスが適用されます。
+同梱のNoto Sans JPは [SIL Open Font License 1.1](assets/fonts/OFL.txt) に従います。
