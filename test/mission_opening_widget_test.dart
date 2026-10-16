@@ -54,6 +54,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final cinematicSkip = find.byKey(const Key('opening-cinematic-skip'));
+    if (cinematicSkip.evaluate().isNotEmpty) {
+      await tester.tap(cinematicSkip);
+      await tester.pumpAndSettle();
+    }
   }
 
   for (final size in [const Size(568, 320), const Size(844, 390)]) {
@@ -127,6 +132,7 @@ void main() {
         home: MissionOpening(
           controller: controller,
           replay: true,
+          renderScene: false,
           onClose: () => closed++,
         ),
       );
@@ -277,7 +283,7 @@ void main() {
         size: const Size(568, 320),
         textScale: 1.5,
       );
-      final scroll = find.byKey(const Key('opening-story-scroll'));
+      final scroll = find.byKey(const Key('mission-dialogue-scroll'));
       ScrollPosition position() => tester
           .state<ScrollableState>(
             find.descendant(of: scroll, matching: find.byType(Scrollable)),

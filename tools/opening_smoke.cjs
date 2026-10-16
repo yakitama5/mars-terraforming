@@ -42,7 +42,18 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
       await page.screenshot({ path: path.join(output, `${name}.png`) });
     };
     await page.goto(url);
-    await button('物語をスキップ').waitFor({ timeout: 60000 });
+    await button('物語へ').waitFor({ timeout: 60000 });
+    const filmInitial = await snapshot();
+    for (const [chapter, label] of ['都市開発', 'ロケット打ち上げ', '月面基地', '火星探査', '火星移住'].entries()) {
+      await page.getByText(new RegExp(`^${chapter + 1}\\s+/\\s+${label}$`)).waitFor({ timeout: 30000 });
+      await page.waitForTimeout(3000);
+      await capture(`cinematic-web-${chapter + 1}`);
+    }
+    await button('物語をスキップ').waitFor({ timeout: 30000 });
+    const filmEnd = await snapshot();
+    assert.equal(filmEnd.simulatedMs, filmInitial.simulatedMs);
+    assert.equal(filmEnd.moneyUnits, filmInitial.moneyUnits);
+    await page.waitForTimeout(2500);
     await capture('blue-web-opening');
     const initial = await snapshot();
     await page.waitForTimeout(6000);
@@ -70,6 +81,13 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
     await button('全体表示').click();
     await capture('blue-web-research-overview');
     await button('ガイド').click();
+    await button('手引き').or(button('6工程の手引き')).first().click();
+    await button('6工程').waitFor();
+    await page.waitForTimeout(2500);
+    await capture('cinematic-web-guide');
+    await button('6工程').click();
+    await capture('cinematic-web-roadmap');
+    await button('閉じて開発を続ける').click();
     const names = button('都市・ロケットの名前');
     // Guidance scrolls on a short landscape display, while its footer stays put.
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -101,7 +119,7 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
     await capture('blue-web-small-offline');
     assert.equal(errors.length, 0, errors.join('\n'));
     result = { result: 'PASS', checks: [
-      'opening art and story on small landscape', 'reading does not spend starting funds',
+      'five rendered cinematic chapters before dialogue on landscape', 'reading does not spend starting funds',
       'three player names save and can be edited', 'readable research and whole-tree overview',
       'names and world persist through offline reload', '568x320 navigation after reload',
     ] };

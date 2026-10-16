@@ -27,7 +27,12 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     const ready = async page => {
       const intro = page.getByRole('button', { name: '物語をスキップ', exact: true });
       const game = page.getByRole('button', { name: '設備・進行', exact: true });
-      await intro.or(game).first().waitFor({ timeout: 60000 });
+      const movie = page.getByRole('button', { name: '物語へ', exact: true });
+      await movie.or(intro).or(game).first().waitFor({ timeout: 60000 });
+      if (await movie.count()) {
+        await movie.click();
+        await intro.waitFor();
+      }
       if (await intro.count()) {
         await intro.click();
         await page.getByRole('button', { name: '名前は後で決める', exact: true }).click();

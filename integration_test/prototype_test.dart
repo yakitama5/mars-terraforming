@@ -74,6 +74,7 @@ void main() {
       }
 
       await tester.pump(const Duration(seconds: 1));
+      await tapKey('opening-cinematic-skip');
       await capture('blue-ios-opening');
       await tapKey('opening-next');
       await tapKey('opening-next');

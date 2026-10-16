@@ -97,7 +97,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       }
       if (widget.showIntroduction &&
           (!game.openingSeen || controller.finishingOpening)) {
-        return MissionOpening(controller: controller);
+        return MissionOpening(
+          controller: controller,
+          renderScene: widget.renderScene,
+        );
       }
       return Scaffold(
         body: SafeArea(
@@ -1281,6 +1284,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                               context: context,
                               builder: (replayContext) => Dialog.fullscreen(
                                 child: MissionOpening(
+                                  renderScene: widget.renderScene,
                                   controller: controller,
                                   replay: true,
                                   onClose: () => Navigator.pop(replayContext),

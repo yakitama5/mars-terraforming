@@ -32,8 +32,11 @@ Widget _app(Widget home) => MaterialApp(
   home: home,
 );
 
-MinaExpression _expression(WidgetTester tester) =>
-    tester.widget<MinaAvatar>(find.byType(MinaAvatar)).expression;
+MinaExpression _expression(WidgetTester tester) => tester
+    .widget<MinaPortrait>(
+      find.byWidgetPredicate((widget) => widget is MinaPortrait).last,
+    )
+    .expression;
 
 void main() {
   final epoch = DateTime.utc(2026, 10, 16);
@@ -47,7 +50,13 @@ void main() {
     addTearDown(controller.dispose);
     final before = jsonEncode(controller.state.toJson());
     await tester.pumpWidget(
-      _app(MissionOpening(controller: controller, replay: true)),
+      _app(
+        MissionOpening(
+          controller: controller,
+          replay: true,
+          playCinematic: false,
+        ),
+      ),
     );
     await tester.pumpAndSettle();
     expect(_expression(tester), MinaExpression.delight);

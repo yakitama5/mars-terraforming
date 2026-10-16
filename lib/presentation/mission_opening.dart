@@ -5,50 +5,56 @@ import '../domain/game_content.dart';
 import '../domain/mission_identity.dart';
 import 'strategy_widgets.dart';
 import 'mission_adviser.dart';
+import 'mission_cinematic.dart';
+import 'mission_dialogue.dart';
 
 const missionOpeningAsset = 'assets/images/blue_horizon.png';
 
-/// Offline opening: generated key art with gentle, finite camera motion.
-/// Story pages only advance on a tap; there is no reading time limit.
+/// The rendered prologue leads into player-paced conversation and naming.
+/// Neither the film nor reading consumes a new world's starting resources.
 class MissionOpening extends StatefulWidget {
   const MissionOpening({
     super.key,
     required this.controller,
     this.replay = false,
     this.onClose,
+    this.renderScene = true,
+    this.playCinematic = true,
+    this.cinematicSceneBuilder,
   });
 
   final GameController controller;
   final bool replay;
   final VoidCallback? onClose;
+  final bool renderScene;
+  final bool playCinematic;
+  final CinematicSceneBuilder? cinematicSceneBuilder;
 
   @override
   State<MissionOpening> createState() => _MissionOpeningState();
 }
 
-class _MissionOpeningState extends State<MissionOpening>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController camera;
-  final storyScroll = ScrollController(keepScrollOffset: false);
+class _MissionOpeningState extends State<MissionOpening> {
   int chapter = 0;
   bool naming = false;
+  late bool cinematic;
   static const stories = [
     (
       '青い星から、次の故郷へ',
-      '地球の空を見上げるたび、人類は問い続けてきました。\nあの赤い星にも、いつか日常をつくれるだろうか。',
+      'はじめまして、指揮官。秘書のミナです。\n今見た未来へ、私たちの小さな街から一歩ずつ近づいていきましょう。',
       '地球で育てた技術を、火星の暮らしへ。',
       MinaExpression.delight,
     ),
     (
       'あなたは、計画の指揮官',
-      '国際宇宙開発機関に託されたのは、小さな街と最初の研究所。\n街の収入で研究を進め、工場でつくり、ロケットで届けましょう。',
+      '託されたのは、小さな街と最初の研究所。\n街の収入で研究を進め、工場でつくり、ロケットで届けましょう。',
       '街を育てる → 研究する → つくる → 届ける',
       MinaExpression.normal,
     ),
     (
       '最初の灯りを、火星に',
-      '最初の目標は、人が暮らす閉鎖居住区。\nその先に、空気も水も守られた屋外の暮らしを目指す長い開発計画が待っています。',
-      '最初の約1時間は、秘書ミナが一歩ずつ案内します。',
+      '最初の目標は、人が暮らす閉鎖居住区。\nドームの窓から空を見上げる暮らしも、地下で大地に守られる暮らしも、あなたが選ぶ未来です。',
+      '最初の約1時間は、私が一歩ずつ案内します。',
       MinaExpression.delight,
     ),
   ];
@@ -56,29 +62,13 @@ class _MissionOpeningState extends State<MissionOpening>
   @override
   void initState() {
     super.initState();
+    cinematic = widget.playCinematic;
     if (!widget.replay) widget.controller.beginOpening();
-    camera = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 7),
-    )..forward();
-  }
-
-  @override
-  void dispose() {
-    camera.dispose();
-    storyScroll.dispose();
-    super.dispose();
-  }
-
-  void _setChapter(int value) {
-    if (storyScroll.hasClients) storyScroll.jumpTo(0);
-    setState(() => chapter = value);
-    camera.forward(from: 0);
   }
 
   void _next() {
     if (chapter < stories.length - 1) {
-      _setChapter(chapter + 1);
+      setState(() => chapter++);
     } else if (widget.replay) {
       widget.onClose?.call();
     } else {
@@ -113,182 +103,139 @@ class _MissionOpeningState extends State<MissionOpening>
           ),
         );
       }
-      final story = stories[chapter];
-      final reduceMotion = MediaQuery.disableAnimationsOf(context);
       return Scaffold(
         key: const Key('mission-opening'),
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            ClipRect(
-              child: AnimatedBuilder(
-                animation: camera,
-                builder: (context, child) => Transform.scale(
-                  scale: reduceMotion ? 1 : 1 + camera.value * .055,
-                  alignment: chapter == 0
-                      ? Alignment.centerLeft
-                      : Alignment.centerRight,
-                  child: child,
-                ),
-                child: Image.asset(
-                  missionOpeningAsset,
-                  fit: BoxFit.cover,
-                  excludeFromSemantics: true,
-                  errorBuilder: (_, _, _) => const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xff193f72), Color(0xff081321)],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    Color(0xf5081424),
-                    Color(0xcc081424),
-                    Color(0x44081424),
-                  ],
-                ),
-              ),
-            ),
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'BLUE HORIZON',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Color(0xffadd8ff),
-                              fontSize: 11,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          '${chapter + 1} / ${stories.length}',
-                          style: const TextStyle(
-                            color: Color(0xffadd8ff),
-                            fontSize: 11,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        TextButton(
-                          key: const Key('opening-skip'),
-                          onPressed: controller.busy
-                              ? null
-                              : widget.replay
-                              ? widget.onClose
-                              : () => setState(() => naming = true),
-                          child: Text(widget.replay ? '閉じる' : '物語をスキップ'),
-                        ),
-                      ],
-                    ),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 630),
-                          child: SingleChildScrollView(
-                            key: const Key('opening-story-scroll'),
-                            controller: storyScroll,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  story.$1,
-                                  key: const Key('opening-title'),
-                                  style: TextStyle(
-                                    fontSize:
-                                        MediaQuery.sizeOf(context).height < 400
-                                        ? 25
-                                        : 34,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                    height: 1.3,
-                                  ),
-                                ),
-                                const SizedBox(height: 18),
-                                Text(
-                                  story.$2,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    height: 1.8,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 18),
-                                Row(
-                                  children: [
-                                    MinaAvatar(size: 40, expression: story.$4),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        story.$3,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          height: 1.6,
-                                          color: Color(0xffbbdefb),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        if (chapter > 0)
-                          TextButton(
-                            key: const Key('opening-back'),
-                            onPressed: () => _setChapter(chapter - 1),
-                            child: const Text('戻る'),
-                          ),
-                        const Spacer(),
-                        FilledButton.icon(
-                          key: const Key('opening-next'),
-                          onPressed: _next,
-                          icon: Icon(
-                            chapter == stories.length - 1
-                                ? Icons.rocket_launch_outlined
-                                : Icons.arrow_forward,
-                          ),
-                          label: Text(
-                            chapter < stories.length - 1
-                                ? '次へ'
-                                : widget.replay
-                                ? '開発に戻る'
-                                : '計画に名前をつける',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+        body: AnimatedSwitcher(
+          duration: Duration(
+            milliseconds: MediaQuery.disableAnimationsOf(context) ? 0 : 450,
+          ),
+          child: cinematic
+              ? MissionCinematic(
+                  key: const ValueKey('film'),
+                  renderScene: widget.renderScene,
+                  sceneBuilder: widget.cinematicSceneBuilder,
+                  onFinished: () => setState(() => cinematic = false),
+                )
+              : _story(context),
         ),
       );
     },
   );
+
+  Widget _story(BuildContext context) {
+    final story = stories[chapter];
+    return Stack(
+      key: const ValueKey('story'),
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          missionOpeningAsset,
+          fit: BoxFit.cover,
+          excludeFromSemantics: true,
+          errorBuilder: (_, _, _) =>
+              const ColoredBox(color: strategyBackground),
+        ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0x80081424), Color(0x10081424), Color(0x80081424)],
+            ),
+          ),
+        ),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 20, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'BLUE HORIZON',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Color(0xffadd8ff),
+                          fontSize: 11,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${chapter + 1} / ${stories.length}',
+                      style: const TextStyle(
+                        color: Color(0xffadd8ff),
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton(
+                      key: const Key('opening-skip'),
+                      onPressed: widget.controller.busy
+                          ? null
+                          : widget.replay
+                          ? widget.onClose
+                          : () => setState(() => naming = true),
+                      child: Text(widget.replay ? '閉じる' : '物語をスキップ'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: MissionDialogue(
+                      dialogueKey: chapter,
+                      title: story.$1,
+                      text: '${story.$2}\n\n${story.$3}',
+                      expression: story.$4,
+                      portraitSize: MediaQuery.sizeOf(context).width < 650
+                          ? 180
+                          : 280,
+                      actions: Row(
+                        children: [
+                          if (chapter > 0)
+                            TextButton(
+                              key: const Key('opening-back'),
+                              onPressed: () => setState(() => chapter--),
+                              child: const Text('戻る'),
+                            ),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: FilledButton.icon(
+                                key: const Key('opening-next'),
+                                onPressed: _next,
+                                icon: Icon(
+                                  chapter == stories.length - 1
+                                      ? Icons.rocket_launch_outlined
+                                      : Icons.arrow_forward,
+                                ),
+                                label: Text(
+                                  chapter < stories.length - 1
+                                      ? '次へ'
+                                      : widget.replay
+                                      ? '開発に戻る'
+                                      : '計画に名前をつける',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 Future<void> showMissionNames(
