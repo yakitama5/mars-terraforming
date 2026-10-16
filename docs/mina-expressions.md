@@ -40,6 +40,16 @@
 
 実画面: [5表情](screenshots/mina-ios-five-expressions.png)、[瞬き](screenshots/mina-ios-normal-blink.png)、[有限動作](screenshots/mina-ios-finite-gesture.png)、[動きを減らす](screenshots/mina-ios-reduced-motion.png)、[Web OP](screenshots/mina-expression-web-opening.png)、[通常説明](screenshots/mina-expression-web-normal.png)、[ガイド](screenshots/mina-expression-web-guide.png)。
 
+## 実動作の動画
+
+ユーザーの「いい感じ！」「実際に表情が切り替わったり、まばたきするところを動画で見せて」に対応し、[約24秒のMP4](videos/mina-expressions.mp4)を収録した。ゲームと同じ `MinaAvatar` を220pxに拡大した専用画面のiOS Simulator録画。通常→喜→怒→哀→楽→通常と切り替わり、約7秒と23秒に通常表情の瞬きが入る。説明文の横に「ゲーム内の表示を拡大」と明記している。
+
+- 収録用の画面は `integration_test/mina_video_capture_test.dart`。全6画像を先読みし、表情ごとの実画像描画と同じWidget状態の維持を確認してから実時間で動かす。
+- iPhone 17 Pro / iOS 26.1 Simulatorで `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/mina_video_capture_test.dart -d <device-id>` が成功。`MINA_VIDEO_READY` を合図に `simctl io <device-id> recordVideo --codec=h264 --mask=ignored` を開始し、`MINA_VIDEO_DONE` でSIGINTを送って保存を完了した。
+- 収録後は映像の向きと解像度を調整し、H.264のMP4として保存（1280×588、24.160秒、約19MB）。原本と長さが一致し、再生速度・表情のタイミングは変更せず、生成映像の補間や音声は追加していない。
+- 新規の収録用ファイルは整形チェックと静的解析を通過。動画の再生可否、長さ、全表情と2回の目閉じを抽出フレームで確認。ゲーム本体・画像素材・依存は変更していないため、上記387テスト・Web・ゲーム全体のiOS検証は今回再実行していない。
+- 今回の確認対象はSimulator上の拡大表示。実機でのサイズ感や長時間負荷は未検証。次はユーザーの動画評価を受けて、動きの強さや頻度を調整する。
+
 ## 生成プロンプト
 
 すべて `assets/images/mission_control.png` を参照する個別の編集呼び出し。内蔵生成のみ使用し、CLI/APIは使用していない。通常絵の制作履歴は [生成素材記録](generated-story-assets.md) を参照。
