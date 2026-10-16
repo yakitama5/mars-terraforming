@@ -40,7 +40,7 @@ PRでは別の `mobile-builds.yaml` でAndroid debug / iOS Simulatorのビルド
 ビルド番号・再実行の扱い、資格情報の検証は `tools/mobile_cd.py`、配信は `fastlane/Fastfile` に置く。
 
 採用版はFlutter 3.47.7、Ruby 3.4.11、Bundler 4.0.16、fastlane 2.240.1、CocoaPods 1.17.0、
-Temurin 17.0.19+10、Xcode 26.1.1。Ruby / runnerはワークフロー、Ruby依存は `Gemfile.lock`、
+Temurin 17.0.19+10、CIのXcode 26.2（ローカルの26.1.1は維持）。Ruby / runnerはワークフロー、Ruby依存は `Gemfile.lock`、
 Flutter / Dart依存はmise・pubspec・pubspec.lockで固定する。ActionsもコミットSHAを固定する。
 
 初回Console用のAndroid buildは1、CDではAndroid=`run_number * 100 + run_attempt`、
@@ -147,6 +147,9 @@ Webのセーブは今回のID変更の対象外。
   これにより既存のCocoaPods構成を維持し、lockを勝手に書き換えない。
   SDKのpodhelperはSwiftPM有効時にPackage.swiftのある2プラグインをPodから除外するため、
   既存lockと不一致になっていた。config-onlyはPod installを呼ぶため、その前処理には使わない。
+- 修正後のlocked Pod installは成功。Xcode 26.1.1でのSimulator設定取得は失敗したため、
+  runnerに対応runtimeがある26.2へCI/CDの固定値を揃え、診断付きで再確認する。
+  runnerのXcodeとSimulator runtimeは独立して搭載されるため、Xcodeの存在だけでは選ばない。
 - 未実施: 署名済みiOS archive / IPAの検証、両ストアの初回登録・実配信、
   実機でのストア経由インストール、Android/iOSの長時間GPU・性能・電池検証。
 

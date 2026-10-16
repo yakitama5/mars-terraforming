@@ -58,7 +58,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.1.1.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -77,6 +77,11 @@ jobs:
       - run: bundle exec ruby tools/mobile_cd_fastlane_test.rb
       - name: Preserve the locked CocoaPods integration
         run: flutter config --no-enable-swift-package-manager
+      - name: Confirm Xcode and installed simulator runtimes
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
       - run: flutter pub get --enforce-lockfile
       - name: Verify native dependency configuration
         run: |
@@ -85,7 +90,7 @@ jobs:
       - working-directory: ios
         run: bundle exec pod install --deployment
       - name: Simulator build without distribution credentials
-        run: bundle exec flutter build ios --simulator --debug --no-pub
+        run: bundle exec flutter build ios --simulator --debug --no-pub --verbose
       - name: Confirm packaged privacy manifest and application ID
         run: |
           plutil -lint build/ios/iphonesimulator/Runner.app/PrivacyInfo.xcprivacy
