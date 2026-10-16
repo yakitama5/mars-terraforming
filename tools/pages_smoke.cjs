@@ -84,7 +84,9 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
       // The map also has a guide. Select the focusable entry in the open dialog.
       await target.getByRole('button', { name: /^(?:手引き|6工程の手引き|導入の手順と達成状況を確認)$/ }).and(target.locator('[tabindex="0"]')).click();
       await target.getByRole('button', { name: '6工程', exact: true }).click();
-      await target.getByText(/^最初の1時間の手引き · \d\/6達成$/).waitFor();
+      // The Flutter Web dialog title is not exposed as body text here.
+      // Confirm the last roadmap step to verify the list opened.
+      await target.getByRole('button', { name: /^6 火星の居住地区を完成 / }).waitFor();
       await target.getByRole('button', { name: '閉じて開発を続ける', exact: true }).click();
       await target.getByRole('button', { name: '閉じる', exact: true }).and(target.locator('[tabindex="0"]')).click();
       await target.getByText('開発ガイド・Tips', { exact: true }).waitFor({ state: 'hidden' });
