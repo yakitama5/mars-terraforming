@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/presentation/mission_cinematic.dart';
+import 'package:mars_terraforming/presentation/mission_sound.dart';
 
 void main() {
   late VoidCallback ready;
@@ -13,6 +14,7 @@ void main() {
     bool reduceMotion = false,
     Size size = const Size(844, 390),
     double textScale = 1,
+    MissionAudioTrack? audio,
   }) async {
     progress = 0;
     finished = 0;
@@ -31,6 +33,7 @@ void main() {
           child: Scaffold(
             body: MissionCinematic(
               onFinished: () => finished++,
+              audioTrack: audio,
               sceneBuilder: (_, value, onReady, onError) {
                 progress = value;
                 ready = onReady;
@@ -164,4 +167,99 @@ void main() {
       expect(finished, 1);
     },
   );
+
+  testWidgets(
+    'sound follows pause, lifecycle, mute and skip without restarting',
+    (tester) async {
+      missionSoundEnabled.value = true;
+      final audio = _FakeAudio();
+      await mount(tester, audio: audio);
+      ready();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      expect(audio.positions.length, 1);
+      await tester.tap(find.byKey(const Key('cinematic-pause')));
+      await tester.pump();
+      expect(audio.pauses, 1);
+      await tester.pump(const Duration(seconds: 10));
+      await tester.tap(find.byKey(const Key('cinematic-pause')));
+      await tester.pump();
+      expect(audio.positions.last.inMilliseconds, closeTo(3000, 20));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump(const Duration(seconds: 20));
+      expect(audio.pauses, 2);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(audio.positions.last.inMilliseconds, closeTo(3000, 20));
+      await tester.tap(find.byKey(const Key('cinematic-sound')));
+      await tester.pump();
+      expect(missionSoundEnabled.value, isFalse);
+      expect(audio.pauses, 3);
+      await tester.tap(find.byKey(const Key('cinematic-sound')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('opening-cinematic-skip')));
+      expect(audio.pauses, 4);
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(audio.disposed, isTrue);
+    },
+  );
+
+  testWidgets(
+    'autoplay refusal can be retried by a gesture, film remains usable',
+    (tester) async {
+      missionSoundEnabled.value = true;
+      final audio = _FakeAudio()..refuse = true;
+      await mount(tester, audio: audio);
+      ready();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 5));
+      expect(find.byKey(const Key('cinematic-enable-sound')), findsOneWidget);
+      expect(progress, greaterThan(0));
+      audio.refuse = false;
+      await tester.tap(find.byKey(const Key('cinematic-enable-sound')));
+      await tester.pump();
+      expect(audio.positions.last, Duration.zero);
+      expect(find.byKey(const Key('cinematic-enable-sound')), findsNothing);
+      await tester.tap(find.byKey(const Key('opening-cinematic-skip')));
+      expect(finished, 1);
+    },
+  );
+
+  testWidgets('reduced motion never starts an invisible audio timeline', (
+    tester,
+  ) async {
+    missionSoundEnabled.value = true;
+    final audio = _FakeAudio();
+    await mount(tester, reduceMotion: true, audio: audio);
+    ready();
+    await tester.pump(const Duration(seconds: 10));
+    expect(audio.positions, isEmpty);
+    await tester.tap(find.byKey(const Key('cinematic-next-still')));
+    await tester.pump();
+    expect(audio.positions, isEmpty);
+  });
+}
+
+class _FakeAudio implements MissionAudioTrack {
+  final List<Duration> positions = [];
+  int pauses = 0;
+  bool disposed = false;
+  bool refuse = false;
+  @override
+  Future<void> prepare() async {}
+  @override
+  Future<void> play(Duration position) async {
+    positions.add(position);
+    if (refuse) throw StateError('Autoplay denied');
+  }
+
+  @override
+  Future<void> pause() async {
+    pauses++;
+  }
+
+  @override
+  Future<void> dispose() async {
+    disposed = true;
+  }
 }

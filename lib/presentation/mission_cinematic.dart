@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../rendering/opening_cinematic_scene.dart';
 import 'strategy_colors.dart';
+import 'mission_sound.dart';
 
 typedef CinematicSceneBuilder = Widget Function(
   BuildContext context,
@@ -19,11 +21,13 @@ class MissionCinematic extends StatefulWidget {
     required this.onFinished,
     this.renderScene = true,
     this.sceneBuilder,
+    this.audioTrack,
   });
 
   final VoidCallback onFinished;
   final bool renderScene;
   final CinematicSceneBuilder? sceneBuilder;
+  final MissionAudioTrack? audioTrack;
   static const duration = Duration(seconds: 40);
   static const chapters = [
     ('都市開発', '小さな街の灯りが、未来をつくる。', '学び、つくり、挑み続ける。'),
@@ -47,6 +51,96 @@ class _MissionCinematicState extends State<MissionCinematic>
   bool _enabled = true;
   bool _reduceMotion = false;
   bool _finished = false;
+  MissionAudioTrack? _audio;
+  bool _audioReady = false;
+  bool _audioBlocked = false;
+  bool _audioPlaying = false;
+  int _audioRevision = 0;
+
+  bool get _hasAudio =>
+      widget.audioTrack != null ||
+      (widget.renderScene && widget.sceneBuilder == null);
+
+  Future<void> _prepareAudio() async {
+    final audio =
+        widget.audioTrack ??
+        AssetMissionAudioTrack((await MissionAudioCatalog.load()).openingAsset);
+    if (!mounted || _finished) {
+      await audio.dispose();
+      return;
+    }
+    _audio = audio;
+    try {
+      await audio.prepare();
+      if (!mounted || _finished) return;
+      setState(() => _audioReady = true);
+      _syncAudio();
+    } catch (_) {
+      if (mounted && !_finished) setState(() => _audioBlocked = true);
+    }
+  }
+
+  void _syncAudio() {
+    final audio = _audio;
+    if (audio == null) return;
+    final shouldPlay =
+        _audioReady &&
+        _film.isAnimating &&
+        missionSoundEnabled.value &&
+        !_audioBlocked &&
+        !_finished;
+    if (shouldPlay == _audioPlaying) return;
+    _audioPlaying = shouldPlay;
+    final revision = ++_audioRevision;
+    final operation = shouldPlay
+        ? audio.play(
+            Duration(
+              microseconds:
+                  (MissionCinematic.duration.inMicroseconds * _film.value)
+                      .round(),
+            ),
+          )
+        : audio.pause();
+    unawaited(
+      operation.catchError((Object _) {
+        if (!mounted || _finished || revision != _audioRevision) return;
+        setState(() {
+          _audioBlocked = true;
+          _audioPlaying = false;
+        });
+      }),
+    );
+  }
+
+  void _soundPreferenceChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _syncAudio();
+  }
+
+  Future<void> _retryAudio() async {
+    await _audio?.dispose();
+    _audio = null;
+    if (mounted && !_finished) await _prepareAudio();
+  }
+
+  void _toggleSound() {
+    if (_audioBlocked) {
+      // Browser autoplay needs a gesture. Replay from the first shot so the
+      // player hears the complete score instead of joining half way through.
+      setState(() => _audioBlocked = false);
+      _film.stop();
+      _film.value = 0;
+      _paused = false;
+      missionSoundEnabled.value = true;
+      if (!_audioReady) {
+        unawaited(_retryAudio());
+      }
+      _syncPlayback();
+    } else {
+      missionSoundEnabled.value = !missionSoundEnabled.value;
+    }
+  }
 
   @override
   void initState() {
@@ -59,6 +153,8 @@ class _MissionCinematicState extends State<MissionCinematic>
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     _foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
     WidgetsBinding.instance.addObserver(this);
+    missionSoundEnabled.addListener(_soundPreferenceChanged);
+    if (_hasAudio) unawaited(_prepareAudio());
     if (!widget.renderScene && widget.sceneBuilder == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _onReady());
     }
@@ -92,6 +188,7 @@ class _MissionCinematicState extends State<MissionCinematic>
     } else {
       _film.stop();
     }
+    _syncAudio();
   }
 
   void _onReady() {
@@ -110,6 +207,7 @@ class _MissionCinematicState extends State<MissionCinematic>
     if (_finished) return;
     _finished = true;
     _film.stop();
+    _syncAudio();
     widget.onFinished();
   }
 
@@ -125,6 +223,9 @@ class _MissionCinematicState extends State<MissionCinematic>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    missionSoundEnabled.removeListener(_soundPreferenceChanged);
+    _audioRevision++;
+    unawaited(_audio?.dispose());
     _film.dispose();
     super.dispose();
   }
@@ -203,6 +304,21 @@ class _MissionCinematicState extends State<MissionCinematic>
                             ),
                           ),
                         ),
+                        if (_hasAudio && !_reduceMotion)
+                          IconButton(
+                            key: const Key('cinematic-sound'),
+                            tooltip: _audioBlocked
+                                ? '音楽つきで最初から見る'
+                                : missionSoundEnabled.value
+                                ? '音を消す'
+                                : '音を出す',
+                            onPressed: _toggleSound,
+                            icon: Icon(
+                              missionSoundEnabled.value && !_audioBlocked
+                                  ? Icons.volume_up_rounded
+                                  : Icons.volume_off_rounded,
+                            ),
+                          ),
                         if (_ready && !_failed && !_reduceMotion)
                           IconButton(
                             key: const Key('cinematic-pause'),
@@ -226,6 +342,16 @@ class _MissionCinematicState extends State<MissionCinematic>
                       ],
                     ),
                     const Spacer(),
+                    if (_audioBlocked && !_reduceMotion)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: OutlinedButton.icon(
+                          key: const Key('cinematic-enable-sound'),
+                          onPressed: _toggleSound,
+                          icon: const Icon(Icons.volume_up_rounded),
+                          label: const Text('音楽つきで最初から見る'),
+                        ),
+                      ),
                     if (!_ready || _failed)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 20),

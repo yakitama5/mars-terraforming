@@ -1,0 +1,6 @@
+{
+  "openingAsset": "audio/opening_music.wav",
+  "voices": {},
+  "voiceProvider": null,
+  "voiceStatus": "pending_generation"
+}
