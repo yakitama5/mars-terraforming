@@ -1,0 +1,76 @@
+name: Android first-upload bundle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-first-upload-bundle
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: android-internal
+    env:
+      MOBILE_APP_IDENTIFIER: ${{ vars.MOBILE_APP_IDENTIFIER }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17.0.19+10'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: bash tools/check.sh
+      - name: Prepare initial-upload signing material
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: python3 tools/mobile_cd.py materialize android --build-only
+      - name: Build signed initial-upload bundle (versionCode 1)
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: flutter build appbundle --release --no-pub --build-number=1 --dart-define=DEV_TOOLS=false
+      - name: Verify bundle signature
+        run: |
+          jarsigner -verify build/app/outputs/bundle/release/app-release.aab > "$RUNNER_TEMP/mars-bootstrap-signature.log"
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          result = (Path(os.environ['RUNNER_TEMP']) / 'mars-bootstrap-signature.log').read_text()
+          if 'jar verified.' not in result:
+              raise SystemExit('The initial-upload bundle signature could not be verified.')
+          print('Initial-upload AAB signature verified.')
+          PYTHON
+      - name: Save signed bundle for the first Play Console upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-first-upload-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 3
+      - name: Explain first-upload result
+        run: |
+          {
+            echo 'versionCode 1 の初回アップロード専用 AAB を生成しました。'
+            echo 'この実行の artifact をダウンロードして、Play Console の内部テストへ初回登録してください。'
+            echo 'Google Play API によるアップロードやリリースは実行していません。'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove signing material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/mars-mobile-signing"
