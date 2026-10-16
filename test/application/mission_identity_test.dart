@@ -198,6 +198,8 @@ void main() {
       final store = _MissionSave();
       final controller = GameController(store, now: () => now);
       await controller.initialize(startTimer: false);
+      // Exercise the OP clock independently of the required hands-on tutorial.
+      controller.state.firstRunTutorial = FirstRunTutorialStep.completed;
       controller.beginOpening();
       await controller.save();
       final money = controller.state.moneyUnits;
@@ -239,6 +241,7 @@ void main() {
     final controller = GameController(_MissionSave(), now: () => now);
     await controller.initialize(startTimer: false);
     addTearDown(controller.dispose);
+    controller.state.firstRunTutorial = FirstRunTutorialStep.completed;
     controller.beginOpening();
     now = epoch.add(const Duration(hours: 2));
     await controller.updateMissionIdentity(

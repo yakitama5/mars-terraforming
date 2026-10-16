@@ -49,7 +49,7 @@ Widget _host({
         key: const Key('test-mina'),
         size: 40,
         expression: expression,
-        semanticLabel: '秘書ミナからのアドバイス',
+        semanticLabel: '秘書ルナからのアドバイス',
       ),
     ),
   ),
@@ -117,7 +117,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
           expect(_displacement(tester), greaterThan(0));
           expect(tester.getRect(find.byKey(const Key('test-mina'))), frame);
-          expect(find.bySemanticsLabel('秘書ミナからのアドバイス'), findsOneWidget);
+          expect(find.bySemanticsLabel('秘書ルナからのアドバイス'), findsOneWidget);
           await _settle(tester);
           expect(_displacement(tester), closeTo(0, .001));
           expect(tester.binding.hasScheduledFrame, isFalse);
@@ -302,7 +302,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.support_agent), findsOneWidget);
-      expect(find.bySemanticsLabel('秘書ミナからのアドバイス'), findsOneWidget);
+      expect(find.bySemanticsLabel('秘書ルナからのアドバイス'), findsOneWidget);
       expect(tester.takeException(), isNull);
     } finally {
       semantics.dispose();

@@ -8,6 +8,8 @@ import '../domain/contextual_tips.dart';
 import '../domain/game_state.dart';
 import '../rendering/base_scene.dart';
 import 'city_development.dart';
+import 'first_run_tutorial.dart';
+import 'mission_sound.dart';
 import 'command_hud.dart';
 import 'completion_center.dart';
 import 'contextual_tips.dart';
@@ -54,6 +56,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   };
   GameController get controller => widget.controller;
   GameState get game => controller.state;
+  bool get _firstRunActive =>
+      widget.showIntroduction &&
+      game.openingSeen &&
+      game.firstRunTutorial != FirstRunTutorialStep.completed;
   bool get _compactLandscape => MediaQuery.sizeOf(context).height < 450;
 
   @override
@@ -97,63 +103,87 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       }
       if (widget.showIntroduction &&
           (!game.openingSeen || controller.finishingOpening)) {
-        return MissionOpening(controller: controller);
+        return MissionOpening(
+          controller: controller,
+          renderScene: widget.renderScene,
+        );
       }
       return Scaffold(
         body: SafeArea(
           child: Column(
             children: [
-              _header(),
-              Expanded(
-                child: switch (tab) {
-                  0 => StrategySplit(
-                    overview: _world(),
-                    detail: _planetDetails(),
-                  ),
-                  1 => CityDevelopment(
-                    controller: controller,
-                    renderScene:
-                        widget.renderScene && widget.sceneBuilder == null,
-                    onOpenGlobe: () => setState(() => tab = 0),
-                    onOpenOperations: () => setState(() {
-                      facilityTab = 0;
-                      tab = 3;
-                    }),
-                    cityId: cityId,
-                    onCityChanged: _selectCity,
-                    savedInvestment: savedInvestment,
-                    onSaveInvestment: (candidate) => setState(() {
-                      savedInvestment = candidate;
-                    }),
-                    onOpenResearch: (id) => setState(() {
-                      researchId = id;
-                      tab = 2;
-                    }),
-                  ),
-                  2 => StrategySplit(
-                    overview: ResearchTree(
-                      game: game,
-                      selectedId: researchId,
-                      onSelected: _selectResearch,
-                      requirementReasons:
-                          controller.engine!.researchRequirementReasons,
-                    ),
-                    detail: _researchDetails(),
-                  ),
-                  3 => _facilities(),
-                  _ => AgencyManagement(
-                    controller: controller,
-                    section: agencySection,
-                    onSectionChanged: (section) =>
-                        setState(() => agencySection = section),
-                    onOpenOperations: () => setState(() {
-                      facilityTab = 0;
-                      tab = 3;
-                    }),
-                  ),
-                },
+              ExcludeFocus(
+                excluding: _firstRunActive,
+                child: AbsorbPointer(
+                  absorbing: _firstRunActive,
+                  child: _header(),
+                ),
               ),
-              _navigation(),
+              Expanded(
+                child: _firstRunActive
+                    ? FirstRunTutorial(
+                        controller: controller,
+                        renderScene:
+                            widget.renderScene && widget.sceneBuilder == null,
+                        onComplete: () {
+                          if (!mounted) return;
+                          setState(() {
+                            cityId = 'earth_delta';
+                            earth = true;
+                            tab = 1;
+                          });
+                          _showGuidance();
+                        },
+                      )
+                    : switch (tab) {
+                        0 => StrategySplit(
+                          overview: _world(),
+                          detail: _planetDetails(),
+                        ),
+                        1 => CityDevelopment(
+                          controller: controller,
+                          renderScene:
+                              widget.renderScene && widget.sceneBuilder == null,
+                          onOpenGlobe: () => setState(() => tab = 0),
+                          onOpenOperations: () => setState(() {
+                            facilityTab = 0;
+                            tab = 3;
+                          }),
+                          cityId: cityId,
+                          onCityChanged: _selectCity,
+                          savedInvestment: savedInvestment,
+                          onSaveInvestment: (candidate) => setState(() {
+                            savedInvestment = candidate;
+                          }),
+                          onOpenResearch: (id) => setState(() {
+                            researchId = id;
+                            tab = 2;
+                          }),
+                        ),
+                        2 => StrategySplit(
+                          overview: ResearchTree(
+                            game: game,
+                            selectedId: researchId,
+                            onSelected: _selectResearch,
+                            requirementReasons:
+                                controller.engine!.researchRequirementReasons,
+                          ),
+                          detail: _researchDetails(),
+                        ),
+                        3 => _facilities(),
+                        _ => AgencyManagement(
+                          controller: controller,
+                          section: agencySection,
+                          onSectionChanged: (section) =>
+                              setState(() => agencySection = section),
+                          onOpenOperations: () => setState(() {
+                            facilityTab = 0;
+                            tab = 3;
+                          }),
+                        ),
+                      },
+              ),
+              if (!_firstRunActive) _navigation(),
               _footer(),
             ],
           ),
@@ -1281,6 +1311,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                               context: context,
                               builder: (replayContext) => Dialog.fullscreen(
                                 child: MissionOpening(
+                                  renderScene: widget.renderScene,
                                   controller: controller,
                                   replay: true,
                                   onClose: () => Navigator.pop(replayContext),
@@ -1419,26 +1450,47 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-          TextButton.icon(
-            key: const Key('open-guidance'),
-            onPressed: _showGuidance,
-            icon: const Icon(Icons.help_outline, size: 17),
-            label: const Text('ガイド', style: TextStyle(fontSize: 11)),
-          ),
-          TextButton.icon(
-            key: const Key('open-completions'),
-            onPressed: _showCompletions,
-            icon: Icon(
-              unread.isEmpty
-                  ? Icons.notifications_none
-                  : Icons.notifications_active_outlined,
-              size: 17,
+          if (_firstRunActive)
+            ValueListenableBuilder<bool>(
+              valueListenable: missionSoundEnabled,
+              builder: (context, enabled, _) => IconButton(
+                key: const Key('tutorial-sound-toggle'),
+                tooltip: enabled ? '音声をオフ' : '音声をオン',
+                onPressed: () => missionSoundEnabled.value = !enabled,
+                icon: Icon(
+                  enabled ? Icons.volume_up : Icons.volume_off,
+                  size: 20,
+                ),
+              ),
             ),
-            label: Text(
-              '通知${unread.isEmpty ? '' : ' ${unread.length}'}',
-              style: const TextStyle(fontSize: 11),
+          if (controller.error != null)
+            TextButton(
+              key: const Key('retry-game-save'),
+              onPressed: controller.busy ? null : controller.save,
+              child: const Text('再保存'),
             ),
-          ),
+          if (!_firstRunActive)
+            TextButton.icon(
+              key: const Key('open-guidance'),
+              onPressed: _showGuidance,
+              icon: const Icon(Icons.help_outline, size: 17),
+              label: const Text('ガイド', style: TextStyle(fontSize: 11)),
+            ),
+          if (!_firstRunActive)
+            TextButton.icon(
+              key: const Key('open-completions'),
+              onPressed: _showCompletions,
+              icon: Icon(
+                unread.isEmpty
+                    ? Icons.notifications_none
+                    : Icons.notifications_active_outlined,
+                size: 17,
+              ),
+              label: Text(
+                '通知${unread.isEmpty ? '' : ' ${unread.length}'}',
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
         ],
       ),
     );

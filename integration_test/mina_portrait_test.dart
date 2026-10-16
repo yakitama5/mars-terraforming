@@ -216,7 +216,7 @@ class _MinaGallery extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    '秘書ミナ · 表情と動作の確認',
+                    '秘書ルナ · 表情と動作の確認',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 24),
@@ -235,7 +235,7 @@ class _MinaGallery extends StatelessWidget {
                                   ),
                                   expression: expression,
                                   size: _portraitSize,
-                                  semanticLabel: 'ミナの${_label(expression)}の表情',
+                                  semanticLabel: 'ルナの${_label(expression)}の表情',
                                 ),
                               ),
                               const SizedBox(height: 12),

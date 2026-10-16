@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'application/game_controller.dart';
 import 'infrastructure/save_factory.dart';
 import 'presentation/game_screen.dart';
+import 'presentation/landscape_play_hint.dart';
 import 'presentation/strategy_colors.dart';
 
 Future<void> main() async {
@@ -63,6 +64,7 @@ class MarsApp extends StatelessWidget {
     locale: const Locale('ja'),
     supportedLocales: const [Locale('ja')],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
+    builder: (context, child) => LandscapePlayHint(child: child!),
     theme: ThemeData(
       fontFamily: kIsWeb ? 'NotoSansJP' : null,
       brightness: Brightness.dark,

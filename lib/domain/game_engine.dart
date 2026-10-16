@@ -117,20 +117,75 @@ class GameEngine {
       return '予約は最大${GameContent.maxActivePlans}件です';
     }
     final definition = GameContent.districts[districtId]!;
-    state.plans.add(
-      PlannedTask(
-        id: 'plan-${state.nextPlanId++}',
-        taskId: definition.taskId(upgrade: upgrade),
-        cityId: cityId,
-        plotIndex: plotIndex,
-        targetLevel: preview.targetLevel,
-      ),
+    final plan = PlannedTask(
+      id: 'plan-${state.nextPlanId++}',
+      taskId: definition.taskId(upgrade: upgrade),
+      cityId: cityId,
+      plotIndex: plotIndex,
+      targetLevel: preview.targetLevel,
     );
+    state.plans.add(plan);
+    if (state.firstRunTutorial == FirstRunTutorialStep.placeHousing &&
+        !upgrade &&
+        cityId == 'earth_delta' &&
+        districtId == 'housing') {
+      state.firstRunTutorialPlanId = plan.id;
+      state.firstRunTutorial = FirstRunTutorialStep.finishConstruction;
+    }
     _record(
       '${state.cityName(cityId)}の区画${plotIndex + 1}に${definition.name} Lv.${preview.targetLevel}を予約',
     );
     _stabilize();
     return null;
+  }
+
+  /// Luna finishes only the paid first housing iteration. Normal completion
+  /// applies its population, district and notice exactly once; no other clock,
+  /// reservation, income interval or research is accelerated.
+  String? completeTutorialConstruction() {
+    if (state.firstRunTutorial != FirstRunTutorialStep.finishConstruction) {
+      return '最初の住宅を配置してから、ルナの建設補助を使ってください';
+    }
+    final plan = state.plans
+        .where((plan) => plan.id == state.firstRunTutorialPlanId)
+        .firstOrNull;
+    if (plan == null ||
+        plan.definition.districtId != 'housing' ||
+        plan.definition.isDistrictUpgrade ||
+        plan.cityId != 'earth_delta' ||
+        plan.targetLevel != 1 ||
+        plan.status != 'running' ||
+        plan.completedRuns != 0 ||
+        plan.remainingRepeats != 1) {
+      return '住宅の建設が始まってから、ルナの建設補助を使えます';
+    }
+    plan.remainingMs = 0;
+    _complete(plan);
+    _record('ルナの建設補助で、最初の住宅が完成しました');
+    _stabilize();
+    return null;
+  }
+
+  /// Acknowledgements never grant money, research, or new achievements.
+  String? continueFirstRunTutorial() {
+    switch (state.firstRunTutorial) {
+      case FirstRunTutorialStep.income:
+        state.firstRunTutorial =
+            state.research.contains('life_support') ||
+                state.plans.any(
+                  (plan) =>
+                      plan.taskId == 'life_support' &&
+                      (plan.status == 'running' || plan.status == 'completed'),
+                )
+            ? FirstRunTutorialStep.researchStarted
+            : FirstRunTutorialStep.startResearch;
+        return null;
+      case FirstRunTutorialStep.researchStarted:
+        state.firstRunTutorial = FirstRunTutorialStep.completed;
+        return null;
+      default:
+        return '案内中の操作を終えてから進んでください';
+    }
   }
 
   /// For a running order, this ends repetition after its paid current run.
@@ -146,6 +201,11 @@ class GameEngine {
     } else {
       plan.status = 'cancelled';
       plan.stopReason = '予約を取り消しました';
+      if (state.firstRunTutorial == FirstRunTutorialStep.finishConstruction &&
+          plan.id == state.firstRunTutorialPlanId) {
+        state.firstRunTutorial = FirstRunTutorialStep.placeHousing;
+        state.firstRunTutorialPlanId = null;
+      }
       _record('${plan.definition.name}の予約を取り消し');
     }
     _stabilize();
@@ -424,6 +484,10 @@ class GameEngine {
     plan.iterationDurationMs = state.plannedDurationMs(plan);
     plan.remainingMs = plan.iterationDurationMs;
     plan.stopReason = '';
+    if (state.firstRunTutorial == FirstRunTutorialStep.startResearch &&
+        task.id == 'life_support') {
+      state.firstRunTutorial = FirstRunTutorialStep.researchStarted;
+    }
     _record('${task.name}を開始（-$costドル）');
   }
 
@@ -481,6 +545,10 @@ class GameEngine {
         );
     }
     state.recordCompletion(plan);
+    if (state.firstRunTutorial == FirstRunTutorialStep.finishConstruction &&
+        plan.id == state.firstRunTutorialPlanId) {
+      state.firstRunTutorial = FirstRunTutorialStep.income;
+    }
     _record('${task.name}が完了${task.reward == 0 ? '' : '（+${task.reward}ドル）'}');
   }
 

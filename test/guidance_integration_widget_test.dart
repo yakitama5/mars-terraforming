@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
+import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/main.dart';
 
 import 'widget_test.dart' show MemorySave;
@@ -19,6 +20,7 @@ void main() {
       final store = MemorySave();
       final original = GameController(store, now: () => now);
       await original.initialize(startTimer: false);
+      original.state.firstRunTutorial = FirstRunTutorialStep.completed;
       await original.command((engine) => engine.enqueue('life_support'));
       original.dispose();
       now = epoch.add(const Duration(minutes: 5));

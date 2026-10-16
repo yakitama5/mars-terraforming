@@ -8,6 +8,8 @@ export 'completion_notice.dart';
 import 'district_state.dart';
 export 'district_state.dart';
 export 'agency_state.dart';
+import 'first_run_tutorial.dart';
+export 'first_run_tutorial.dart';
 
 class PlannedTask {
   PlannedTask({
@@ -196,6 +198,14 @@ class GameState {
   MissionIdentity identity = const MissionIdentity();
   bool openingSeen = false;
   bool openingStarted = false;
+  FirstRunTutorialStep firstRunTutorial = FirstRunTutorialStep.placeHousing;
+  String? firstRunTutorialPlanId;
+
+  /// Reading the initial story and compulsory walkthrough never spends the
+  /// starter budget. Replays and worlds from before the walkthrough run normally.
+  bool get introductionPausesClock =>
+      (openingStarted && !openingSeen) ||
+      firstRunTutorial != FirstRunTutorialStep.completed;
   String cityName(String cityId) => identity.cityName(cityId);
   String get rocketName => identity.rocketName;
   final Set<String> dismissedTipIds = {};
@@ -826,6 +836,8 @@ class GameState {
     'missionIdentity': identity.toJson(),
     'openingSeen': openingSeen,
     'openingStarted': openingStarted,
+    'firstRunTutorial': firstRunTutorial.name,
+    'firstRunTutorialPlanId': firstRunTutorialPlanId,
     'lastWallClockMs': lastWallClockMs,
     'simulatedMs': simulatedMs,
     'moneyUnits': moneyUnits,
@@ -881,6 +893,10 @@ class GameState {
     // Existing worlds continue directly; only genuinely new worlds play the OP.
     state.openingSeen = json['openingSeen'] as bool? ?? true;
     state.openingStarted = json['openingStarted'] as bool? ?? false;
+    state.firstRunTutorial = FirstRunTutorialStep.fromSaved(
+      json['firstRunTutorial'],
+    );
+    state.firstRunTutorialPlanId = json['firstRunTutorialPlanId'] as String?;
     if (json['missionIdentity'] case final Map identity) {
       state.identity = MissionIdentity.fromJson(
         Map<String, dynamic>.from(identity),
@@ -1003,6 +1019,21 @@ class GameState {
                 current.level + 1 != plan.targetLevel
           : current != null) {
         throw const FormatException('建設予約と地区状態が一致しません');
+      }
+    }
+    if (state.firstRunTutorial == FirstRunTutorialStep.finishConstruction) {
+      final tutorialPlan = state.plans
+          .where((plan) => plan.id == state.firstRunTutorialPlanId)
+          .firstOrNull;
+      if (tutorialPlan == null ||
+          tutorialPlan.cityId != 'earth_delta' ||
+          tutorialPlan.definition.districtId != 'housing' ||
+          tutorialPlan.definition.isDistrictUpgrade ||
+          tutorialPlan.targetLevel != 1 ||
+          !['queued', 'running'].contains(tutorialPlan.status) ||
+          tutorialPlan.completedRuns != 0 ||
+          tutorialPlan.remainingRepeats != 1) {
+        throw const FormatException('初回チュートリアルの建設予約が不正です');
       }
     }
     if (state.simulatedMs < 0 ||

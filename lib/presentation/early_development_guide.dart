@@ -6,6 +6,7 @@ import '../domain/game_state.dart';
 import '../domain/onboarding_guide.dart';
 import 'strategy_widgets.dart';
 import 'mission_adviser.dart';
+import 'mission_dialogue.dart';
 
 class EarlyDevelopmentGuide extends StatelessWidget {
   const EarlyDevelopmentGuide({
@@ -80,11 +81,19 @@ class EarlyDevelopmentGuide extends StatelessWidget {
     },
   };
 
+  MinaExpression _stepExpression(OnboardingStep step) => switch (step.status) {
+    OnboardingStatus.completed => MinaExpression.joy,
+    OnboardingStatus.stopped => MinaExpression.sorrow,
+    OnboardingStatus.available
+        when step.id == 'first_landing' || step.id == 'first_habitat' =>
+      MinaExpression.delight,
+    _ => MinaExpression.normal,
+  };
+
   Widget _roadmapStep(
     OnboardingStep step,
     int index, {
-    required bool expanded,
-    required VoidCallback onToggle,
+    required bool selected,
     required VoidCallback onOpen,
   }) {
     final status = switch (step.status) {
@@ -102,116 +111,65 @@ class EarlyDevelopmentGuide extends StatelessWidget {
         : strategyMint;
     return Material(
       key: Key('onboarding-step-${step.id}'),
-      color: expanded ? strategyPanel : Colors.transparent,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            key: Key('onboarding-toggle-${step.id}'),
-            onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 26,
-                    child: step.isCompleted
-                        ? Icon(
-                            Icons.check_circle_outline,
-                            color: color,
-                            size: 20,
-                          )
-                        : Text(
-                            '${index + 1}',
-                            style: TextStyle(
-                              color: color,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          step.title,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
+      color: selected ? strategySelected : Colors.transparent,
+      child: InkWell(
+        key: Key('onboarding-toggle-${step.id}'),
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 26,
+                child: step.isCompleted
+                    ? Icon(Icons.check_circle_outline, color: color, size: 20)
+                    : Text(
+                        '${index + 1}',
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w700,
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '$status · 目安 ${step.timeHint}',
-                          style: TextStyle(fontSize: 11, color: color),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
-                    color: strategyMuted,
-                  ),
-                ],
+                      ),
               ),
-            ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      step.title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '$status · 目安 ${step.timeHint}',
+                      style: TextStyle(fontSize: 11, color: color),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.chevron_right, size: 20, color: strategyMuted),
+            ],
           ),
-          if (expanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(42, 0, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'ミナ「${step.story}」',
-                    key: Key('onboarding-story-${step.id}'),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      height: 1.5,
-                      color: strategyMint,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    step.lesson,
-                    style: const TextStyle(fontSize: 12, height: 1.5),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _stepStatus(step),
-                    style: TextStyle(fontSize: 12, color: color),
-                  ),
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      key: Key('onboarding-open-${step.id}'),
-                      onPressed: onOpen,
-                      icon: const Icon(Icons.arrow_forward, size: 16),
-                      label: Text(_stepAction(step)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          const Divider(height: 1, color: strategyLine),
-        ],
+        ),
       ),
     );
   }
 
   void _showRoadmap(BuildContext context) {
-    String? expandedId = OnboardingGuide.fromState(game).steps
-        .where((step) => !step.isCompleted)
-        .firstOrNull
-        ?.id;
+    final initialGuide = OnboardingGuide.fromState(game);
+    var selectedId =
+        initialGuide.steps.where((step) => !step.isCompleted).firstOrNull?.id ??
+        initialGuide.steps.last.id;
+    var viewingList = false;
     showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, updateExpansion) => ListenableBuilder(
+        builder: (context, updateSelection) => ListenableBuilder(
           listenable: controller,
           builder: (context, _) {
             if (controller.engine == null) {
@@ -230,64 +188,158 @@ class EarlyDevelopmentGuide extends StatelessWidget {
               );
             }
             final guide = OnboardingGuide.fromState(game);
-            return AlertDialog(
+            final selected = guide.steps.firstWhere(
+              (step) => step.id == selectedId,
+            );
+            final text =
+                '${selected.story}\n\n${selected.lesson}'
+                '${guide.isComplete && selected.id == guide.steps.last.id ? '\n\nここからは、あなたの計画です。収入が足りなければ街と受注、開発を速めるなら研究、火星を育てるなら製造と輸送を見直しましょう。' : ''}';
+            return Dialog(
+              key: const Key('onboarding-dialogue-dialog'),
+              backgroundColor: Colors.transparent,
               insetPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
+                horizontal: 12,
                 vertical: 12,
               ),
-              title: Text('最初の1時間の手引き · ${guide.completedCount}/6達成'),
-              content: SizedBox(
-                width: 560,
-                child: SingleChildScrollView(
-                  key: const Key('onboarding-roadmap-scroll'),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 1000,
+                  maxHeight: 600,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: MediaQuery.sizeOf(context).height,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text(
-                        '時間は目安です。順番や期限の制限はなく、自由に進められます。1時間を過ぎても手引きを使えます。',
-                        style: TextStyle(color: strategyMuted, fontSize: 12),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '開始から ${gameDuration(guide.elapsedMs)}（不在中を含む）',
-                        style: const TextStyle(
-                          color: strategyMuted,
-                          fontSize: 11,
+                      Material(
+                        color: strategyPanel.withValues(alpha: .94),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Row(
+                          children: [
+                            if (!viewingList)
+                              TextButton.icon(
+                                key: const Key('onboarding-list'),
+                                onPressed: () =>
+                                    updateSelection(() => viewingList = true),
+                                icon: const Icon(Icons.list_alt, size: 18),
+                                label: const Text('6工程'),
+                              )
+                            else
+                              const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                '最初の1時間の手引き · ${guide.completedCount}/6達成',
+                                maxLines: 2,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              key: const Key('onboarding-close'),
+                              tooltip: '閉じて開発を続ける',
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      for (final (index, step) in guide.steps.indexed)
-                        _roadmapStep(
-                          step,
-                          index,
-                          expanded: expandedId == step.id,
-                          onToggle: () => updateExpansion(() {
-                            expandedId = expandedId == step.id ? null : step.id;
-                          }),
-                          onOpen: () {
-                            Navigator.of(dialogContext).pop();
-                            _openStep(step);
-                          },
-                        ),
-                      if (guide.isComplete)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 12),
-                          child: Text(
-                            'ミナ「ここからは、あなたの計画です。収入が足りなければ街と受注、開発を速めるなら研究、火星を育てるなら製造と輸送を見直しましょう。」',
-                          ),
-                        ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: viewingList
+                            ? Material(
+                                color: strategyPanel.withValues(alpha: .94),
+                                borderRadius: BorderRadius.circular(12),
+                                child: SingleChildScrollView(
+                                  key: const Key('onboarding-roadmap-scroll'),
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        '時間は目安です。順番や期限の制限はなく、自由に進められます。1時間を過ぎても手引きを使えます。',
+                                        style: TextStyle(
+                                          color: strategyMuted,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '開始から ${gameDuration(guide.elapsedMs)}（不在中を含む）',
+                                        style: const TextStyle(
+                                          color: strategyMuted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      for (final (index, step)
+                                          in guide.steps.indexed)
+                                        _roadmapStep(
+                                          step,
+                                          index,
+                                          selected: selectedId == step.id,
+                                          onOpen: () => updateSelection(() {
+                                            selectedId = step.id;
+                                            viewingList = false;
+                                          }),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : MissionDialogue(
+                                key: Key('onboarding-story-${selected.id}'),
+                                title: selected.title,
+                                text: text,
+                                dialogueKey:
+                                    'onboarding-${selected.id}-${selected.status.name}',
+                                expression: _stepExpression(selected),
+                                // Live remaining time does not restart the dialogue.
+                                actions: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _stepStatus(selected),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color:
+                                            selected.status ==
+                                                OnboardingStatus.stopped
+                                            ? strategyCopper
+                                            : strategyMint,
+                                      ),
+                                    ),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton.icon(
+                                        key: Key(
+                                          'onboarding-open-${selected.id}',
+                                        ),
+                                        onPressed: () {
+                                          Navigator.of(dialogContext).pop();
+                                          _openStep(selected);
+                                        },
+                                        icon: const Icon(
+                                          Icons.arrow_forward,
+                                          size: 16,
+                                        ),
+                                        label: Text(_stepAction(selected)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                      ),
                     ],
                   ),
                 ),
               ),
-              actions: [
-                TextButton(
-                  key: const Key('onboarding-close'),
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('閉じて開発を続ける'),
-                ),
-              ],
             );
           },
         ),
