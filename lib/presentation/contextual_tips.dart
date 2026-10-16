@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../domain/contextual_tips.dart';
 import '../domain/game_state.dart';
 import 'mission_adviser.dart';
+import 'mission_dialogue.dart';
 import 'strategy_widgets.dart';
 
 /// Shows one suggestion at a time. The host owns dismissal persistence and
@@ -28,8 +29,6 @@ class ContextualTipsPanel extends StatefulWidget {
 }
 
 class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
-  String? expandedTipId;
-
   // Tip IDs carry a stable category before the optional plan/facility ID.
   // Serious cautions concern the queue rule, never the player's choices.
   MinaExpression _expressionFor(ContextualTip tip) =>
@@ -48,6 +47,49 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
         _ => MinaExpression.normal,
       };
 
+  Future<void> _showExplanation(ContextualTip tip) async {
+    final openDestination = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 960, maxHeight: 420),
+          child: SizedBox(
+            width: double.infinity,
+            height: MediaQuery.sizeOf(dialogContext).height,
+            child: MissionDialogue(
+              key: const Key('contextual-tip-dialogue'),
+              text: tip.detail,
+              title: tip.title,
+              expression: _expressionFor(tip),
+              dialogueKey: tip.id,
+              actions: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  TextButton(
+                    key: const Key('close-contextual-tip-dialogue'),
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('閉じる'),
+                  ),
+                  FilledButton.icon(
+                    key: const Key('open-contextual-tip-dialogue'),
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    icon: const Icon(Icons.arrow_forward, size: 18),
+                    label: Text(tip.actionLabel),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (openDestination == true && mounted) widget.onOpen(tip);
+  }
+
   @override
   Widget build(BuildContext context) {
     final tip = evaluateContextualTips(
@@ -57,7 +99,6 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
     ).firstOrNull;
     if (tip == null) return const SizedBox.shrink();
     final needsAttention = tip.priority >= 80;
-    final expanded = needsAttention || expandedTipId == tip.id;
     final accent = needsAttention ? strategyWarning : strategyBlue;
     return StrategyCard(
       key: const Key('contextual-tips-panel'),
@@ -70,7 +111,7 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
               MinaAvatar(
                 size: 32,
                 expression: _expressionFor(tip),
-                semanticLabel: '秘書ミナからのアドバイス',
+                semanticLabel: '秘書ルナからのアドバイス',
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -93,7 +134,7 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
               ),
             ],
           ),
-          if (expanded)
+          if (needsAttention)
             Text(
               tip.detail,
               style: const TextStyle(
@@ -118,17 +159,14 @@ class _ContextualTipsPanelState extends State<ContextualTipsPanel> {
                   ),
                 ),
               ),
-              if (!needsAttention)
-                TextButton(
-                  key: const Key('toggle-contextual-tip-detail'),
-                  onPressed: () => setState(() {
-                    expandedTipId = expanded ? null : tip.id;
-                  }),
-                  child: Text(
-                    expanded ? '説明を閉じる' : '詳しく',
-                    style: const TextStyle(fontSize: 11, color: strategyMuted),
-                  ),
+              TextButton(
+                key: const Key('toggle-contextual-tip-detail'),
+                onPressed: () => _showExplanation(tip),
+                child: const Text(
+                  'ルナの説明',
+                  style: TextStyle(fontSize: 11, color: strategyMuted),
                 ),
+              ),
             ],
           ),
         ],

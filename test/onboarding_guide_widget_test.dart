@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/domain/save_repository.dart';
 import 'package:mars_terraforming/presentation/early_development_guide.dart';
+import 'package:mars_terraforming/presentation/mission_dialogue.dart';
 
 class _GuideSave implements SaveRepository {
   bool conflict = false;
@@ -84,7 +85,11 @@ void main() {
       final before = jsonEncode(controller.state.toJson());
       await tester.tap(find.byKey(const Key('guide-roadmap')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('順番や期限の制限はなく'), findsOneWidget);
+      expect(find.byType(MissionDialogue), findsOneWidget);
+      expect(
+        find.byKey(const Key('mission-dialogue-portrait')).hitTestable(),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const Key('onboarding-open-first_research')),
         findsOneWidget,
@@ -93,6 +98,9 @@ void main() {
         find.byKey(const Key('onboarding-open-first_district')),
         findsNothing,
       );
+      await tester.tap(find.byKey(const Key('onboarding-list')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('順番や期限の制限はなく'), findsOneWidget);
       for (final id in [
         'first_research',
         'first_district',
@@ -120,7 +128,7 @@ void main() {
       await tester.tap(city);
       await tester.pumpAndSettle();
       expect(opened, ['city:earth_delta']);
-      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(Dialog), findsNothing);
       expect(jsonEncode(controller.state.toJson()), before);
       expect(tester.takeException(), isNull);
     });
@@ -145,7 +153,7 @@ void main() {
   });
 
   testWidgets(
-    'primary action and expanded instructions stay usable with larger text',
+    'primary action and dialogue navigation stay usable with larger text',
     (tester) async {
       final controller = GameController(_GuideSave(), now: () => epoch);
       await controller.initialize(startTimer: false);
@@ -167,6 +175,12 @@ void main() {
       expect(opened, ['research:life_support']);
       await tester.tap(find.byKey(const Key('guide-roadmap')));
       await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('onboarding-open-first_research')).hitTestable(),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('onboarding-list')));
+      await tester.pumpAndSettle();
       final last = find.byKey(const Key('onboarding-toggle-first_habitat'));
       await tester.ensureVisible(last);
       await tester.pumpAndSettle();
@@ -178,10 +192,35 @@ void main() {
       await tester.ensureVisible(destination);
       await tester.pumpAndSettle();
       expect(destination.hitTestable(), findsOneWidget);
+      await tester.drag(
+        find.byKey(const Key('mission-dialogue-scroll')),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+      expect(destination.hitTestable(), findsOneWidget);
+      expect(
+        find.byKey(const Key('onboarding-close')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('onboarding-list')).hitTestable(),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('onboarding-list')));
+      await tester.pumpAndSettle();
+      final first = find.byKey(const Key('onboarding-toggle-first_research'));
+      await tester.ensureVisible(first);
+      await tester.pumpAndSettle();
+      await tester.tap(first);
+      await tester.pumpAndSettle();
+      final dialogueScroll = tester.widget<SingleChildScrollView>(
+        find.byKey(const Key('mission-dialogue-scroll')),
+      );
+      expect(dialogueScroll.controller!.offset, 0);
       expect(tester.takeException(), isNull);
       await tester.tap(find.byKey(const Key('onboarding-close')));
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(Dialog), findsNothing);
     },
   );
 
@@ -270,7 +309,7 @@ void main() {
         await tester.tap(stepAction);
         await tester.pumpAndSettle();
         expect(opened.last, 'operations:0:$facilityId');
-        expect(find.byType(AlertDialog), findsNothing);
+        expect(find.byType(Dialog), findsNothing);
         expect(tester.takeException(), isNull);
       },
     );
@@ -313,13 +352,53 @@ void main() {
         await tester.tap(find.byKey(const Key('guide-roadmap')));
         await tester.pumpAndSettle();
         expect(find.text('最初の1時間の手引き · 6/6達成'), findsOneWidget);
+        expect(
+          tester.widget<MissionDialogue>(find.byType(MissionDialogue)).text,
+          contains('ここからは、あなたの計画です。'),
+        );
         await tester.tap(find.byKey(const Key('onboarding-close')));
         await tester.pumpAndSettle();
-        expect(find.byType(AlertDialog), findsNothing);
+        expect(find.byType(Dialog), findsNothing);
       }
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('remaining time updates do not restart the spoken instructions', (
+    tester,
+  ) async {
+    final controller = GameController(_GuideSave(), now: () => epoch);
+    await controller.initialize(startTimer: false);
+    addTearDown(controller.dispose);
+    controller.engine!.enqueue('life_support');
+    await _mount(tester, controller, [], const Size(568, 320));
+    await tester.tap(find.byKey(const Key('guide-roadmap')));
+    await tester.pumpAndSettle();
+    final dialogue = tester.widget<MissionDialogue>(
+      find.byType(MissionDialogue),
+    );
+    final previousTime = controller.state.currentPlanFor('lab')!.remainingMs;
+    await controller.command((engine) {
+      engine.advanceBy(const Duration(seconds: 1));
+      return null;
+    });
+    await tester.pump(const Duration(milliseconds: 50));
+    final updated = tester.widget<MissionDialogue>(
+      find.byType(MissionDialogue),
+    );
+    expect(updated.text, dialogue.text);
+    expect(updated.dialogueKey, dialogue.dialogueKey);
+    final rendered = tester.widget<Text>(
+      find.byKey(const Key('mission-dialogue-text')),
+    );
+    final span = rendered.textSpan! as TextSpan;
+    expect((span.children!.first as TextSpan).text, dialogue.text);
+    expect(
+      controller.state.currentPlanFor('lab')!.remainingMs,
+      previousTime - 1000,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('open roadmap survives a save conflict that clears the engine', (
     tester,

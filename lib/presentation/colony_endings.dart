@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../domain/colony_ending.dart';
 import '../domain/game_state.dart';
 import 'mission_adviser.dart';
+import 'mission_dialogue.dart';
 import 'strategy_widgets.dart';
 
 Future<void> showColonyEndings(
@@ -57,7 +58,9 @@ class _ColonyEndingsDialogState extends State<_ColonyEndingsDialog> {
             ),
             Positioned.fill(
               child: ColoredBox(
-                color: strategyBackground.withValues(alpha: 0.80),
+                color: strategyBackground.withValues(
+                  alpha: ending == null ? .80 : .25,
+                ),
               ),
             ),
             Padding(
@@ -67,7 +70,7 @@ class _ColonyEndingsDialogState extends State<_ColonyEndingsDialog> {
                 children: [
                   Row(
                     children: [
-                      MinaAvatar(size: 36, expression: expression),
+                      if (ending == null) const MinaAvatar(size: 36),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
@@ -88,12 +91,9 @@ class _ColonyEndingsDialogState extends State<_ColonyEndingsDialog> {
                   ),
                   const SizedBox(height: 12),
                   Expanded(
-                    child: SingleChildScrollView(
-                      key: ValueKey(
-                        'colony-ending-${ending?.id ?? 'catalogue'}-$scene',
-                      ),
-                      child: ending == null ? _catalogue() : _story(ending),
-                    ),
+                    child: ending == null
+                        ? SingleChildScrollView(child: _catalogue())
+                        : _story(ending),
                   ),
                   const SizedBox(height: 12),
                   if (ending != null)
@@ -202,27 +202,15 @@ class _ColonyEndingsDialogState extends State<_ColonyEndingsDialog> {
     ],
   );
 
-  Widget _story(ColonyEnding ending) => Column(
-    key: ValueKey('${ending.id}-$scene'),
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const SizedBox(height: 12),
-      Text(
-        ending.scenes[scene].title,
-        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
-      ),
-      const SizedBox(height: 20),
-      Text(
-        ending.scenes[scene].body,
-        style: const TextStyle(fontSize: 16, height: 1.8),
-      ),
-      if (scene == ending.scenes.length - 1) ...[
-        const SizedBox(height: 20),
-        Text(
-          '${widget.game.cityName('mars_arcadia')}へ、${widget.game.rocketName}がつないだ未来。',
-          style: const TextStyle(color: strategyBlue, fontSize: 13),
-        ),
-      ],
-    ],
+  Widget _story(ColonyEnding ending) => MissionDialogue(
+    dialogueKey: '${ending.id}-$scene',
+    title: ending.scenes[scene].title,
+    text: [
+      ending.scenes[scene].body,
+      if (scene == ending.scenes.length - 1)
+        '${widget.game.cityName('mars_arcadia')}へ、${widget.game.rocketName}がつないだ未来。',
+    ].join('\n\n'),
+    expression: expression,
+    portraitSize: 250,
   );
 }

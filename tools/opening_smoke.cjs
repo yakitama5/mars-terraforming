@@ -3,6 +3,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { completeFirstRun } = require('./complete_first_run.cjs');
 const url = process.env.MARS_BASE_URL || 'http://127.0.0.1:8765/';
 const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
 const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../docs/screenshots');
@@ -42,7 +43,18 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
       await page.screenshot({ path: path.join(output, `${name}.png`) });
     };
     await page.goto(url);
-    await button('物語をスキップ').waitFor({ timeout: 60000 });
+    await button('物語へ').waitFor({ timeout: 60000 });
+    const filmInitial = await snapshot();
+    for (const [chapter, label] of ['都市開発', 'ロケット打ち上げ', '月面基地', '火星探査', '火星移住'].entries()) {
+      await page.getByText(new RegExp(`^${chapter + 1}\\s+/\\s+${label}$`)).waitFor({ timeout: 30000 });
+      await page.waitForTimeout(3000);
+      await capture(`cinematic-web-${chapter + 1}`);
+    }
+    await button('物語をスキップ').waitFor({ timeout: 30000 });
+    const filmEnd = await snapshot();
+    assert.equal(filmEnd.simulatedMs, filmInitial.simulatedMs);
+    assert.equal(filmEnd.moneyUnits, filmInitial.moneyUnits);
+    await page.waitForTimeout(2500);
     await capture('blue-web-opening');
     const initial = await snapshot();
     await page.waitForTimeout(6000);
@@ -57,10 +69,14 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
     await enterName(/火星の最初の街/, '朝凪基地');
     await capture('blue-web-naming');
     await button('火星開発を始める').click();
+    await completeFirstRun(page);
     await button('都市開発').waitFor();
     await page.waitForTimeout(300);
     const started = await snapshot();
     assert.equal(started.openingSeen, true);
+    assert.equal(started.firstRunTutorial, 'completed');
+    assert.ok(started.districts.some(d => d.cityId === 'earth_delta' && d.plotIndex === 1 && d.districtId === 'housing'));
+    assert.ok(started.plans.some(p => p.taskId === 'life_support'));
     assert.equal(started.missionIdentity.cityNames.earth_delta, '群青市');
     assert.equal(started.missionIdentity.cityNames.mars_arcadia, '朝凪基地');
     assert.equal(started.missionIdentity.rocketName, 'あおぞら');
@@ -70,6 +86,13 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
     await button('全体表示').click();
     await capture('blue-web-research-overview');
     await button('ガイド').click();
+    await button('手引き').or(button('6工程の手引き')).first().click();
+    await button('6工程').waitFor();
+    await page.waitForTimeout(2500);
+    await capture('cinematic-web-guide');
+    await button('6工程').click();
+    await capture('cinematic-web-roadmap');
+    await button('閉じて開発を続ける').click();
     const names = button('都市・ロケットの名前');
     // Guidance scrolls on a short landscape display, while its footer stays put.
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -87,10 +110,12 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
     const renamed = await snapshot();
     assert.equal(renamed.missionIdentity.rocketName, 'あおぞら二号');
     assert.equal(renamed.worldId, started.worldId);
-    assert.deepEqual(renamed.plans, started.plans);
+    // 自由プレイでは研究の残り時間が進む。改名で予約自体を増減しない。
+    assert.deepEqual(renamed.plans.map(p => [p.id, p.taskId]), started.plans.map(p => [p.id, p.taskId]));
     await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 60000 });
     await context.setOffline(true);
     await page.reload({ waitUntil: 'domcontentloaded' });
+    assert.equal(await completeFirstRun(page), false);
     await button('都市開発').waitFor({ timeout: 60000 });
     assert.equal(await button('物語をスキップ').count(), 0);
     const resumed = await snapshot();
@@ -101,7 +126,8 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
     await capture('blue-web-small-offline');
     assert.equal(errors.length, 0, errors.join('\n'));
     result = { result: 'PASS', checks: [
-      'opening art and story on small landscape', 'reading does not spend starting funds',
+      'five rendered cinematic chapters before dialogue on landscape', 'reading does not spend starting funds',
+      'first housing and research tutorial completes through UI and stays completed offline',
       'three player names save and can be edited', 'readable research and whole-tree overview',
       'names and world persist through offline reload', '568x320 navigation after reload',
     ] };

@@ -16,6 +16,7 @@ void main() {
       var now = epoch;
       final controller = GameController(store, now: () => now, devTools: true);
       await controller.initialize(startTimer: false);
+      controller.state.firstRunTutorial = FirstRunTutorialStep.completed;
       await controller.advanceForDevelopment(duration: const Duration(days: 1));
       expect(
         controller.state.simulatedMs,
@@ -214,7 +215,9 @@ void main() {
   test(
     'failed initial catch-up save leaves the previous saved world intact',
     () async {
-      final saved = GameState.initial(epoch).toJson();
+      final saved = (GameState.initial(
+        epoch,
+      )..firstRunTutorial = FirstRunTutorialStep.completed).toJson();
       final store = _Repository()
         ..data = _copy(saved)
         ..saveFailure = StateError('storage unavailable');

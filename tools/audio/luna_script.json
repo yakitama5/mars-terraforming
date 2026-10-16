@@ -1,0 +1,17 @@
+{
+  "model": "gemini-3.8-flash-tts",
+  "voice": "Leda",
+  "style": "An original female character named Luna, a young adult mission secretary. A clear, lightly bright, cute but dignified voice, warm and composed, with quiet courage and wonder. Natural English, medium-high pitch without squeaking, precise articulation, a gentle smile. Cinematic intimacy rather than advertising. No impersonation, no music, no background sound. Keep each line concise with natural short pauses.",
+  "clips": [
+    {"id":"opening_01","start":0.7,"maxSeconds":6.6,"text":"Every city begins with a dream. Together, we turn knowledge into tomorrow."},
+    {"id":"opening_02","start":8.7,"maxSeconds":6.6,"text":"Beyond the sky, we carry the courage of everyone who came before us."},
+    {"id":"opening_03","start":16.7,"maxSeconds":6.6,"text":"On the Moon, a small light becomes our next step into the unknown."},
+    {"id":"opening_04","start":24.7,"maxSeconds":6.6,"text":"Across a silent red world, every discovery brings a distant home closer."},
+    {"id":"opening_05","start":32.7,"maxSeconds":6.6,"text":"Someday, we will call this planet home. Commander, our future begins with you."},
+    {"id":"first_run_placeHousing","maxSeconds":14,"text":"Let's begin with a residential district. Choose the building, pick an empty plot, then confirm construction."},
+    {"id":"first_run_finishConstruction","maxSeconds":14,"text":"I'll give our first construction a little help. Ask me to finish it, and we'll have it ready right away."},
+    {"id":"first_run_income","maxSeconds":14,"text":"All done! Our homes now bring in tax revenue every minute. Look at the balance above to see what's left after upkeep."},
+    {"id":"first_run_startResearch","maxSeconds":14,"text":"Next, let's research life support. The income from our city will help us learn how to live among the stars."},
+    {"id":"first_run_researchStarted","maxSeconds":16,"text":"Research is underway! Future buildings take time, but you can keep planning while they grow. I'll be here in the guide whenever you need me."}
+  ]
+}

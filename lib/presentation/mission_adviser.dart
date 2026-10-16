@@ -18,23 +18,42 @@ enum MinaExpression {
 
 /// Short, intermittent portrait gestures never animate the frame or background.
 /// Timers leave the frame scheduler idle between gestures, including in tests.
-class MinaAvatar extends StatefulWidget {
+class MinaAvatar extends MinaPortrait {
   const MinaAvatar({
     super.key,
-    this.size = 40,
+    super.size = 40,
+    super.semanticLabel,
+    super.expression = MinaExpression.normal,
+  }) : super._framed();
+}
+
+/// The adopted transparent artwork, without an icon frame or circular crop.
+/// Both portrait sizes use the same motion, visibility and fallback behavior.
+class MinaPortrait extends StatefulWidget {
+  const MinaPortrait({
+    super.key,
+    this.size = 220,
     this.semanticLabel,
     this.expression = MinaExpression.normal,
-  });
+  }) : _framed = false;
+
+  const MinaPortrait._framed({
+    super.key,
+    required this.size,
+    this.semanticLabel,
+    required this.expression,
+  }) : _framed = true;
 
   final double size;
   final String? semanticLabel;
   final MinaExpression expression;
+  final bool _framed;
 
   @override
-  State<MinaAvatar> createState() => _MinaAvatarState();
+  State<MinaPortrait> createState() => _MinaPortraitState();
 }
 
-class _MinaAvatarState extends State<MinaAvatar>
+class _MinaPortraitState extends State<MinaPortrait>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _blinkAsset = 'assets/images/mina_blink.png';
   static const _idleInterval = Duration(seconds: 5);
@@ -75,7 +94,7 @@ class _MinaAvatarState extends State<MinaAvatar>
   }
 
   @override
-  void didUpdateWidget(covariant MinaAvatar oldWidget) {
+  void didUpdateWidget(covariant MinaPortrait oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.size != widget.size ||
         oldWidget.expression != widget.expression) {
@@ -189,8 +208,8 @@ class _MinaAvatarState extends State<MinaAvatar>
   Widget _portrait(String asset, {Key? key}) => Image(
     image: _imageProvider(asset),
     key: key,
-    fit: BoxFit.cover,
-    alignment: Alignment.center,
+    fit: widget._framed ? BoxFit.cover : BoxFit.contain,
+    alignment: widget._framed ? Alignment.center : Alignment.bottomCenter,
     gaplessPlayback: true,
     excludeFromSemantics: true,
     errorBuilder: (_, _, _) => asset != MinaExpression.normal.assetPath
@@ -210,14 +229,17 @@ class _MinaAvatarState extends State<MinaAvatar>
     label: widget.semanticLabel,
     excludeSemantics: true,
     child: Container(
+      key: Key(widget._framed ? 'mina-avatar-frame' : 'mina-standing-portrait'),
       width: widget.size,
       height: widget.size,
-      decoration: BoxDecoration(
-        color: strategySelected,
-        shape: BoxShape.circle,
-        border: Border.all(color: strategyBlue.withValues(alpha: 0.5)),
-      ),
-      clipBehavior: Clip.antiAlias,
+      decoration: widget._framed
+          ? BoxDecoration(
+              color: strategySelected,
+              shape: BoxShape.circle,
+              border: Border.all(color: strategyBlue.withValues(alpha: 0.5)),
+            )
+          : null,
+      clipBehavior: widget._framed ? Clip.antiAlias : Clip.none,
       child: RepaintBoundary(
         child: AnimatedBuilder(
           animation: _motion,

@@ -26,6 +26,7 @@ class GameController extends ChangeNotifier {
   bool finishingOpening = false;
   bool _disposed = false;
   bool _saveConflict = false;
+  bool _committingTutorial = false;
   Timer? _timer;
   Timer? _commandNoticeTimer;
   String? _commandNotice;
@@ -43,7 +44,7 @@ class GameController extends ChangeNotifier {
       // Keep the playable world private until its first complete save succeeds.
       // A failed initial save must never start an unsaved game or its timer.
       final candidate = GameEngine(initial);
-      if (initial.openingStarted && !initial.openingSeen) {
+      if (initial.introductionPausesClock) {
         initial.lastWallClockMs = now().millisecondsSinceEpoch;
       } else {
         candidate.advanceTo(now());
@@ -72,6 +73,11 @@ class GameController extends ChangeNotifier {
 
   Future<void> command(String? Function(GameEngine) action) async {
     if (_disposed || engine == null || busy) return;
+    if (state.openingSeen &&
+        state.firstRunTutorial != FirstRunTutorialStep.completed) {
+      await _tutorialCommand(action);
+      return;
+    }
     busy = true;
     try {
       _advanceClock();
@@ -97,10 +103,50 @@ class GameController extends ChangeNotifier {
   }
 
   void _advanceClock() {
-    if (state.openingStarted && !state.openingSeen) {
+    if (state.introductionPausesClock) {
       state.lastWallClockMs = now().millisecondsSinceEpoch;
     } else {
       engine!.advanceTo(now());
+    }
+  }
+
+  Future<bool> completeTutorialConstruction() =>
+      _tutorialCommand((game) => game.completeTutorialConstruction());
+
+  Future<bool> continueFirstRunTutorial() =>
+      _tutorialCommand((game) => game.continueFirstRunTutorial());
+
+  /// Keep each required action on its current screen until its whole generation
+  /// is durable. A failed write cannot consume the one-time construction help
+  /// or leave a new player beyond a step that never reached storage.
+  Future<bool> _tutorialCommand(String? Function(GameEngine) action) async {
+    if (_disposed || engine == null || busy) return false;
+    busy = true;
+    _committingTutorial = true;
+    _emit();
+    try {
+      final candidate = GameEngine(GameState.fromJson(state.toJson()));
+      if (candidate.state.introductionPausesClock) {
+        candidate.state.lastWallClockMs = now().millisecondsSinceEpoch;
+      } else {
+        candidate.advanceTo(now());
+      }
+      final message = action(candidate);
+      if (message != null) {
+        notice = message;
+        _showCommandNotice(message);
+      }
+      final saved = await _persistSnapshot(
+        candidate.state.toJson(),
+        onSaved: () {
+          if (!_disposed) engine = candidate;
+        },
+      );
+      return saved && message == null && !_disposed;
+    } finally {
+      _committingTutorial = false;
+      busy = false;
+      _emit();
     }
   }
 
@@ -188,14 +234,26 @@ class GameController extends ChangeNotifier {
 
   Future<void> save() {
     if (engine == null || _saveConflict) return Future.value();
+    // Joining an in-flight tutorial commit prevents an autosave/retry from
+    // queuing the old visible stage after the newly committed candidate.
+    if (_committingTutorial) return _saving;
     // Capture before asynchronous IO so state and its clock always agree.
-    final snapshot = state.toJson();
-    _saving = _saving.then((_) async {
+    return _persistSnapshot(state.toJson()).then((_) {});
+  }
+
+  Future<bool> _persistSnapshot(
+    Map<String, dynamic> snapshot, {
+    void Function()? onSaved,
+  }) {
+    final saving = _saving.then((_) async {
       // A conflict also invalidates snapshots already queued behind this save.
-      if (_saveConflict) return;
+      if (_saveConflict) return false;
+      var saved = false;
       try {
         await repository.save(snapshot);
         error = null;
+        onSaved?.call();
+        saved = true;
       } on SaveConflictException catch (exception) {
         _saveConflict = true;
         _timer?.cancel();
@@ -205,8 +263,10 @@ class GameController extends ChangeNotifier {
         error = '自動保存に失敗しました。空き容量を確認してください。\n$exception';
       }
       _emit();
+      return saved;
     });
-    return _saving;
+    _saving = saving.then((_) {});
+    return saving;
   }
 
   void _emit() {
