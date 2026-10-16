@@ -8,8 +8,14 @@ require "fastlane/actions/delete_keychain"
 require "fastlane/actions/update_code_signing_settings"
 require "xcodeproj"
 require "spaceship"
+require "cocoapods"
 
 class MobileCdFastlaneTest < Minitest::Test
+  def test_cocoapods_matches_the_committed_ios_lockfile
+    lock = File.read(File.expand_path("../ios/Podfile.lock", __dir__))
+    assert_equal lock.match(/^COCOAPODS: (.+)$/)[1], Pod::VERSION
+  end
+
   def test_pinned_actions_accept_keychain_options_without_conflicts
     actions = Fastlane::Actions
     FastlaneCore::Configuration.create(actions::CreateKeychainAction.available_options,

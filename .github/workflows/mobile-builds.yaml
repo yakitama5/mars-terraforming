@@ -52,7 +52,7 @@ jobs:
             echo '署名設定なしのrelease検証が成功したため停止します。'
             exit 1
           fi
-          rg -F 'release署名に必要な環境変数が未設定です:' "$RUNNER_TEMP/mars-signing-check.log"
+          python3 -c 'import os; from pathlib import Path; text = (Path(os.environ["RUNNER_TEMP"]) / "mars-signing-check.log").read_text(); assert "release署名に必要な環境変数が未設定です:" in text, text; print("署名情報がないreleaseを拒否しました。")'
 
   ios:
     runs-on: macos-26
@@ -75,7 +75,13 @@ jobs:
           bundler-cache: true
       - run: python3 -m unittest discover -s tools -p mobile_cd_test.py
       - run: bundle exec ruby tools/mobile_cd_fastlane_test.rb
+      - name: Preserve the locked CocoaPods integration
+        run: flutter config --no-enable-swift-package-manager
       - run: flutter pub get --enforce-lockfile
+      - name: Verify native dependency configuration
+        run: |
+          test -f ios/Flutter/Generated.xcconfig
+          python3 -c 'import json; from pathlib import Path; assert json.loads(Path(".flutter-plugins-dependencies").read_text())["swift_package_manager_enabled"]["ios"] is False'
       - working-directory: ios
         run: bundle exec pod install --deployment
       - name: Simulator build without distribution credentials

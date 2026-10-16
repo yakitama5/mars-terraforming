@@ -39,7 +39,7 @@ PRでは別の `mobile-builds.yaml` でAndroid debug / iOS Simulatorのビルド
 設定不足として失敗させる。skipしたrunを配信成功の証拠にしない。
 ビルド番号・再実行の扱い、資格情報の検証は `tools/mobile_cd.py`、配信は `fastlane/Fastfile` に置く。
 
-採用版はFlutter 3.47.7、Ruby 3.4.11、Bundler 4.0.16、fastlane 2.240.1、CocoaPods 1.16.2、
+採用版はFlutter 3.47.7、Ruby 3.4.11、Bundler 4.0.16、fastlane 2.240.1、CocoaPods 1.17.0、
 Temurin 17.0.19+10、Xcode 26.1.1。Ruby / runnerはワークフロー、Ruby依存は `Gemfile.lock`、
 Flutter / Dart依存はmise・pubspec・pubspec.lockで固定する。ActionsもコミットSHAを固定する。
 
@@ -132,13 +132,21 @@ Webのセーブは今回のID変更の対象外。
 - `mise exec -- bash tools/check.sh`: 依存方向・整形・静的解析と434テストが成功。
   既知の `agency_widget_test.dart` の画面外tap警告はあるが、失敗はない。
 - 候補Bundle IDでiOS Simulatorのdebugビルド成功。privacy manifest追加後は再検証する。
-- CDガードのPython5件、実fastlane 2.240.1のRuby3件・7 assertions、actionlint、
+- CDガードのPython5件、実fastlane 2.240.1のRuby4件・8 assertions、actionlint、
   Ruby構文、依存解決・lane読込、plist構文が成功。
   ローカルRubyは4.0.6。CIの3.4.11での実行は別途Actionsで確認する。
 - Android debugビルドは初回のGradle 9.3.1依存生成中にホストの空きが383MiBまで低下したため中断
   （assembleDebug終了130）。コンパイル成功・失敗の判定は未完了。
   今回生成した同版のGradleキャッシュと再生成可能な検証出力を整理し、1GiB以上へ回復した。
   Android / iOSの残るビルドはPRのGitHub Actionsで確認する。
+- 初回ActionsではFlutter解析・434テスト・Web releaseが成功。
+  Android debug APKもビルド成功。release拒否の検査はrunnerにripgrepがなかったため検査側が失敗し、
+  標準Pythonで照合するよう修正した。
+  iOSではRuby 3.4.11によるPython5件 / Ruby3件も成功したが、locked Pod installが失敗した。
+  既存lock生成版1.17.0に合わせ、Flutter 3.47.7の既定SwiftPM有効化をCIだけ明示的に無効化する。
+  これにより既存のCocoaPods構成を維持し、lockを勝手に書き換えない。
+  SDKのpodhelperはSwiftPM有効時にPackage.swiftのある2プラグインをPodから除外するため、
+  既存lockと不一致になっていた。config-onlyはPod installを呼ぶため、その前処理には使わない。
 - 未実施: 署名済みiOS archive / IPAの検証、両ストアの初回登録・実配信、
   実機でのストア経由インストール、Android/iOSの長時間GPU・性能・電池検証。
 

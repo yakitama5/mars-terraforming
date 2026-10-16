@@ -183,7 +183,27 @@ jobs:
           bundler-cache: true
       - run: bundle exec ruby tools/mobile_cd_fastlane_test.rb
       - run: xcodebuild -version
+      - name: Keep the committed CocoaPods dependency strategy
+        run: flutter config --no-enable-swift-package-manager
       - run: flutter pub get --enforce-lockfile
+      - name: Verify generated iOS configuration before locked pod install
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          configuration = Path('ios/Flutter/Generated.xcconfig')
+          if not configuration.is_file():
+              raise SystemExit('flutter pub get did not generate the iOS configuration.')
+          metadata = json.loads(Path('.flutter-plugins-dependencies').read_text())
+          if metadata.get('swift_package_manager_enabled', {}).get('ios') is not False:
+              raise SystemExit('The committed Podfile.lock requires CocoaPods mode for iOS.')
+          print('Generated iOS configuration is present; plugin metadata uses CocoaPods.')
+          PYTHON
+          bundle exec ruby -e '
+            expected = File.read("ios/Podfile.lock")[/^COCOAPODS: (.+)$/, 1]
+            actual = Gem::Specification.find_by_name("cocoapods").version.to_s
+            abort("CocoaPods version does not match ios/Podfile.lock") unless actual == expected
+          '
       - name: Install locked iOS dependencies
         working-directory: ios
         run: bundle exec pod install --deployment
