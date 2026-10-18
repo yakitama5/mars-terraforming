@@ -1,6 +1,6 @@
 {
-  "name": "火星開発計画 — 試遊",
-  "short_name": "火星開発計画",
+  "name": "Dear Mars — 試遊",
+  "short_name": "Dear Mars",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#0b151e",

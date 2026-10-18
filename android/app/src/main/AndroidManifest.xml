@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="火星開発計画"
+        android:label="Dear Mars"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <meta-data android:name="io.flutter.embedding.android.EnableFlutterGPU" android:value="true" />

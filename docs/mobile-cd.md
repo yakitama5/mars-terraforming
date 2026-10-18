@@ -1,14 +1,14 @@
 # Android / iOS の内部テスト配信
 
-更新: 2026-10-16。今回の依頼は、両ストアへの新規アプリ登録と、内部テストまでの自動配信。
+更新: 2026-10-18。今回の依頼は、両ストアへの新規アプリ登録と、内部テストまでの自動配信。
 従来の「Androidは後段」から、**Android / iOSの内部配信を並行して準備する**方針へ更新する。
 一般公開の時期や収益化は決定していない。
 
 ## 現在地
 
-- アプリ名は既存の「火星開発計画」、両OSの識別子は候補
-  `io.github.yakitama5.marsterraforming` に揃える。コード上の変更はビルド検証用で、
-  ストア登録前にユーザーへ確認中。登録済み・名称確保済みとは扱わない。
+- 2026-10-18にユーザーが正式アプリ名を **Dear Mars** に決定した。
+  Android / iOSの表示名を合わせ、両OSの識別子は実装済みの候補
+  `io.github.yakitama5.marsterraforming` を維持する。登録済み・名称確保済みとは扱わない。
 - GitHubの `android-internal` / `ios-testflight` Environmentを作成し、配信元をmainだけに制限した。
   `MOBILE_ANDROID_ENABLED` / `MOBILE_IOS_ENABLED` は `false`。ストア初期設定後に個別に有効化する。
 - ChromeでGoogle Play Consoleの本人確認とApp Store Connectのサインイン画面を確認。
@@ -164,8 +164,15 @@ Webのセーブは今回のID変更の対象外。
   Xcodeの選択と利用可能destinationを揃えることで解消したが、26.1.1の失敗の内部原因は未確定。
 - 初回AABワークフローはactionlintとPythonのbuild-only検査を実施。署名AABの実生成は、
   確定IDを設定してmainへ反映した後に実行する。
+- [最終追加分のCI](https://github.com/yakitama5/mars-terraforming/actions/runs/38898962195)
+  （コード `3a6881f`）も両OS成功。Python6件・Ruby4件、Android APKと署名拒否、
+  iOS Simulatorとmanifest同梱が成功し、同じSHAのFlutter/Webチェックも成功した。
+- 2026-10-18のDear Marsへの名称変更: Androidラベル、iOS表示名、Flutterタイトル/HUD、
+  Web/PWAタイトルとREADMEを更新。`tools/check.sh` のPython6件・依存方向・整形・静的解析・
+  Flutter434テスト、plist / Manifest XML / Web manifest JSON / HTMLの構文と名称照合が成功。
+  今回の変更後のnative/Webビルド・実機検証は未実施。進行値・保存ID・アプリ識別子は変更していない。
 - 未実施: 署名済みiOS archive / IPAの検証、両ストアの初回登録・実配信、
   実機でのストア経由インストール、Android/iOSの長時間GPU・性能・電池検証。
 
-次の判断は、登録名・アプリID、所有者アカウント、必要なら無料／有料、内部テスターの宛先。
+登録名はDear Marsで決定済み。次は所有者アカウントでの認証と登録、必要なら無料／有料、内部テスターの宛先。
 ログイン完了後、ストア初期設定と実配信の確認を続ける。
