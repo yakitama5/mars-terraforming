@@ -5,6 +5,7 @@
 表情素材、表示の使い分け、動きと検証の詳細は [ミナの表情](mina-expressions.md) を参照。
 今回の統合結果は [青い地球と物語の改善](blue-horizon-improvements.md) を参照。
 最新のユーザー意向と再開用の要約は [プロジェクトメモリ](project-memory.md) を参照。
+Android / iOSの署名・ストア登録・内部テストCDは [モバイル内部配信](mobile-cd.md) を参照。
 円形の箱庭はユーザーから「いい感じ！」と評価され、以後の見た目の基準とする。細部は引き続き調整対象。
 前回の変更と検証は [製品としての操作性レビュー](product-usability.md) を参照。
 案内と通知の基盤は [導入ガイド](first-hour-guidance.md)、採用した景観は [円形の箱庭](circular-terrarium.md) を参照。
@@ -22,7 +23,8 @@
 ローカル実体は `mars_terraforming`（アンダースコア）。Gitのoriginは
 `https://github.com/yakitama5/mars-terraforming.git`。依頼時のハイフン名ディレクトリは存在しなかった。
 初期状態はコミットなしで、Flutter雛形・企画書が未追跡。既存のネイティブ雛形・署名設定を保持。
-Bundle IDは既存の `com.example.marsTerraforming` で製品用には未確定。
+初期Bundle IDは `com.example.marsTerraforming`。2026-10-16の内部配信準備では候補IDを
+`io.github.yakitama5.marsterraforming` に統一してビルド検証する。ストアへの確定登録はユーザー確認待ち。
 
 | 対象 | 採用版・記録 |
 | --- | --- |

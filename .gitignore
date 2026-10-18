@@ -49,3 +49,28 @@ app.*.map.json
 
 # Web試遊: 配布物とSites専用Gitはゲーム本体の履歴に含めない
 /site-preview/
+
+# ストア配信用の資格情報・署名鍵
+.env
+.env.*
+!.env.example
+.secrets/
+*.jks
+*.keystore
+*.p12
+*.p8
+*.key
+*.pem
+*.cer
+*.mobileprovision
+*.provisionprofile
+/android/key.properties
+/android/.kotlin/
+google-play-service-account*.json
+play-store-service-account*.json
+
+# fastlaneの実行結果・生成物
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots/
+**/fastlane/test_output/
