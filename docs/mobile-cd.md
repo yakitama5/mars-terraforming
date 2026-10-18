@@ -7,22 +7,47 @@
 ## 現在地
 
 - 2026-10-18にユーザーが正式アプリ名を **Dear Mars** に決定した。
-  Android / iOSの表示名を合わせ、両OSの識別子は実装済みの候補
-  `io.github.yakitama5.marsterraforming` を維持する。登録済み・名称確保済みとは扱わない。
+  Android / iOSの表示名を合わせ、両OSの識別子は
+  `io.github.yakitama5.marsterraforming` を採用した。
+  PlayのアプリレコードとAppleのBundle IDは登録済み。ASCアプリレコードは別途必要。
 - GitHubの `android-internal` / `ios-testflight` Environmentを作成し、配信元をmainだけに制限した。
   `MOBILE_ANDROID_ENABLED` / `MOBILE_IOS_ENABLED` は `false`。ストア初期設定後に個別に有効化する。
-- ChromeでGoogle Play Consoleの本人確認とApp Store Connectのサインイン画面を確認。
-  今回のアプリを所有する開発者アカウントでのログインを依頼中。
-  現在Chromeで選択されていたGoogle Workspaceアカウントを、このゲームの所有者と推定しない。
+- 2026-10-18にユーザーがVivaldiで両ストアへログインした。
+  ブラウザ操作はユーザー指定の **Codexワークスペース内だけ** に限定する。
+  Play ConsoleのYakuranアカウントと、App Store Connectの個人チームを確認。
+  Apple Developer画面でチームID `S935X7WSH2` を確認した。
+- ユーザーが **無料** と、ポリシー・米国輸出法の申告への同意を承認。
+  Dear Mars・日本語・ゲーム・`io.github.yakitama5.marsterraforming` でPlayへ新規登録した。
+  [Playダッシュボード](https://play.google.com/console/u/2/developers/7909583200864332400/app/4973407121760758999/app-dashboard)で
+  アプリID `4973407121760758999` を確認。内部テストトラックは作成済み、リリースなし。
+- Appleの更新契約への同意操作をユーザーが承認し、実行後Developer portalの制限解除を確認。
+  チーム `S935X7WSH2` にDear Marsの明示的Bundle ID
+  `io.github.yakitama5.marsterraforming` を新規登録した。
+  Developer accountの契約一覧で2026-10-14発効版・2026-10-18同意済みを確認した。
+  一方、App Store Connectでは無料アプリ契約が「有効（新規契約が利用可能）」で、
+  新規アプリ作成が契約更新の案内で止まる。再読込・強制再読込・新しいタブでも同じ。
+  有料アプリ契約は「有効」。追加の有料契約への同意は行っていない。
+  公式の反映時間は未確認で、受諾済み表示とASCの不一致が続く場合はAppleへの確認が必要。
 - ローカルの有効な署名はApple Developmentのみ。Apple DistributionとApp Store profile、
   App Store Connect APIキー、Google Play APIの認可は別途必要。
 - Android専用のRSA 4096-bit upload鍵を新規作成し、`android-internal` の上表の4 Secretsへ保存済み。
   秘密のローカル保管先は `/Users/yakuran/.config/mars-terraforming/mobile-cd/`。
   `upload.jks` と `android-upload.json` は所有者だけが読める権限で保管し、Gitには含めない。
   ストア登録後に別の鍵を生成し直さず、この一式を安全にバックアップする。
-- ストアの新規登録、初回アップロード、内部グループへの配信成功はまだ確認できていない。
-- CD基盤は [draft PR #28](https://github.com/yakitama5/mars-terraforming/pull/28) に保存。
-  develop / mainへはまだマージしておらず、ストア認証と登録内容の確認待ち。
+- ASCのアプリレコード作成、両ストアの初回アップロードと内部配信成功はまだ確認できていない。
+- CD基盤は [PR #28](https://github.com/yakitama5/mars-terraforming/pull/28) でdevelopへ、
+  [PR #29](https://github.com/yakitama5/mars-terraforming/pull/29) でmainへ通常マージ済み。
+  最新のFlutter/Web・Android/iOSのCI成功後に反映し、mainは `86b8d88`。
+- Android環境へ確定IDを設定し、署名4 Secretsの存在を名前だけで再確認。
+  [初回AABビルド](https://github.com/yakitama5/mars-terraforming/actions/runs/39130740248)をmainから起動した。
+  Playには初回リリースの説明だけを下書き保存。AABのアップロード・リリースは未完了。
+- Apple Distribution証明書とAPIキーは作成フォームまで準備したが、発行・GitHubへの保存は承認待ち。
+  ローカルのCSRと新しい暗号化秘密鍵は `/private/tmp/dear-mars-ios-signing/` に
+  dir 0700 / file 0600で一時保管。CSRだけをAppleへ送り、秘密鍵はアップロードしない。
+- Google Cloudは本人アカウントで専用プロジェクト `Dear Mars CD` / `dear-mars-cd` の作成を準備。
+  UIが請求先を必須とし、同名の請求先が複数あるため選択・作成はユーザー対応待ち。
+  既存の別プロジェクトや課金先は変更していない。WIF・Play API権限はまだ未設定。
+- 内部テスターはPlayの既存「自分」リストとASC本人だけを提案し、対象の回答待ち。
 
 ## 配信経路
 
@@ -84,9 +109,15 @@ Androidの長期サービスアカウントJSONキーは使わず、GitHub OIDC 
    テスターの宛先は所有者に確認し、他プロジェクトのアドレスを流用しない。
 5. Google CloudでAndroid Publisher APIを有効化し、配信専用service accountとWIFを用意する。
    GitHub側のrepository、main、Environmentに信頼対象を制限する。
-   WIFの属性条件には不変のrepository ID、`assertion.ref == 'refs/heads/main'`、
-   `assertion.sub == 'repo:yakitama5/mars-terraforming:environment:android-internal'` を組み合わせる。
+   WIFの属性条件には不変のrepository ID `1381473822` とowner ID `14286444`、
+   `assertion.ref == 'refs/heads/main'`、内部配信Environmentを組み合わせる。
+   GitHubのOIDC subjectは旧形式とID付き形式があるため、未確認の旧subject完全一致を固定しない。
+   例は `assertion.repository_id == '1381473822' && assertion.repository_owner_id == '14286444' && assertion.ref == 'refs/heads/main' && assertion.sub.endsWith(':environment:android-internal')`。
+   この条件と `attribute.repository_id` のprincipalSetを専用SAのWorkload Identity Userに限定する。
+   SAにはProject Owner/Editor等を付けない。
    Play Consoleでは対象アプリのテストトラックへ必要な権限だけを与える。
+   現laneで必要なのはDear Marsのアプリ情報閲覧とテストトラックへのリリースで、
+   製品版・テスター管理・売上/課金・ストア掲載情報の権限は付けない。
 6. 上表を設定してAndroidを有効化し、mainから手動実行する。ConsoleでversionCodeと
    `internal` リリースの状態を再確認して、テスト参加URLを記録する。
 
@@ -95,6 +126,8 @@ API経由でdraftアプリの最初のcompletedリリースを完了できると
 Consoleで初回内部リリースまで済ませる。以降のbuildでCDを検証する。
 [fastlaneの初回要件](https://docs.fastlane.tools/actions/upload_to_play_store/)と
 [Googleの内部テスト手順](https://support.google.com/googleplay/android-developer/answer/9845334)を参照。
+OIDC形式は[GitHubのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)、
+Cloud設定は[GoogleのWIF手順](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines)を参照。
 
 ## App Store Connectの初回手順
 
@@ -170,9 +203,24 @@ Webのセーブは今回のID変更の対象外。
 - 2026-10-18のDear Marsへの名称変更: Androidラベル、iOS表示名、Flutterタイトル/HUD、
   Web/PWAタイトルとREADMEを更新。`tools/check.sh` のPython6件・依存方向・整形・静的解析・
   Flutter434テスト、plist / Manifest XML / Web manifest JSON / HTMLの構文と名称照合が成功。
-  今回の変更後のnative/Webビルド・実機検証は未実施。進行値・保存ID・アプリ識別子は変更していない。
-- 未実施: 署名済みiOS archive / IPAの検証、両ストアの初回登録・実配信、
+  進行値・保存ID・アプリ識別子は変更していない。
+- 名称変更後のSHA `5c31c51` は[Flutter/Web検証](https://github.com/yakitama5/mars-terraforming/actions/runs/39085752746)と
+  [Android/iOS検証](https://github.com/yakitama5/mars-terraforming/actions/runs/39085752727)が成功。
+  Android APK・署名なしrelease拒否、locked Pod install、iOS Simulator、privacy manifestとIDの照合まで確認。
+  main反映前のPR #29も[Flutter/Web](https://github.com/yakitama5/mars-terraforming/actions/runs/39130063573)と
+  [Android/iOS](https://github.com/yakitama5/mars-terraforming/actions/runs/39130063348)が成功した。
+- mainの初回署名AAB生成run `39130740248` は、releaseのJavaコンパイルで失敗した。
+  `integration_test` が開発用の生成登録コードに残る一方、Gradleはrelease依存から除外するため、
+  `IntegrationTestPlugin` が見つからなかった。成果物の生成・アップロードには到達していない。
+  採用Flutter 3.47.7の実装を確認すると `--no-pub` はrelease用登録コードの再生成も省略する。
+  Androidのbootstrapと通常配信から同オプションを外し、SDKにrelease用コードを再生成させる。
+  最初のpub getは引き続きlockを強制し、PRでは破棄可能なCI専用鍵による本物のrelease AABと
+  テストplugin除外・lock不変を検査する。配布用の秘密鍵はPRに渡さない。
+  修正後のactionlintと `tools/check.sh`（Python6件・依存方向・整形・静的解析・Flutter434テスト）は成功。
+  ローカルの初回検証はSDKキャッシュへの書込制限で開始できず、承認された権限で再実行した。
+  修正後のnative release AAB生成はCIで確認する。未生成の成果物を配信成功として記録しない。
+- 未実施: 署名済みiOS archive / IPAの検証、ASCアプリレコード作成、両ストアの初回アップロード・実配信、
   実機でのストア経由インストール、Android/iOSの長時間GPU・性能・電池検証。
 
-登録名はDear Marsで決定済み。次は所有者アカウントでの認証と登録、必要なら無料／有料、内部テスターの宛先。
-ログイン完了後、ストア初期設定と実配信の確認を続ける。
+登録名はDear Mars、Playは無料で確定・新規登録済み。AppleはBundle ID登録済み。
+次はAppleのアプリレコード作成・配布資格情報、内部テスターの設定と実配信。

@@ -201,3 +201,23 @@
 - PR #28の最終追加分も、Android / iOS・Flutter/Webの全CI成功を確認済み。
   ストアへの登録と内部配信は、所有者のGoogle Play Console / App Store Connectへの認証待ち。
   API認可、Apple配布署名とprofileの設定は認証後に進める。
+
+## 2026-10-18: VivaldiのCodexワークスペースでストア登録を再開
+
+- ユーザーが両ストアへログインし、ブラウザ操作はVivaldiの **Codexワークスペース内だけ** と指定。
+  他のワークスペース・既存アプリを変更しない。
+- ユーザーはPlayの **無料** を選択し、ポリシー・米国輸出法の申告を承認した。
+  Dear Mars・日本語・ゲーム・ID `io.github.yakitama5.marsterraforming` で新規作成済み。
+  PlayのアプリIDは `4973407121760758999`。広告・アプリ内課金等の収益化方針は今回決定していない。
+- ユーザーがAppleの更新契約への同意操作を許可し、Developer portalの制限解除を確認。
+  同じIDをAppleにもDear Marsとして登録済み。ASCアプリレコード・配布資格情報・実配信は未完了。
+- Dear Marsへの名称変更後のSHA `5c31c51` もFlutter/Web・Android/iOSの全CI成功を確認。
+  ストア登録・内部配信の完了とは区別する。詳細は [モバイル内部配信](mobile-cd.md)。
+- CD基盤をPR #28→develop、PR #29→mainへ通常マージ。今回の最新CIも両OS・Webが成功。
+  main `86b8d88` から初回署名AABの生成を開始し、配信フラグはまだ両方falseを維持する。
+- Apple Developer契約は10月14日版へ10月18日同意済みと確認したが、ASC側は無料アプリ契約の
+  更新案内が残る。配布証明書/APIキーの作成とGitHub保存、本人テスターの指定は追加の回答待ち。
+  Google Cloudの専用プロジェクトは、請求先必須のためユーザーによる選択・作成待ち。
+- 初回AABのCIでrelease用プラグイン登録の再生成漏れが見つかった。
+  Flutterの `--no-pub` による省略が原因で、bootstrap/通常配信を修正し、PRへrelease AABの回帰検査を追加。
+  actionlintとローカル434テストは成功。修正後の署名AABとストアへの配信はまだ確認中。

@@ -54,6 +54,21 @@ jobs:
             exit 1
           fi
           python3 -c 'import os; from pathlib import Path; text = (Path(os.environ["RUNNER_TEMP"]) / "mars-signing-check.log").read_text(); assert "release署名に必要な環境変数が未設定です:" in text, text; print("署名情報がないreleaseを拒否しました。")'
+      - name: Release build with a disposable CI signing key
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/mars-release-check.jks
+          ANDROID_KEYSTORE_PASSWORD: disposable-ci-check
+          ANDROID_KEY_ALIAS: ci-check
+          ANDROID_KEY_PASSWORD: disposable-ci-check
+        run: |
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          keytool -genkeypair -noprompt -keystore "$ANDROID_KEYSTORE_PATH" \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" \
+            -alias "$ANDROID_KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 2 \
+            -dname 'CN=Dear Mars disposable CI check'
+          flutter build appbundle --release --build-number=1 --dart-define=DEV_TOOLS=false
+          python3 -c 'from pathlib import Path; text = Path("android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java").read_text(); assert "IntegrationTestPlugin" not in text; print("releaseの登録コードからテスト専用pluginが除外されています。")'
+          git diff --exit-code -- pubspec.lock
 
   ios:
     runs-on: macos-26
