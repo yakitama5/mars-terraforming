@@ -4,8 +4,39 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val releaseSigningEnvironment = listOf(
+    "ANDROID_KEYSTORE_PATH",
+    "ANDROID_KEYSTORE_PASSWORD",
+    "ANDROID_KEY_ALIAS",
+    "ANDROID_KEY_PASSWORD",
+).associateWith { providers.environmentVariable(it).orNull }
+val releaseKeystoreFile = releaseSigningEnvironment["ANDROID_KEYSTORE_PATH"]
+    ?.takeIf { it.isNotBlank() }
+    ?.let { rootProject.file(it) }
+
+val validateReleaseSigning by tasks.registering {
+    group = "verification"
+    description = "release用の署名資格情報を確認します。"
+    doLast {
+        val missingVariables = releaseSigningEnvironment.filterValues {
+            it.isNullOrBlank()
+        }.keys
+        if (missingVariables.isNotEmpty()) {
+            throw GradleException(
+                "release署名に必要な環境変数が未設定です: " +
+                    missingVariables.joinToString(", "),
+            )
+        }
+        if (releaseKeystoreFile?.let { it.isFile && it.canRead() } != true) {
+            throw GradleException(
+                "ANDROID_KEYSTORE_PATHに読み込み可能な署名鍵ファイルを指定してください。",
+            )
+        }
+    }
+}
+
 android {
-    namespace = "com.example.mars_terraforming"
+    namespace = "io.github.yakitama5.marsterraforming"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,8 +46,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.mars_terraforming"
+        applicationId = "io.github.yakitama5.marsterraforming"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -29,12 +59,26 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = releaseKeystoreFile
+            storePassword = releaseSigningEnvironment["ANDROID_KEYSTORE_PASSWORD"]
+            keyAlias = releaseSigningEnvironment["ANDROID_KEY_ALIAS"]
+            keyPassword = releaseSigningEnvironment["ANDROID_KEY_PASSWORD"]
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
+    }
+}
+
+// debugビルドでは署名資格情報を要求せず、releaseの成果物生成前に検証する。
+tasks.configureEach {
+    if (name == "preReleaseBuild" || name == "validateSigningRelease") {
+        dependsOn(validateReleaseSigning)
     }
 }
 

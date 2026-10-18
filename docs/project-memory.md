@@ -1,6 +1,6 @@
 # プロジェクトメモリ
 
-更新: 2026-10-16。会話で確認した好み・優先順位と、再開時に必要な現在地の要約。
+更新: 2026-10-18。会話で確認した好み・優先順位と、再開時に必要な現在地の要約。
 企画書は [game-design.md](game-design.md)、判断の履歴は [decisions.md](decisions.md)、
 起動と検証の手順は [development.md](development.md)。後のユーザー指示で変わった場合は、この要約も更新する。
 
@@ -163,3 +163,41 @@
 - 第三者のライブラリ・素材のライセンスは維持する。同梱のNoto Sans JPには既存のSIL OFL 1.1が適用される。
 - 追加後、ユーザーから「終わったらマージまで進めていいよ」と承認された。
   今回のライセンス変更をPRでdevelop→mainの順に反映する。
+
+## 2026-10-16: Android / iOSの内部配信CD
+
+- ユーザーがGoogle Play / App Storeの新規アプリ登録と内部テストまでの自動デプロイを依頼。
+  従来のAndroid後段という順序から、両OSの内部配信を並行して準備する方針へ更新する。
+  一般公開や収益化を承認したものとしては扱わない。
+- GitHub Actionsとfastlaneで、チェック済みmainをPlay内部テスト / TestFlightへ送る基盤を実装し、
+  [draft PR #28](https://github.com/yakitama5/mars-terraforming/pull/28) に保存。develop/mainへの反映はまだ行っていない。
+  `android-internal` / `ios-testflight` Environmentを作成し、mainだけに制限。
+  配信フラグは両方falseで、ストア初期設定前に自動アップロードしない。
+- 登録名「火星開発計画」とID `io.github.yakitama5.marsterraforming` はユーザー確認中。
+  候補IDをコードで検証しているが、ストアへの登録・名称確保はまだ行っていない。
+- Chromeで両ストアの認証が必要な状態を確認し、所有者アカウントでのログインを依頼中。
+  Android upload鍵の生成とGitHub Secretsへの保存は完了。Apple Distribution / profile / ASC APIキー、
+  Google Play API認可は未設定。詳細と作業終了時の検証は [モバイル内部配信](mobile-cd.md) に記録する。
+- 434テスト・解析・Webビルドと、CIでのAndroid APK／署名必須チェック、iOS Simulatorビルド／
+  manifest同梱が成功。CIはRuby 3.4.11・CocoaPods 1.17.0・Xcode 26.2で固定し、既存のCocoaPods方式を維持。
+  ローカルXcode 26.1.1は更新していない。初回Play登録用にはGoogle認可なしで署名AABを生成する
+  main限定の手動ワークフローを追加。ストア登録・署名済みIPA・実配信・実機インストールは未実施。
+
+## 2026-10-17: アプリ名の検討
+
+- ユーザーは「Hello, Mars」のような、かっこよい英語名を希望。他のゲームとの名称重複を避けたい。
+  従来の「火星開発計画」は仮称として扱い、正式な登録名は引き続き未確定。
+- Webで既存名を調査しながら候補を比較する。候補の提案を採用決定として記録せず、
+  ストアへの新規登録・表示名変更は名称確定後に進める。検索で同名が見つからないことと名称の確保は区別する。
+- 今回は命名の相談と検索のみ。アプリのコード・識別子は変更せず、ビルド・端末検証は行っていない。
+
+## 2026-10-18: 正式アプリ名をDear Marsに決定
+
+- ユーザーが「Dear Marsにしよう！」と指定し、正式アプリ名を **Dear Mars** に決定した。
+  「火星開発計画」は旧仮称。2026-10-17の候補比較を採用済みの複数案として扱わない。
+- Android / iOSのホーム画面、Flutterのタイトル・HUD、Web/PWA、READMEの製品名をDear Marsへ合わせる。
+  内部アプリIDは実装済みの候補
+  `io.github.yakitama5.marsterraforming` を維持し、名称決定をストアの名称確保・登録完了とは扱わない。
+- PR #28の最終追加分も、Android / iOS・Flutter/Webの全CI成功を確認済み。
+  ストアへの登録と内部配信は、所有者のGoogle Play Console / App Store Connectへの認証待ち。
+  API認可、Apple配布署名とprofileの設定は認証後に進める。

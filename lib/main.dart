@@ -60,7 +60,7 @@ class MarsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
-    title: '火星開発計画',
+    title: 'Dear Mars',
     locale: const Locale('ja'),
     supportedLocales: const [Locale('ja')],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,

@@ -1,0 +1,98 @@
+name: Mobile build checks
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mobile-*.yaml'
+      - '.github/workflows/android-bootstrap.yaml'
+      - 'Gemfile*'
+      - 'android/**'
+      - 'ios/**'
+      - 'lib/**'
+      - 'assets/**'
+      - 'pubspec.*'
+      - 'fastlane/**'
+      - 'tools/mobile_cd*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUNDLE_FROZEN: 'true'
+  FASTLANE_OPT_OUT_USAGE: 'true'
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17.0.19+10'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Debug build without signing secrets
+        run: flutter build apk --debug --no-pub
+      - name: Release requires explicit signing credentials
+        working-directory: android
+        run: |
+          if ./gradlew validateReleaseSigning > "$RUNNER_TEMP/mars-signing-check.log" 2>&1; then
+            echo '署名設定なしのrelease検証が成功したため停止します。'
+            exit 1
+          fi
+          python3 -c 'import os; from pathlib import Path; text = (Path(os.environ["RUNNER_TEMP"]) / "mars-signing-check.log").read_text(); assert "release署名に必要な環境変数が未設定です:" in text, text; print("署名情報がないreleaseを拒否しました。")'
+
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
+        with:
+          ruby-version: '3.4.11'
+          bundler: '4.0.16'
+          bundler-cache: true
+      - run: python3 -m unittest discover -s tools -p mobile_cd_test.py
+      - run: bundle exec ruby tools/mobile_cd_fastlane_test.rb
+      - name: Preserve the locked CocoaPods integration
+        run: flutter config --no-enable-swift-package-manager
+      - name: Confirm Xcode and installed simulator runtimes
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
+      - run: flutter pub get --enforce-lockfile
+      - name: Verify native dependency configuration
+        run: |
+          test -f ios/Flutter/Generated.xcconfig
+          python3 -c 'import json; from pathlib import Path; assert json.loads(Path(".flutter-plugins-dependencies").read_text())["swift_package_manager_enabled"]["ios"] is False'
+      - working-directory: ios
+        run: bundle exec pod install --deployment
+      - name: Simulator build without distribution credentials
+        run: bundle exec flutter build ios --simulator --debug --no-pub --verbose
+      - name: Confirm packaged privacy manifest and application ID
+        run: |
+          plutil -lint build/ios/iphonesimulator/Runner.app/PrivacyInfo.xcprivacy
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphonesimulator/Runner.app/Info.plist)" = 'io.github.yakitama5.marsterraforming'

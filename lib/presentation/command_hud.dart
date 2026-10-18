@@ -51,7 +51,7 @@ class CommandHud extends StatelessWidget {
                   if (wide) ...[
                     const SizedBox(width: 10),
                     const Text(
-                      '火星開発計画',
+                      'Dear Mars',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,

@@ -1,0 +1,206 @@
+require "base64"
+require "digest"
+require "fileutils"
+require "json"
+require "open3"
+require "securerandom"
+require "time"
+
+default_platform(:ios)
+
+def mobile_root
+  File.expand_path("..", __dir__)
+end
+
+def mobile_preflight(platform)
+  sh("python3", File.join(mobile_root, "tools/mobile_cd.py"), "preflight", platform)
+end
+
+def mobile_require_current_main
+  head, status = Open3.capture2("gh", "api", "repos/#{ENV.fetch('GITHUB_REPOSITORY')}/git/ref/heads/main", "--jq", ".object.sha")
+  UI.user_error!("main の現在地を確認できませんでした。配信を中止します。") unless status.success?
+  UI.user_error!("main が更新されたため、この古いビルドの配信を中止します。") unless head.strip == ENV.fetch("GITHUB_SHA")
+end
+
+def mobile_record(platform, build, destination)
+  record = {
+    platform: platform,
+    identifier: ENV.fetch("MOBILE_APP_IDENTIFIER"),
+    commit: ENV.fetch("GITHUB_SHA"),
+    run: ENV.fetch("GITHUB_RUN_ID"),
+    build: build,
+    destination: destination,
+    distribution_verified_at: Time.now.utc.iso8601
+  }
+  directory = File.join(mobile_root, "build/mobile")
+  FileUtils.mkdir_p(directory)
+  File.write(File.join(directory, "#{platform}-release.json"), JSON.pretty_generate(record) + "\n")
+  if ENV["GITHUB_STEP_SUMMARY"]
+    File.open(ENV.fetch("GITHUB_STEP_SUMMARY"), "a") do |file|
+      file.puts("#{platform}: #{destination} への配信を確認しました。build #{build} / #{record[:commit]}")
+    end
+  end
+end
+
+platform :android do
+  desc "Google Play の内部テストへ配信し、completed 状態を再確認"
+  lane :internal do
+    mobile_preflight("android")
+    require "supply"
+    require "supply/client"
+    identifier = ENV.fetch("MOBILE_APP_IDENTIFIER")
+    credentials = ENV.fetch("GOOGLE_APPLICATION_CREDENTIALS")
+    build = ENV.fetch("ANDROID_BUILD_NUMBER")
+    client = Supply::Client.make_from_config(params: { json_key: credentials, timeout: 300 })
+    begin
+      client.begin_edit(package_name: identifier)
+      used = client.aab_version_codes + client.apks_version_codes + client.tracks.flat_map do |track|
+        (track.releases || []).flat_map { |release| release.version_codes || [] }
+      end
+      if used.map(&:to_i).max.to_i >= build.to_i
+        UI.user_error!("既存ビルド以下の versionCode は配信できません。最新の main で新しい workflow を実行してください。")
+      end
+    ensure
+      client.abort_current_edit if client.current_edit
+    end
+    mobile_require_current_main
+    upload_to_play_store(
+      package_name: identifier,
+      aab: File.join(mobile_root, "build/app/outputs/bundle/release/app-release.aab"),
+      json_key: credentials,
+      track: "internal",
+      release_status: "completed",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true,
+      changes_not_sent_for_review: false
+    )
+    # A successful upload alone does not establish that the track is released.
+    begin
+      client.begin_edit(package_name: identifier)
+      released = client.track_releases("internal").any? do |release|
+        release.status == "completed" && (release.version_codes || []).map(&:to_s).include?(build)
+      end
+      UI.user_error!("AAB はアップロードされましたが、内部テストの配信状態を確認できません。Play Console を確認してください。") unless released
+    ensure
+      client.abort_current_edit if client.current_edit
+    end
+    mobile_record("android", build, "Google Play internal")
+  end
+end
+
+platform :ios do
+  desc "署名した iOS アプリを指定の TestFlight 内部グループへ配信"
+  lane :internal do
+    mobile_preflight("ios")
+    identifier = ENV.fetch("MOBILE_APP_IDENTIFIER")
+    build_number = ENV.fetch("IOS_BUILD_NUMBER")
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: ENV.fetch("ASC_PRIVATE_KEY_PATH"),
+      duration: 1200,
+      in_house: false
+    )
+    app = Spaceship::ConnectAPI::App.find(identifier)
+    UI.user_error!("App Store Connect に登録済みのアプリが見つかりません。") unless app
+    groups = app.get_beta_groups(includes: "betaTesters")
+    group = groups.find { |item| item.name == ENV.fetch("IOS_TESTFLIGHT_GROUP") }
+    UI.user_error!("指定した TestFlight グループを先に作成してください。") unless group
+    UI.user_error!("指定グループが内部テスト用ではありません。") unless group.is_internal_group
+    UI.user_error!("内部グループにテスターを先に追加してください。") if (group.beta_testers || []).empty?
+    previous = Spaceship::ConnectAPI::Build.all(app_id: app.id, platform: "IOS")
+    next_number = Gem::Version.new(build_number)
+    if previous.any? { |item| Gem::Version.new(item.version) >= next_number }
+      UI.user_error!("既存ビルド以下の CFBundleVersion は配信できません。最新の main で新しい workflow を実行してください。")
+    end
+
+    profile_path = ENV.fetch("IOS_PROVISION_PROFILE_PATH")
+    profile = FastlaneCore::ProvisioningProfile.parse(profile_path)
+    expected_app_id = "#{ENV.fetch('IOS_TEAM_ID')}.#{identifier}"
+    valid_profile = profile.dig("Entitlements", "application-identifier") == expected_app_id &&
+                    profile["TeamIdentifier"]&.include?(ENV.fetch("IOS_TEAM_ID")) &&
+                    !profile.dig("Entitlements", "get-task-allow") &&
+                    !profile.key?("ProvisionedDevices") && !profile["ProvisionsAllDevices"] &&
+                    profile["ExpirationDate"] && Time.parse(profile["ExpirationDate"].to_s) > Time.now
+    UI.user_error!("配布プロファイルの ID・Team・配布方式・有効期限を確認してください。") unless valid_profile
+
+    keychain_path = File.join(ENV.fetch("RUNNER_TEMP"), "mars-ci-signing.keychain-db")
+    keychain_password = SecureRandom.hex(32)
+    created_keychain = false
+    installed_profile = nil
+    project_path = File.join(mobile_root, "ios/Runner.xcodeproj")
+    project_file = File.join(project_path, "project.pbxproj")
+    original_project = nil
+    begin
+      create_keychain(
+        path: keychain_path, password: keychain_password,
+        default_keychain: false, add_to_search_list: true, unlock: true, timeout: 3600
+      )
+      created_keychain = true
+      import_certificate(
+        certificate_path: ENV.fetch("IOS_DISTRIBUTION_P12_PATH"),
+        certificate_password: ENV.fetch("IOS_DISTRIBUTION_P12_PASSWORD"),
+        keychain_name: "mars-ci-signing", keychain_path: keychain_path,
+        keychain_password: keychain_password
+      )
+      identities, status = Open3.capture2("security", "find-identity", "-v", "-p", "codesigning", keychain_path)
+      UI.user_error!("配布用の署名 ID を読み込めませんでした。") unless status.success?
+      certificates = (profile["DeveloperCertificates"] || []).map do |cert|
+        Digest::SHA1.hexdigest(cert.respond_to?(:string) ? cert.string : cert).upcase
+      end
+      signing_identity = certificates.find { |fingerprint| identities.include?(fingerprint) }
+      UI.user_error!("p12 の秘密鍵と配布プロファイルの証明書が一致しません。") unless signing_identity
+      installed_profile = install_provisioning_profile(path: profile_path)
+
+      Dir.chdir(mobile_root) do
+        sh("flutter", "build", "ios", "--release", "--no-codesign", "--no-pub",
+           "--build-number=#{build_number}", "--dart-define=DEV_TOOLS=false")
+      end
+      # Scope the profile to Runner. Global xcodebuild overrides also affect Pods.
+      original_project = File.binread(project_file)
+      update_code_signing_settings(
+        path: project_path, targets: ["Runner"], build_configurations: ["Release"],
+        use_automatic_signing: false, team_id: ENV.fetch("IOS_TEAM_ID"),
+        code_sign_identity: signing_identity, profile_uuid: profile.fetch("UUID")
+      )
+      ipa = build_app(
+        workspace: File.join(mobile_root, "ios/Runner.xcworkspace"),
+        scheme: "Runner", configuration: "Release", clean: false,
+        output_directory: File.join(mobile_root, "build/mobile"),
+        output_name: "mars-terraforming.ipa", export_method: "app-store",
+        skip_profile_detection: true,
+        export_options: {
+          method: "app-store-connect", signingStyle: "manual", teamID: ENV.fetch("IOS_TEAM_ID"),
+          signingCertificate: signing_identity, manageAppVersionAndBuildNumber: false,
+          provisioningProfiles: { identifier => profile.fetch("UUID") }
+        }
+      )
+      mobile_require_current_main
+      upload_to_testflight(
+        api_key: api_key, app_identifier: identifier, ipa: ipa,
+        groups: [group.id], distribute_external: false, submit_beta_review: false,
+        notify_external_testers: false, skip_submission: false,
+        skip_waiting_for_build_processing: false, wait_processing_timeout_duration: 1800,
+        changelog: "内部テスト: #{ENV.fetch('GITHUB_SHA')[0, 12]}"
+      )
+      # pilot can report success when a group did not match. Read actual membership.
+      distributed = false
+      12.times do
+        build = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: build_number, platform: "IOS").first
+        if build && build.ready_for_internal_testing? && group.fetch_builds.any? { |item| item.id == build.id }
+          distributed = true
+          break
+        end
+        sleep(10)
+      end
+      UI.user_error!("IPA はアップロードされましたが、内部グループへの配信を確認できません。TestFlight を確認してください。") unless distributed
+      mobile_record("ios", build_number, "TestFlight internal group")
+    ensure
+      File.binwrite(project_file, original_project) if original_project
+      delete_keychain(keychain_path: keychain_path) if created_keychain
+      FileUtils.rm_f(installed_profile) if installed_profile
+    end
+  end
+end
