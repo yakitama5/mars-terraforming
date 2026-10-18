@@ -45,7 +45,10 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: flutter build appbundle --release --no-pub --build-number=1 --dart-define=DEV_TOOLS=false
+        # Release must regenerate the plugin registrant without dev-only plugins.
+        run: flutter build appbundle --release --build-number=1 --dart-define=DEV_TOOLS=false
+      - name: Confirm dependency lock is unchanged
+        run: git diff --exit-code -- pubspec.lock
       - name: Verify bundle signature
         run: |
           jarsigner -verify build/app/outputs/bundle/release/app-release.aab > "$RUNNER_TEMP/mars-bootstrap-signature.log"
