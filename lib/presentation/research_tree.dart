@@ -7,6 +7,7 @@ import '../domain/game_state.dart';
 import '../domain/research_frontiers.dart';
 import 'research_display.dart';
 import 'research_theme.dart';
+import 'research_tree_layout.dart';
 import 'strategy_widgets.dart';
 
 /// Hidden technology never affects canvas bounds, connections, semantics, or
@@ -57,6 +58,7 @@ class _ResearchTreeState extends State<ResearchTree>
   Size _graphSize = Size.zero;
   Size _nodeSize = Size.zero;
   Map<String, Offset> _positions = const {};
+  String? _cameraAnchorId;
 
   GameState get game => widget.game;
   ResearchTechnology? _technology(String? id) =>
@@ -76,6 +78,7 @@ class _ResearchTreeState extends State<ResearchTree>
   }
 
   void _captureWorld() {
+    _cameraAnchorId = null;
     _worldId = game.worldId;
     _knownResearch = Set.of(game.research);
     _knownDiscovered = Set.of(game.discoveredResearchIds);
@@ -176,6 +179,7 @@ class _ResearchTreeState extends State<ResearchTree>
   void _focusNode(String id, {bool animate = true}) {
     final position = _positions[id];
     if (position == null || _viewportSize.isEmpty || _nodeSize.isEmpty) return;
+    _cameraAnchorId = id;
     final scale = math
         .min(
           (_viewportSize.width - 36) / _nodeSize.width,
@@ -201,7 +205,7 @@ class _ResearchTreeState extends State<ResearchTree>
           (_viewportSize.width - 28) / _graphSize.width,
           (_viewportSize.height - 24) / _graphSize.height,
         )
-        .clamp(.12, 1.0);
+        .clamp(.01, 1.0);
     _setCamera(
       Matrix4.diagonal3Values(scale, scale, 1)..setTranslationRaw(
         (_viewportSize.width - _graphSize.width * scale) / 2,
@@ -244,7 +248,12 @@ class _ResearchTreeState extends State<ResearchTree>
           _viewportSize.width / bounds.width,
           _viewportSize.height / bounds.height,
         )
-        .clamp(.12, 1.0);
+        .clamp(.85, 1.0);
+    if (bounds.width * scale > _viewportSize.width ||
+        bounds.height * scale > _viewportSize.height) {
+      _focusNode(target);
+      return;
+    }
     _setCamera(
       Matrix4.diagonal3Values(scale, scale, 1)..setTranslationRaw(
         _viewportSize.width / 2 - bounds.center.dx * scale,
@@ -272,55 +281,23 @@ class _ResearchTreeState extends State<ResearchTree>
     setState(() => _field = field);
     if (changed) widget.onSelectionCleared?.call();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode(candidates.first.id);
+      if (mounted) _focusSelection();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final technologies = _visibleTechnologies(_field);
-    final visibleIds = technologies.map((technology) => technology.id).toSet();
     final textScale = MediaQuery.textScalerOf(context).scale(13) / 13;
     final nodeWidth = 212.0 * math.max(1.0, textScale);
     final compact = MediaQuery.sizeOf(context).height < 450;
     final nodeHeight = (compact ? 144.0 : 164.0) * math.max(1.0, textScale);
-    const horizontalGap = 78.0, verticalGap = 30.0;
-    final depths = <String, int>{};
-    final visiting = <String>{};
-    int depth(ResearchTechnology technology) {
-      final existing = depths[technology.id];
-      if (existing != null) return existing;
-      if (!visiting.add(technology.id)) return 0;
-      var result = 0;
-      for (final id in [
-        ...technology.prerequisiteIds,
-        ...technology.alternativePrerequisiteIds,
-      ]) {
-        if (!visibleIds.contains(id)) continue;
-        final parent = _technology(id);
-        if (parent != null) result = math.max(result, depth(parent) + 1);
-      }
-      visiting.remove(technology.id);
-      return depths[technology.id] = result;
-    }
-
-    final positions = <String, Offset>{};
-    final columnRows = <int, int>{};
-    for (final technology in technologies) {
-      final column = depth(technology);
-      final row = columnRows[column] ?? 0;
-      columnRows[column] = row + 1;
-      positions[technology.id] = Offset(
-        94 + column * (nodeWidth + horizontalGap),
-        32 + row * (nodeHeight + verticalGap),
-      );
-    }
-    final columns = depths.values.fold(0, math.max) + 1;
-    final rows = columnRows.values.fold(1, math.max);
-    _graphSize = Size(
-      94 + columns * (nodeWidth + horizontalGap) - horizontalGap + 32,
-      32 + rows * (nodeHeight + verticalGap) - verticalGap + 32,
+    final layout = ResearchTreeLayout.calculate(
+      technologies: technologies,
+      nodeSize: Size(nodeWidth, nodeHeight),
     );
+    final positions = layout.positions;
+    _graphSize = layout.size;
     _positions = positions;
     _nodeSize = Size(nodeWidth, nodeHeight);
     return ClipRRect(
@@ -356,7 +333,13 @@ class _ResearchTreeState extends State<ResearchTree>
                       if (previousSize != _viewportSize) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted) {
-                            _focusSelection(animate: false);
+                            final anchor = widget.selectedId ?? _cameraAnchorId;
+                            if (anchor != null &&
+                                _positions.containsKey(anchor)) {
+                              _focusNode(anchor, animate: false);
+                            } else {
+                              _focusSelection(animate: false);
+                            }
                           }
                         });
                       }
@@ -365,7 +348,7 @@ class _ResearchTreeState extends State<ResearchTree>
                           key: const Key('research-tree-canvas'),
                           transformationController: transformation,
                           constrained: false,
-                          minScale: .12,
+                          minScale: .01,
                           maxScale: 1.8,
                           boundaryMargin: const EdgeInsets.all(140),
                           onInteractionStart: (_) => _camera.stop(),
@@ -376,7 +359,7 @@ class _ResearchTreeState extends State<ResearchTree>
                               builder: (context, _) => CustomPaint(
                                 painter: _ResearchConnections(
                                   technologies: technologies,
-                                  positions: positions,
+                                  layout: layout,
                                   completed: game.research,
                                   newNodes: _newNodes,
                                   unlockedNodes: _unlockedNodes,
@@ -387,8 +370,8 @@ class _ResearchTreeState extends State<ResearchTree>
                                 child: Stack(
                                   children: [
                                     Positioned(
-                                      left: 17,
-                                      top: 32 + nodeHeight / 2 - 20,
+                                      left: layout.seed.dx - 20,
+                                      top: layout.seed.dy - 20,
                                       child: _knowledgeSeed(),
                                     ),
                                     for (final technology in technologies)
@@ -424,7 +407,7 @@ class _ResearchTreeState extends State<ResearchTree>
                   compact ? 3 : 8,
                 ),
                 child: Text(
-                  '発見した道筋だけを表示 · ドラッグで移動',
+                  '右へ研究が深まる · ドラッグで枝をたどる',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -857,7 +840,7 @@ String researchStatus(
 class _ResearchConnections extends CustomPainter {
   _ResearchConnections({
     required this.technologies,
-    required this.positions,
+    required this.layout,
     required this.completed,
     required this.newNodes,
     required this.unlockedNodes,
@@ -867,7 +850,8 @@ class _ResearchConnections extends CustomPainter {
   });
 
   final List<ResearchTechnology> technologies;
-  final Map<String, Offset> positions;
+  final ResearchTreeLayout layout;
+  Map<String, Offset> get positions => layout.positions;
   final Set<String> completed, newNodes, unlockedNodes;
   final Size nodeSize;
   final ResearchField field;
@@ -875,7 +859,21 @@ class _ResearchConnections extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final seed = Offset(57, 32 + nodeSize.height / 2);
+    for (final bounds in layout.branchBounds.values) {
+      final frame = RRect.fromRectAndRadius(bounds, const Radius.circular(24));
+      canvas.drawRRect(
+        frame,
+        Paint()..color = field.color.withValues(alpha: .025),
+      );
+      canvas.drawRRect(
+        frame,
+        Paint()
+          ..color = field.color.withValues(alpha: .13)
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke,
+      );
+    }
+    final seed = layout.seed + const Offset(20, 0);
     for (final technology in technologies) {
       final position = positions[technology.id]!;
       final target = position + Offset(0, nodeSize.height / 2);
@@ -893,6 +891,7 @@ class _ResearchConnections extends CustomPainter {
             target,
             technology.id,
             completed.contains(parent),
+            primary: layout.primaryParentIds[technology.id] == parent,
           );
         }
       }
@@ -910,12 +909,43 @@ class _ResearchConnections extends CustomPainter {
     Offset source,
     Offset target,
     String targetId,
-    bool activated,
-  ) {
+    bool activated, {
+    bool primary = true,
+  }) {
     final middle = (source.dx + target.dx) / 2;
-    final path = Path()
-      ..moveTo(source.dx, source.dy)
-      ..cubicTo(middle, source.dy, middle, target.dy, target.dx, target.dy);
+    final path = Path()..moveTo(source.dx, source.dy);
+    if (primary) {
+      // Horizontal shoulders share a stem before opening toward each leaf.
+      final dy = target.dy - source.dy;
+      final bend = math.min(18.0, dy.abs() / 2);
+      final direction = dy.sign;
+      path
+        ..lineTo(middle - bend, source.dy)
+        ..quadraticBezierTo(
+          middle,
+          source.dy,
+          middle,
+          source.dy + bend * direction,
+        )
+        ..lineTo(middle, target.dy - bend * direction)
+        ..quadraticBezierTo(middle, target.dy, middle + bend, target.dy)
+        ..lineTo(target.dx, target.dy);
+    } else {
+      // Additional prerequisites travel through the gaps outside branch frames.
+      final sourceFrame = layout.branchBounds.values.firstWhere(
+        (bounds) => bounds.contains(source),
+      );
+      final targetFrame = layout.branchBounds.values.firstWhere(
+        (bounds) => bounds.contains(target),
+      );
+      final lane = math.min(sourceFrame.top, targetFrame.top) - 10;
+      path
+        ..lineTo(source.dx + 24, source.dy)
+        ..lineTo(source.dx + 24, lane)
+        ..lineTo(target.dx - 24, lane)
+        ..lineTo(target.dx - 24, target.dy)
+        ..lineTo(target.dx, target.dy);
+    }
     final growth = newNodes.contains(targetId)
         ? Curves.easeInOutCubic.transform((progress / .8).clamp(0.0, 1.0))
         : 1.0;
@@ -923,7 +953,7 @@ class _ResearchConnections extends CustomPainter {
       final length = metric.length * growth;
       if (length <= 0) continue;
       final grownPath = metric.extractPath(0, length);
-      if (activated) {
+      if (activated && primary) {
         canvas.drawPath(
           grownPath,
           Paint()
@@ -933,14 +963,25 @@ class _ResearchConnections extends CustomPainter {
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
         );
       }
-      canvas.drawPath(
-        grownPath,
-        Paint()
-          ..color = activated ? field.color.withValues(alpha: .7) : strategyLine
-          ..strokeWidth = activated ? 2 : 1.5
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round,
-      );
+      final paint = Paint()
+        ..color = activated
+            ? field.color.withValues(alpha: primary ? .7 : .35)
+            : strategyLine
+        ..strokeWidth = primary ? (activated ? 3 : 2) : 1
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+      if (primary) {
+        canvas.drawPath(grownPath, paint);
+      } else {
+        for (final section in grownPath.computeMetrics()) {
+          for (var offset = 0.0; offset < section.length; offset += 12) {
+            canvas.drawPath(
+              section.extractPath(offset, math.min(offset + 6, section.length)),
+              paint,
+            );
+          }
+        }
+      }
       if (newNodes.contains(targetId) && progress < .8) {
         final tip = metric.getTangentForOffset(length)?.position;
         if (tip != null) {
