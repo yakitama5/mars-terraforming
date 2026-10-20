@@ -108,6 +108,18 @@ void main() {
           return null;
         });
         await tester.pumpAndSettle();
+        // The confirm action may have scrolled the lazily built controls out
+        // of the small viewport. Return to the allocation row before reading
+        // the paid-work locks on its buttons.
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('staff-research-less')),
+          -140,
+          scrollable: find.descendant(
+            of: find.byKey(const Key('agency-staff')),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        await tester.pumpAndSettle();
         expect(
           tester
               .widget<IconButton>(find.byKey(const Key('staff-research-less')))
