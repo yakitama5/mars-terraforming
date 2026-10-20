@@ -492,3 +492,9 @@
   自動全体表示で小さくなりすぎたカードは、入口へ0.85倍以上で寄る形へ修正した。
 - iPhone 17 Pro / iOS26.1 Simulatorも、新研究UIから居住・人員・提携・保存再開まで全断言成功。
   画像回収を今回の2枚へ絞る指定でdriverも終了0。実機性能と長期バランスは引き続き未検証。
+- [PR #36](https://github.com/yakitama5/mars-terraforming/pull/36)→develop、
+  [PR #37](https://github.com/yakitama5/mars-terraforming/pull/37)→mainの全チェックと反映が完了。
+  main `02393fc0f0b17cb47c0af1d20bde0dba6a20f924` の全体CIとPages公開も成功した。
+- 自動内部配信run `39397506671` は全4job成功し、Android **701**・iOS **7.1**を配信済み。
+  記録のID・全SHA・run・build・配信先を二重照合し、署名資材とWIFの後片付けまで確認した。
+  完了記録は[研究UIの小画面対応](research-mobile-ui.md)と両PR本文へ残し、記録だけのmain再pushは行わない。
