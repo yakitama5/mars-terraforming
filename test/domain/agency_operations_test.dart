@@ -230,6 +230,7 @@ void main() {
       game.state.research.addAll([
         'urban_planning',
         'life_support',
+        'autonomous_rovers',
         'low_gravity_mobility',
         'subsurface_access',
         'local_resources',

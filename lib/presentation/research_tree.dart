@@ -224,8 +224,8 @@ class _ResearchTreeState extends State<ResearchTree>
         : sources.first;
     final target = targets.firstWhere(
       (id) =>
-          _technology(id)!.prerequisiteIds.contains(source) ||
-          _technology(id)!.alternativePrerequisiteIds.contains(source),
+          GameContent.researchConnectionParentIds(_technology(id)!)
+              .contains(source),
       orElse: () => targets.first,
     );
     final bounds =
@@ -877,10 +877,9 @@ class _ResearchConnections extends CustomPainter {
     for (final technology in technologies) {
       final position = positions[technology.id]!;
       final target = position + Offset(0, nodeSize.height / 2);
-      final parents = [
-        ...technology.prerequisiteIds,
-        ...technology.alternativePrerequisiteIds,
-      ].where(positions.containsKey).toList();
+      final parents = [...GameContent.researchConnectionParentIds(technology)]
+          .where(positions.containsKey)
+          .toList();
       if (parents.isEmpty) {
         _drawBranch(canvas, seed, target, technology.id, true);
       } else {

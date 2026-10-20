@@ -63,7 +63,24 @@ Flutter3.47.7 / Dart3.13.5 / FlutterScene0.24.3を使用し、依存の採用版
 Pixel 8a実機での性能・電池と、通常時間での長期バランスは未検証。
 次の本人評価は、左右の深まり、枝のまとまりと余白、パンして続きを追う感触とする。
 
-## 反映
+## 反映・内部配信
 
-意味ごとのコミットからdevelop→mainへ反映し、CI・Pages・内部配信の結果をPR本文へ記録する。
-配信完了後の記録だけでmainを再pushして重複配信を起こさない。
+- 3つの意味ごとのコミットを[PR #38](https://github.com/yakitama5/mars-terraforming/pull/38)からdevelop、
+  [PR #39](https://github.com/yakitama5/mars-terraforming/pull/39)からmainへ通常mergeした。
+  両PRとも最新HEADの全チェック成功とSHAを確認して反映した。
+- mainは `03ae7ad7853b2e080a0d679ef14699c78d37d35b`、
+  developは `2e41ac63461ed55cd74df2f320cf457dd696ef74`。
+  [全体CI](https://github.com/yakitama5/mars-terraforming/actions/runs/39406117048)と
+  [Pages](https://github.com/yakitama5/mars-terraforming/actions/runs/39406117040)が成功した。
+  公開deployment.jsonの両全SHA・runを照合し、[通常版](https://yakitama5.github.io/mars-terraforming/)も更新済み。
+- [内部配信run 39406116937](https://github.com/yakitama5/mars-terraforming/actions/runs/39406116937)は全4job成功。
+  Android **801**をGoogle Play internalへ19:18:42 JST、
+  iOS **8.1**をTestFlight内部グループへ19:23:01 JSTに配信確認した（2026-10-20）。
+  記録の固定ID `io.github.yakitama5.marsterraforming`・main全SHA・run・build・配信先を二重照合済み。
+  Android Artifact `12257667582`、iOS Artifact `12257733312`。
+  両OSの署名材料削除とAndroid WIFの後片付けも成功した。
+- 最終結果は両PR本文にも記録済み。本節の配信完了記録はローカル文書へ追記し、
+  記録のための追加main push・再配信は行わない。
+- 元の作業場所へ18対象中17ファイルを更新、1ファイルは同一内容として保持した。
+  全511追跡ファイルを比較して、別作業のdocs/mobile-cd.md以外は内容が一致する。
+  元のブランチ・HEADと既存の未コミット作業を保持した。

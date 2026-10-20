@@ -1,10 +1,11 @@
 # 開発・検証の引き継ぎ
 
-更新: 2026-10-20。最新の研究UIは[横へ深まる研究ツリー](research-horizontal-tree.md)、
+更新: 2026-10-20。最新の発見順は[必ず子へ深まる研究](research-discovery-depth.md)、
+配置は[横へ深まる研究ツリー](research-horizontal-tree.md)、
 人員・RP・詳細の開閉は[小画面対応](research-mobile-ui.md)を参照。
 4分類・共通RPの研究ツリーは未選択で全幅表示し、技術の選択後に詳細を開く。
 ヘッダーは共通RPと使用中/部門総数の人員を表示。科学メモの導線を外し、全研究に創作文を表示する。
-進行データはcontent district-7。以下の過去の日付の検証は各段階の履歴として扱う。
+進行データはcontent district-8。以下の過去の日付の検証は各段階の履歴として扱う。
 導入変更は [3Dの未来序章](cinematic-introduction.md) を参照。
 表情素材、表示の使い分け、動きと検証の詳細は [ミナの表情](mina-expressions.md) を参照。
 今回の統合結果は [青い地球と物語の改善](blue-horizon-improvements.md) を参照。
@@ -13,7 +14,7 @@ Android / iOSの署名・ストア登録・内部テストCDは [モバイル内
 2026-10-20の研究相談に続き、ユーザーは実装・細かいコミット・main反映・内部配信を依頼した。
 過去の「まだ実装しない」を更新し、4分類・共通RP・段階発見と都市設備／機体の導入を実装する。
 [実装・移行・検証](research-implementation.md)、[研究候補](research-tree-catalog.md)、
-[解放先の企画](research-unlocks.md)を参照。進行データはcontent district-7、schema 2を維持。
+[解放先の企画](research-unlocks.md)を参照。進行データはcontent district-8、schema 2を維持。
 円形の箱庭はユーザーから「いい感じ！」と評価され、以後の見た目の基準とする。細部は引き続き調整対象。
 前回の変更と検証は [製品としての操作性レビュー](product-usability.md) を参照。
 案内と通知の基盤は [導入ガイド](first-hour-guidance.md)、採用した景観は [円形の箱庭](circular-terrarium.md) を参照。
