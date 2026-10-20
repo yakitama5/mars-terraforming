@@ -183,23 +183,39 @@ void main() {
           .blockedReason,
       isNull,
     );
-    expect(game.upgradeDistrict('earth_delta', 1), contains('自動化生産'));
-    expect(game.upgradeDistrict('earth_delta', 2), contains('自動化生産'));
+    expect(game.upgradeDistrict('earth_delta', 1), contains('前提研究'));
+    expect(game.upgradeDistrict('earth_delta', 2), contains('前提研究'));
     expect(game.upgradeDistrict('earth_delta', 0), isNull);
     game.state.research.add('automated_fabrication');
     expect(game.upgradeDistrict('earth_delta', 1), isNull);
     game.advanceBy(const Duration(hours: 1));
     expect(game.state.districtAt('earth_delta', 0)!.level, 2);
     expect(game.state.districtAt('earth_delta', 1)!.level, 2);
-    expect(game.upgradeDistrict('earth_delta', 0), contains('広域産業'));
+    expect(game.upgradeDistrict('earth_delta', 0), contains('前提研究'));
   });
 
-  test('new efficiency affects future starts but never changes paid research duration', () {
-    final game = ready();
+  test('new efficiency affects future starts but never changes paid legacy research', () {
+    var game = ready();
     game.enqueueDistrict('earth_delta', 4, 'campus');
     game.advanceBy(const Duration(minutes: 9));
-    game.state.marsHabitats = 1;
-    game.enqueue('closed_ecology');
+    // An already-paid v6 research retains its own timer and committed staff;
+    // only new research uses the shared RP bank without an extra timer.
+    final snapshot = game.state.toJson()..['contentVersion'] = 'district-6';
+    (snapshot['plans'] as List).add({
+      'id': 'legacy-paid-research',
+      'taskId': 'closed_ecology',
+      'remainingRepeats': 1,
+      'completedRuns': 0,
+      'status': 'running',
+      'stopReason': '',
+      'remainingMs': const Duration(hours: 3).inMilliseconds,
+      'iterationDurationMs': const Duration(hours: 3).inMilliseconds,
+      'iterationSpecialists': GameContent.baselineDepartmentStaff,
+      'cityId': null,
+      'plotIndex': null,
+      'targetLevel': null,
+    });
+    game = GameEngine(GameState.fromJson(snapshot));
     final research = game.state.currentPlanFor('lab')!;
     expect(
       research.iterationDurationMs,
@@ -220,22 +236,18 @@ void main() {
       restored.state.currentPlanFor('lab')!.iterationDurationMs,
       research.iterationDurationMs,
     );
-    expect(
-      restored.state.currentTaskDurationMs('local_resources'),
-      lessThan(GameContent.tasks['local_resources']!.durationMs),
-    );
     restored.advanceBy(Duration(milliseconds: research.remainingMs));
     expect(restored.state.research, contains('closed_ecology'));
-    final greenhouse = DistrictState(
-      cityId: 'mars_arcadia',
-      plotIndex: 0,
-      districtId: 'greenhouse',
-    );
-    restored.state.districts[greenhouse.key] = greenhouse;
-    restored.enqueue('local_resources');
+    // Training is still a paid, timed lab job. The newly completed campus
+    // changes its next start without rewriting the legacy research iteration.
+    expect(restored.enqueue('train_specialists'), isNull);
     expect(
       restored.state.currentPlanFor('lab')!.iterationDurationMs,
-      restored.state.currentTaskDurationMs('local_resources'),
+      restored.state.currentTaskDurationMs('train_specialists'),
+    );
+    expect(
+      restored.state.currentPlanFor('lab')!.iterationDurationMs,
+      lessThan(GameContent.tasks['train_specialists']!.durationMs),
     );
   });
 
@@ -293,6 +305,9 @@ void main() {
       'automated_fabrication',
       'reusable_launch',
       'orbital_logistics',
+      ResearchCatalog.idForCatalog('M01'),
+      ResearchCatalog.idForCatalog('M17'),
+      ResearchCatalog.idForCatalog('M18'),
     ]);
     one.enqueue('precision_contract');
     one.enqueueDistrict('earth_highland', 0, 'campus');
@@ -303,8 +318,8 @@ void main() {
     one.enqueueDistrict('mars_arcadia', 1, 'mars_habitat');
     one.enqueueDistrict('mars_arcadia', 5, 'greenhouse');
     one.enqueueDistrict('mars_elysium', 3, 'mars_habitat');
-    one.enqueue('industrial_network');
-    one.enqueue('regional_habitats');
+    expect(one.enqueue('industrial_network'), isNull);
+    expect(one.enqueue('regional_habitats'), isNull);
     one.enqueue('orbital_contract', repeats: 3);
     var split = GameEngine(copy(one.state));
     const total = Duration(days: 4);
@@ -382,15 +397,21 @@ void main() {
   test('branch research has staged unlocks and only explicitly requested work proceeds', () {
     final game = ready();
     final research = GameContent.tasks.values.where((t) => t.unique);
-    expect(research, hasLength(19));
+    expect(research, hasLength(98));
+    expect(research.map((task) => task.researchBranch).toSet(), {
+      for (final field in ResearchField.values) field.label,
+    });
     expect(
-      research.where((r) => r.durationSeconds >= 24 * 3600).length,
+      research
+          .where((task) => GameContent.researchPointCost(task.id) >= 24000)
+          .length,
       greaterThanOrEqualTo(3),
     );
-    expect(GameContent.tasks['regional_habitats']!.prerequisiteIds, [
-      'local_resources',
-      'orbital_logistics',
-    ]);
+    expect(
+      GameContent.researchPointCost('regional_habitats'),
+      greaterThan(GameContent.researchPointCost('life_support')),
+    );
+    expect(game.state.discoveredResearchIds.length, lessThan(research.length));
     game.advanceBy(const Duration(days: 10));
     expect(game.state.districts, isEmpty);
     expect(game.state.research, {'urban_planning', 'life_support'});

@@ -369,6 +369,10 @@ class GameState {
 
   Set<String> get visibleResearchIds => discoveredResearchIds;
   bool isResearchDiscovered(String id) => discoveredResearchIds.contains(id);
+  String researchNameForDisplay(String id) => isResearchDiscovered(id)
+      ? GameContent.tasks[id]?.name ?? '研究'
+      : '研究を進めて手掛かりを探してください';
+
   int? researchWaitMs(String id) {
     final gap =
         GameContent.researchPointCost(id) * researchPointScale -
@@ -545,7 +549,7 @@ class GameState {
     }
     if (event.requiredResearch != null &&
         !research.contains(event.requiredResearch)) {
-      return '必要研究：${GameContent.tasks[event.requiredResearch]!.name}';
+      return '必要研究：${researchNameForDisplay(event.requiredResearch!)}';
     }
     if (districts.length < event.minimumDistricts) {
       return '完成地区 ${districts.length}/${event.minimumDistricts}区画';
@@ -628,7 +632,7 @@ class GameState {
     }
     if (city.requiredResearch != null &&
         !research.contains(city.requiredResearch)) {
-      return '前提研究：${GameContent.tasks[city.requiredResearch]!.name}';
+      return '前提研究：${researchNameForDisplay(city.requiredResearch!)}';
     }
     return null;
   }
@@ -795,13 +799,13 @@ class GameState {
           '必要な地形：${definition.allowedTerrain.map((t) => GameContent.terrainNames[t]).join('・')}';
     } else if (definition.requiredResearch != null &&
         !research.contains(definition.requiredResearch)) {
-      reason = '前提研究：${GameContent.tasks[definition.requiredResearch]!.name}';
+      reason = '前提研究：${researchNameForDisplay(definition.requiredResearch!)}';
     } else if (districtId == 'mars_habitat' && habitatChoice == null) {
       reason = '居住方式を選択してください';
     } else if (upgrade) {
       final required = definition.researchForUpgrade(level);
       if (!research.contains(required)) {
-        reason = '前提研究：${GameContent.tasks[required]!.name}';
+        reason = '前提研究：${researchNameForDisplay(required)}';
       }
     }
     var delta = const DistrictEffects();

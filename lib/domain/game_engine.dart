@@ -20,23 +20,37 @@ class GameEngine {
     final task = GameContent.tasks[taskId];
     if (task == null) return const [];
     final requirements = task.researchRequirements;
+    final knownPrerequisites = task.prerequisiteIds.where(
+      state.isResearchDiscovered,
+    );
+    final knownAlternatives = task.alternativePrerequisites
+        .where(state.isResearchDiscovered)
+        .toList();
     return [
-      for (final id in task.prerequisiteIds)
+      for (final id in knownPrerequisites)
         ResearchRequirementStatus(
-          label: '研究：${GameContent.tasks[id]!.name}',
+          label: '研究：${state.researchNameForDisplay(id)}',
           current: state.research.contains(id) ? 1 : 0,
           required: 1,
-          unmetReason: '前提研究待ち：${GameContent.tasks[id]!.name}',
+          unmetReason: '前提研究待ち：${state.researchNameForDisplay(id)}',
+        ),
+      if (task.prerequisiteIds.any((id) => !state.isResearchDiscovered(id)))
+        const ResearchRequirementStatus(
+          label: '関連研究の手掛かり',
+          current: 0,
+          required: 1,
+          unmetReason: '前提研究待ち：研究を進めて手掛かりを探してください',
         ),
       if (task.alternativePrerequisites.isNotEmpty)
         ResearchRequirementStatus(
-          label:
-              '研究：${task.alternativePrerequisites.map((id) => GameContent.tasks[id]!.name).join(' または ')}',
+          label: knownAlternatives.isEmpty
+              ? '関連研究の手掛かり'
+              : '研究：${knownAlternatives.map(state.researchNameForDisplay).join(' または ')}',
           current: task.alternativePrerequisites.any(state.research.contains)
               ? 1
               : 0,
           required: 1,
-          unmetReason: 'いずれかの前提研究が必要です',
+          unmetReason: '前提研究待ち：関連する研究を進めてください',
         ),
       if (requirements.marsHabitats > 0)
         ResearchRequirementStatus(
@@ -635,7 +649,7 @@ class GameEngine {
         final prerequisite = GameContent.districts[task.districtId]!
             .researchForUpgrade(plan.targetLevel!);
         if (!state.research.contains(prerequisite)) {
-          return '前提研究待ち：${GameContent.tasks[prerequisite]!.name}';
+          return '前提研究待ち：${state.researchNameForDisplay(prerequisite)}';
         }
       }
     }
