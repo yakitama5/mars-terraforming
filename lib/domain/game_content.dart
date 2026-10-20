@@ -89,6 +89,47 @@ abstract final class GameContent {
   static const maxOperationalDevelopments = 12;
   static const researchTechnologies = ResearchCatalog.technologies;
   static const starterResearchCatalogIds = ['B01', 'M22', 'R01', 'E01'];
+  static const researchRootOrderByField = <ResearchField, List<String>>{
+    ResearchField.bio: ['B01', 'B05', 'B09', 'B13', 'B17', 'B22'],
+    ResearchField.mechanics: [
+      'M22',
+      'M01',
+      'M05',
+      'M09',
+      'M25',
+      'M17',
+      'M10',
+      'M21',
+      'M15',
+      'M13',
+      'M11',
+      'M12',
+    ],
+    ResearchField.materials: [
+      'R01',
+      'R09',
+      'R15',
+      'R02',
+      'R07',
+      'R13',
+      'R14',
+      'R17',
+      'R18',
+      'R19',
+      'R06',
+    ],
+    ResearchField.energy: [
+      'E01',
+      'E13',
+      'E09',
+      'E21',
+      'E10',
+      'E05',
+      'E12',
+      'E17',
+    ],
+  };
+  static const researchPointCostOverrides = {'process_design': 480};
   static const preparatoryResearchCatalogIds = {
     'M13',
     'M16',
@@ -102,7 +143,8 @@ abstract final class GameContent {
     final technology = researchTechnologies[id];
     if (technology == null || !technology.isPurchasable) return 0;
     if (starterResearchCatalogIds.contains(technology.catalogId)) return 24;
-    return researchPointCostsByStage[technology.stage];
+    return researchPointCostOverrides[id] ??
+        researchPointCostsByStage[technology.stage];
   }
 
   static String developmentTaskId(String id) => 'develop_$id';
@@ -156,7 +198,7 @@ abstract final class GameContent {
       ResearchUnlockEffect.income =>
         '事業収入 +${developmentIncomePerMinute(id)}ドル/分',
       ResearchUnlockEffect.partnership =>
-        '共同事業収入 +${developmentIncomePerMinute(id)}ドル/分',
+        '共同事業収入 +${developmentIncomePerMinute(id)}ドル/分（提携合意が必要）',
     };
     final research = capacity > 0
         ? '。実験へ最大$capacity名、基準${developmentResearchRate(id)}RP/人・分（生産能力と配分）'

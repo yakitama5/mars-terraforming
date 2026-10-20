@@ -170,6 +170,11 @@ class GameEngine {
       if (state.money < GameContent.developmentUpkeepPerMinute(id)) {
         return '再開には維持費1分分の資金が必要です';
       }
+      if (GameContent.developmentEffect(id) ==
+              ResearchUnlockEffect.partnership &&
+          state.partnershipChoices.isEmpty) {
+        return '提携先と合意してから共同設備を稼働してください';
+      }
       final crew = GameContent.developmentCrewRequirement(id);
       if (state.industrialWorkers - state.reservedIndustrialWorkers < crew) {
         return '設備の担当者$crew名が必要です。支払済みの工業作業の人員は移せません';
@@ -727,15 +732,16 @@ class GameEngine {
         );
       }
     }
+    if (task.outputResource == 'marsKits' &&
+        task.inputResource == 'earthKits') {
+      _achievement('first_landing', reward: 0);
+    }
     switch (task.id) {
       case 'train_specialists':
         state.specialistCount += GameContent.specialistTrainingCount;
       case 'earth_expansion':
         state.earthLevel++;
         state.population += GameContent.residentsPerDistrict;
-      case 'mars_delivery':
-      case 'cargo_delivery':
-        _achievement('first_landing', reward: 0);
       case 'build_habitat':
         state.marsHabitats++;
         state.marsResidents += GameContent.residentsPerHabitat;

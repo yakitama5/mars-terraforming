@@ -231,14 +231,16 @@ class GameState {
     );
     final modifier =
         100 +
-        math.min(
-          facilityBonusCap('lab'),
-          districtEffects.research +
-              researchEfficiencyBonus('lab') +
-              staffEfficiencyBonusFor('lab', count) +
-              partnershipEfficiencyBonus('lab') +
-              developmentEfficiencyBonus('lab'),
-        );
+        math
+            .min(
+              facilityBonusCap('lab'),
+              districtEffects.research +
+                  researchEfficiencyBonus('lab') +
+                  staffEfficiencyBonusFor('lab', count) +
+                  partnershipEfficiencyBonus('lab') +
+                  developmentEfficiencyBonus('lab'),
+            )
+            .toInt();
     var rate = facilities['lab']!
         ? baseCount *
               GameContent.researchPointsPerResearcherPerMinute *
@@ -323,6 +325,14 @@ class GameState {
               technology.alternativePrerequisiteIds.isEmpty,
         ),
       ];
+      final rootOrder = GameContent.researchRootOrderByField[field]!;
+      roots.sort((a, b) {
+        final left = rootOrder.indexOf(a.catalogId);
+        final right = rootOrder.indexOf(b.catalogId);
+        return (left < 0 ? rootOrder.length : left).compareTo(
+          right < 0 ? rootOrder.length : right,
+        );
+      });
       final completed = technologies
           .where((technology) => research.contains(technology.id))
           .length;
