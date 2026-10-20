@@ -77,6 +77,10 @@ void main() {
         expect(controller.state.researchers, 6);
         expect(jsonEncode(controller.state.toJson()), unchanged);
         expect(find.text('研究 7人 / 工業 5人に変更'), findsOneWidget);
+        await tester.ensureVisible(
+          find.byKey(const Key('confirm-staff-allocation')),
+        );
+        await tester.pumpAndSettle();
         expect(
           find.byKey(const Key('confirm-staff-allocation')).hitTestable(),
           findsOneWidget,

@@ -133,6 +133,9 @@ void main() {
       expect(operations, [
         GameContent.developmentOperationTaskId('orbital_gardens'),
       ]);
+      // The development shortcut shows an eight-second command notice even
+      // when this focused panel omits the product's notice banner.
+      await tester.pump(const Duration(seconds: 8));
       expect(tester.takeException(), isNull);
     },
   );
