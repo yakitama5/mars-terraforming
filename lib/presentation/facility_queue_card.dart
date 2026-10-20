@@ -30,7 +30,9 @@ class FacilityQueueCard extends StatelessWidget {
     final status = !enabled
         ? '休止中'
         : current != null
-        ? '稼働中'
+        ? current.stopReason.isEmpty
+              ? '稼働中'
+              : '条件待ち'
         : facilityId == 'lab' && game.researchPointsPerMinute > 0
         ? 'RPを生産中'
         : upcoming.isNotEmpty
@@ -133,55 +135,75 @@ class FacilityQueueCard extends StatelessWidget {
     );
   }
 
-  Widget _current(PlannedTask plan, bool enabled) => Container(
-    key: Key('current-${plan.id}'),
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: strategySelected,
-      borderRadius: BorderRadius.circular(7),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                '${enabled ? '進行中' : '一時停止'} · ${_purpose(plan)}',
+  Widget _current(PlannedTask plan, bool enabled) {
+    final advancing = enabled && plan.stopReason.isEmpty;
+    final status = !enabled
+        ? '一時停止'
+        : advancing
+        ? '進行中'
+        : '条件待ち';
+    return Container(
+      key: Key('current-${plan.id}'),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: strategySelected,
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$status · ${_purpose(plan)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: advancing ? _mint : _copper,
+                  ),
+                ),
+              ),
+              Text(
+                '${(plan.progress * 100).floor()}%',
                 style: const TextStyle(fontSize: 11, color: _mint),
               ),
-            ),
-            Text(
-              '${(plan.progress * 100).floor()}%',
-              style: const TextStyle(fontSize: 11, color: _mint),
-            ),
-          ],
-        ),
-        const SizedBox(height: 5),
-        Text(plan.definition.name, style: const TextStyle(fontSize: 13)),
-        if (plan.cityId != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              _location(plan, controller.state),
-              style: const TextStyle(fontSize: 12, color: _mint),
-            ),
+            ],
           ),
-        const SizedBox(height: 8),
-        LinearProgressIndicator(
-          value: plan.progress.clamp(0, 1),
-          semanticsLabel: '${plan.definition.name}の進捗',
-          minHeight: 4,
-          backgroundColor: strategyLine,
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '${enabled ? '残り' : '再開後の残り'} ${gameDuration(plan.remainingMs)} · 支払済み${plan.definition.unique ? '・追加RP不要' : ''}',
-          style: TextStyle(color: enabled ? _mint : _copper, fontSize: 11),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: 5),
+          Text(plan.definition.name, style: const TextStyle(fontSize: 13)),
+          if (plan.stopReason.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                plan.stopReason,
+                key: Key('current-stop-reason-${plan.id}'),
+                style: const TextStyle(fontSize: 12, color: _copper),
+              ),
+            ),
+          if (plan.cityId != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _location(plan, controller.state),
+                style: const TextStyle(fontSize: 12, color: _mint),
+              ),
+            ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: plan.progress.clamp(0, 1),
+            semanticsLabel: '${plan.definition.name}の進捗',
+            minHeight: 4,
+            backgroundColor: strategyLine,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${advancing ? '残り' : '再開後の残り'} ${gameDuration(plan.remainingMs)} · 支払済み${plan.definition.unique ? '・追加RP不要' : ''}',
+            style: TextStyle(color: advancing ? _mint : _copper, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _queued(
     BuildContext context,

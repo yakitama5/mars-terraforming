@@ -147,6 +147,83 @@ void main() {
     });
   }
 
+  testWidgets('paused vehicle shows why a paid flight is waiting', (
+    tester,
+  ) async {
+    final controller = GameController(_MemorySave(), now: () => epoch);
+    await controller.initialize(startTimer: false);
+    addTearDown(controller.dispose);
+    final engine = controller.engine!;
+    engine.state.money = 50000;
+    engine.state.research.add('cargo_packaging');
+    expect(
+      engine.enqueueDevelopment('cargo_packaging', cityId: 'earth_delta'),
+      isNull,
+    );
+    engine.advanceBy(
+      Duration(milliseconds: engine.state.plans.last.remainingMs),
+    );
+    expect(engine.setDevelopmentEnabled('cargo_packaging', true), isNull);
+    engine.state.earthKits = 1;
+    expect(
+      engine.enqueue(GameContent.developmentOperationTaskId('cargo_packaging')),
+      isNull,
+    );
+    engine.advanceBy(const Duration(seconds: 30));
+    final flight = engine.state.currentPlanFor('launch')!;
+    final remainingMs = flight.remainingMs;
+    Future<void> draw() => tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: FacilityQueueCard(
+              controller: controller,
+              facilityId: 'launch',
+            ),
+          ),
+        ),
+      ),
+    );
+    await draw();
+    expect(find.textContaining('進行中 ·'), findsOneWidget);
+    final paidTime = tester.widget<Text>(find.textContaining(' · 支払済み')).data!;
+    expect(engine.setDevelopmentEnabled('cargo_packaging', false), isNull);
+    engine.advanceBy(const Duration(seconds: 30));
+    await draw();
+    expect(engine.state.facilities['launch'], isTrue);
+    expect(
+      tester
+          .widget<Switch>(find.byKey(const Key('facility-toggle-launch')))
+          .value,
+      isTrue,
+    );
+    expect(find.textContaining('条件待ち · 基本維持費'), findsOneWidget);
+    expect(find.textContaining('条件待ち · '), findsNWidgets(2));
+    expect(find.text('対応する設備・機体が休止中'), findsOneWidget);
+    expect(find.text('再開後の$paidTime'), findsOneWidget);
+    expect(engine.state.currentPlanFor('launch'), flight);
+    expect(flight.remainingMs, remainingMs);
+    expect(engine.state.marsKits, 0);
+
+    expect(engine.setFacilityEnabled('launch', false), isNull);
+    await draw();
+    expect(find.textContaining('休止中 · 基本維持費'), findsOneWidget);
+    expect(find.textContaining('一時停止 ·'), findsOneWidget);
+    expect(find.text('設備休止中・手動で再開'), findsOneWidget);
+
+    expect(engine.setFacilityEnabled('launch', true), isNull);
+    expect(engine.setDevelopmentEnabled('cargo_packaging', true), isNull);
+    await draw();
+    expect(find.textContaining('進行中 ·'), findsOneWidget);
+    expect(find.text(paidTime), findsOneWidget);
+    expect(find.byKey(Key('current-stop-reason-${flight.id}')), findsNothing);
+    engine.advanceBy(Duration(milliseconds: remainingMs));
+    expect(engine.state.marsKits, 1);
+    expect(engine.state.earthKits, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'research overview fits the discovered field with enlarged text',
     (tester) async {
