@@ -86,6 +86,15 @@ class FacilityQueueCard extends StatelessWidget {
               ),
             ],
           ),
+          if (facilityId == 'lab')
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '共通RP ${game.researchPoints.toStringAsFixed(1)} RP · 全施設で ${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
+                key: const Key('lab-common-research-points'),
+                style: const TextStyle(color: _mint, fontSize: 11),
+              ),
+            ),
           const Divider(color: strategyLine),
           if (current != null)
             _current(current, enabled)
@@ -148,15 +157,6 @@ class FacilityQueueCard extends StatelessWidget {
             ),
           ],
         ),
-        if (facilityId == 'lab')
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              '共通RP ${game.researchPoints.toStringAsFixed(1)} RP · 全施設で ${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
-              key: const Key('lab-common-research-points'),
-              style: const TextStyle(color: _mint, fontSize: 11),
-            ),
-          ),
         const SizedBox(height: 5),
         Text(plan.definition.name, style: const TextStyle(fontSize: 13)),
         if (plan.cityId != null)
