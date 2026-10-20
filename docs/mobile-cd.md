@@ -1,10 +1,139 @@
 # Android / iOS の内部テスト配信
 
-更新: 2026-10-18。今回の依頼は、両ストアへの新規アプリ登録と、内部テストまでの自動配信。
+更新: 2026-10-20。今回の依頼は、両ストアへの新規アプリ登録と、内部テストまでの自動配信。
 従来の「Androidは後段」から、**Android / iOSの内部配信を並行して準備する**方針へ更新する。
 一般公開の時期や収益化は決定していない。
 
 ## 現在地
+
+- Google PlayにDear Marsを無料・日本語のゲームとして登録した。両OSの識別子は
+  `io.github.yakitama5.marsterraforming`。ユーザーは内部テスターを本人だけに指定した。
+  Androidは既存の「自分」リスト（本人1名）、iOSはASCにログイン中の本人とする。
+- **Androidの内部テストは公開済みで、WIF経由の自動CDも成功した**。
+  初回はユーザー承認後、bootstrapの署名済みAABをPlayが受理した。
+  2026-10-19 06:20 JSTに本人のリストだけを保存して公開し、Consoleの「有効」
+  「内部テスターに公開」、build `1 (0.1.0)`、有効な
+  [テスト参加リンク](https://play.google.com/apps/internaltest/4701193900129105222)を確認した。
+  未審査のため一時的なアプリ名・ID（unreviewed）が表示される。
+  その後ユーザーからAndroidのインストール成功報告を得た。端末機種・実際のビルド番号・起動動作は未確認。
+  Playに登録されたupload証明書のSHA-256は
+  `5D:19:8F:61:7D:55:66:F9:34:D6:79:FD:D6:94:86:B1:C4:45:69:28:B5:84:F5:1F:87:CA:02:67:64:CB:C0:0A`。
+  保存済みのupload鍵および実AABの署名証明書と一致を確認した。
+- iOSの新規Apple Distribution証明書・App Store profile・P12の作成とGitHub Secrets保存を
+  ユーザーが承認し、完了した。証明書ID `YM5LN6CXF7`、期限2027-10-19。
+  profile名 `Dear Mars CD App Store`、portal ID `YK3C2NR242`、
+  UUID `3220551a-9a94-411b-afe4-3e514224cb1f`。
+  `IOS_DISTRIBUTION_P12_BASE64` / `IOS_DISTRIBUTION_P12_PASSWORD` /
+  `IOS_PROVISION_PROFILE_BASE64` の保存と検証が完了している。
+- ASCチームAPIキー `Dear Mars CD` のApp Manager・全アプリ範囲・有効期限なしでの作成と保存も
+  ユーザー承認済み。P-256秘密鍵の形式を検証し、`ASC_PRIVATE_KEY_BASE64` Secretと
+  `ASC_KEY_ID=J4ACAMS57J` Variableを保存・検証した。
+  `ios-testflight` の既存ID・Team ID・Issuer IDも設定済みで、配信資格情報は揃った。
+  秘密値やファイル本体はGit・記録に含めない。
+  iOSの確定資材8ファイルは `/Users/yakuran/.config/mars-terraforming/mobile-cd/ios/` へ保護保管した。
+  dir 0700 / file 0600とコピー元との全ハッシュ一致を確認。Downloads原本も0600に制限した。
+  P12のmacOS一時keychainへの読み込み、profileのCMS署名・Apple信頼チェーン・Team・ID・
+  配布方式・証明書一致を検証し、一時keychainの削除と既存設定の復元を確認済み。
+- **iOSは作成制限が解消し、0.1.0 (4.1) の内部配信が完了した。CDの完了判定は修正中**。2026-10-20に当該Bundle ID限定の
+  API GETがHTTP 200 / アプリ0件となり、UIから新規アプリを登録した。
+  ASC app IDは `6824716143`、iOS / Dear Mars / 主言語 `ja`、
+  Bundle IDは `io.github.yakitama5.marsterraforming`、SKUは `dear-mars-ios`。
+  管理画面では「アクセス制限あり」を選び、対象として本人1名を指定した。
+  Admin・Finance等に元からある全アプリへのアクセス権を除外する設定ではない。
+  DPLA警告は消え、Paid Applications Schedule更新バナーは残るが、新たな契約同意は行っていない。
+  Appleへの本人の問い合わせ方針は維持し、こちらからは送信していない。
+- TestFlight内部グループ `Internal`（ID `31a450e9-8d74-481f-b47f-ff3f8d40e51f`）を作成し、
+  本人1名の保存をUIで確認した。全Xcodeビルドの自動配信はoffにし、CD laneの明示的配信を使用する。
+  `IOS_TESTFLIGHT_GROUP=Internal` を設定し、`MOBILE_IOS_ENABLED=true` の保存・照合も完了した。
+  main `f2ddfb2` からiOSだけを指定した
+  [初回iOS CD検証run `39346520536`](https://github.com/yakitama5/mars-terraforming/actions/runs/39346520536)で、
+  署名済みIPAの生成・アップロード・Appleの処理・内部グループへの配信が成功した。
+  APIでも `VALID` / `expired=false` / `IN_BETA_TESTING` と当該グループへの双方向所属を確認した。
+  後続の独自確認が配信前の `READY_FOR_BETA_TESTING` だけを許可していたため、run全体はfailureとなった。
+  配信記録Artifactは未保存。一時keychainと署名材料の削除は成功。完了判定の修正と回帰検証を進める。
+- CDのmainは `f2ddfb2`。両OSのEnvironmentはmainだけに制限し、
+  `MOBILE_ANDROID_ENABLED=true`、`MOBILE_IOS_ENABLED=true`。
+  Consoleでの初回手動公開build `1` と、後続の自動CDによるbuild `301` を区別する。
+  Cloud側のAPI・WIFとGitHub Variables、Playアプリ権限は設定済み。
+  請求先を紐付けず、実WIF認証からAndroid内部テストへの自動配信まで確認した。
+- Google Cloudについてユーザーは **請求先を紐付けない** と明示した。
+  Cloud SDKへのCloud全体の新規OAuth権限は一度自動承認審査で停止した後、ユーザーが具体的に
+  明示許可した。許可画面を進め、`/private/tmp/dear-mars-gcloud` に隔離したCLI認証が終了0で完了し、
+  Play所有者本人と確認した。既存の別アカウントのCLI設定は使っていない。
+  専用project `dear-mars-cd`（表示名 `Dear Mars CD`、number `36882274353`）を請求先なしで作成済み。
+  実queryで `billingAccountName` が空、`billingEnabled=false` を確認した。
+  既存CLI設定・既存project・既存の請求先は変更していない。
+- 専用projectで `iam.googleapis.com` / `cloudresourcemanager.googleapis.com` /
+  `iamcredentials.googleapis.com` / `sts.googleapis.com` / `androidpublisher.googleapis.com` の
+  5 APIを有効化済み。配信SAは `dear-mars-play@dear-mars-cd.iam.gserviceaccount.com`、
+  Workload Identity Pool / providerはともに `github`。
+  `google.subject=assertion.sub` とし、81 bytesのGitHub新形式subjectを対応付けた。
+  条件はrepository ID `1381473822`、owner ID `14286444`、`refs/heads/main`、
+  subject末尾 `:environment:android-internal` に限定した。
+  SAの `roles/iam.workloadIdentityUser` だけを
+  `principalSet://iam.googleapis.com/projects/36882274353/locations/global/workloadIdentityPools/github/attribute.repository_id/1381473822`
+  へ付与。配信SAにOwner / Editor / Token Creatorを付けず、JSONキーも作成していない。
+- GitHub `android-internal` Environmentの
+  `GOOGLE_WORKLOAD_IDENTITY_PROVIDER=projects/36882274353/locations/global/workloadIdentityPools/github/providers/github` と
+  `GOOGLE_PLAY_SERVICE_ACCOUNT=dear-mars-play@dear-mars-cd.iam.gserviceaccount.com` を設定済み。
+  ユーザーが当該SAへのDear Marsだけのアプリ情報閲覧・テストトラックへのリリースの2権限を
+  期限なしで付与することを明示許可し、付与済み。SAの有効期限なし・対象アプリ1件Dear Marsを確認した。
+  UIは従属するアプリ品質情報の閲覧も選択済み・変更不可となり計3件と表示するが、
+  手動で選択したのは上記2権限。
+- 2026-10-19 07:28 JST、main `f2ddfb2` からAndroidだけを指定し、
+  [初回CD検証run `39172360969`](https://github.com/yakitama5/mars-terraforming/actions/runs/39172360969)を手動起動し、成功した。
+  build `301 (0.1.0)` の生成・実WIF認証・fastlane配信と、internalトラックの
+  versionCode `301` / status `completed` の再確認、配信記録Artifactの保存が成功。
+  署名材料・WIF認証ファイルの後片付けも成功した。
+  完了後にPlay Consoleを再読込し、「有効」「最新リリース 0.1.0」「内部テスターに公開」、
+  リリース日時2026-10-19 07:36 JST、概要のversionCode `301` を確認した。
+  自動CDによる内部配信まで検証済み。その後ユーザーによるAndroidのインストール成功報告を得た。
+- 2026-10-19 08時台、ユーザーから「テスト参加はできるがインストール画面へ進めない」と報告。
+  Codex内のVivaldiでも本人の参加済み表示を確認し、`Download test app` の遷移先が
+  `Not Found` になることを再現した。Consoleの内部公開は有効で、本人1名のリストも保存済み。
+  [Google公式ヘルプ](https://support.google.com/googleplay/android-developer/answer/9845334?hl=ja)には、
+  初回公開や変更の反映に数時間かかる場合があると記載されている。
+  反映待ちが候補だが原因確定ではなく、インストール可能になったことは未確認。
+  同じアカウントのAndroid端末で時間をおいて再確認し、続く場合は端末・実際のエラーを切り分ける。
+  この調査では設定変更・再配信を行っていない。
+- 同日、その後ユーザーがAndroidの「インストールできた」と報告した。
+  上記のダウンロード不可は過去時点の症状とし、インストール成功をユーザー報告として記録した。
+  端末機種・インストールされたビルド番号・起動動作・性能を検証済みとは扱わない。
+- Macのロック解除を確認した。操作範囲は引き続きVivaldiの **Codexワークスペース内だけ**。
+  一般公開・外部テスター・収益化は今回の内部配信の承認範囲に含めない。
+
+## 2026-10-19のiOS契約制限の経緯
+
+以下は10月19日時点の履歴。10月20日に作成制限は解消しており、最新状態は冒頭「現在地」を参照する。
+
+- **iOSはASCアプリレコード作成で停止中**。2026-10-19 06:17 JSTの再読込でも、
+  Developer portalではDPLAの2026-10-14版を10月18日受諾済み、ASCでは無料アプリ契約に
+  「新規契約が利用可能」が残り、新規アプリのダイアログが契約更新の案内で止まった。
+  ASCアプリレコードとTestFlight内部グループは未作成。署名IPAの生成・アップロードも未実施。
+  契約受諾日・Team・再現状況を説明するApple Developer Support向け本文を提示した。
+  ユーザーが「自分で問い合わせる」と指定し、本人の問い合わせと契約解消を待つ。
+  こちらからは送信しておらず、代理送信しない。
+  新APIキーで当該Bundle IDだけに絞った `GET /v1/apps` を実行するとHTTP 403、
+  `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` が返った。
+  Appleの応答も必須契約が未締結または期限切れとして制限している。
+  role不足やアプリ不存在と断定せず、契約解消後にキーと当該アプリの取得を再確認する。
+  同日09:55〜09:56 JSTにも再確認したが、制限は継続した。
+  Developer portalを再読込しても同じTeamで10月14日版に10月18日同意済みと表示され、
+  ASCの再読込後の新規アプリ作成は「契約の更新」で停止した。
+  当該Bundle ID限定のAPI GETも同じHTTP 403 / 必須契約エラーだった。
+  新たな契約受諾・アプリ作成・配信の変更は行わず、Appleへの本人の問い合わせ方針を維持する。
+  ユーザーのSNS調査依頼で、直近のRedditにも同意済みDPLAとASCの契約更新表示が食い違う
+  [本人報告](https://www.reddit.com/r/appledevelopers/comments/1x8nmta/signed_apple_developer_agreement_xcode_cloud/)と、
+  無料アプリ契約が有効・新規契約ありなのに同意画面が見つからない
+  [別の本人報告](https://www.reddit.com/r/iOSDevelopment/comments/1x8lq90/appstore_connect_says_i_have_agreements_to_agree/)を確認した。
+  [Apple Developer Forumsの過去例](https://developer.apple.com/forums/thread/649809)には、
+  翌日表示が変わったという投稿と24時間後も続いたという投稿がある。
+  同期の遅延・不整合は候補になるが、SNSの体験談を今回の原因確定やAppleの障害認定とは扱わない。
+  公式の反映期限も確認できていないため、時間をおいた再確認と本人の問い合わせ方針を維持する。
+
+## 2026-10-18の登録・初回生成の経緯
+
+以下は10月18日時点の記録。承認待ち・未実施だった項目の最新状態は上記「現在地」を参照する。
 
 - 2026-10-18にユーザーが正式アプリ名を **Dear Mars** に決定した。
   Android / iOSの表示名を合わせ、両OSの識別子は
@@ -37,10 +166,22 @@
 - ASCのアプリレコード作成、両ストアの初回アップロードと内部配信成功はまだ確認できていない。
 - CD基盤は [PR #28](https://github.com/yakitama5/mars-terraforming/pull/28) でdevelopへ、
   [PR #29](https://github.com/yakitama5/mars-terraforming/pull/29) でmainへ通常マージ済み。
-  最新のFlutter/Web・Android/iOSのCI成功後に反映し、mainは `86b8d88`。
+  この時点のFlutter/Web・Android/iOSのCI成功後に反映し、当時のmainは `86b8d88`。
 - Android環境へ確定IDを設定し、署名4 Secretsの存在を名前だけで再確認。
   [初回AABビルド](https://github.com/yakitama5/mars-terraforming/actions/runs/39130740248)をmainから起動した。
+  この初回runはrelease用プラグイン登録の不整合で失敗し、後述の修正を行った。
   Playには初回リリースの説明だけを下書き保存。AABのアップロード・リリースは未完了。
+- 当時の最新反映: 修正を [PR #30](https://github.com/yakitama5/mars-terraforming/pull/30) でdevelopへ、
+  [PR #31](https://github.com/yakitama5/mars-terraforming/pull/31) でmainへ通常マージ済み。
+  両PRでFlutter/WebとAndroid/iOSのCIが成功し、mainは `f2ddfb2`。
+  [修正後のbootstrap](https://github.com/yakitama5/mars-terraforming/actions/runs/39133132502)も成功し、
+  初回用build 1の署名済みAABをArtifact `android-first-upload-39133132502-1`
+  （ID `12139256098`、期限 **2026-10-21 22:54 JST**）へ保存した。
+  Playへのアップロードはまだ行っておらず、内部配信成功とは区別する。
+- `ios-testflight` Environmentには非秘密のVariablesとして
+  `MOBILE_APP_IDENTIFIER=io.github.yakitama5.marsterraforming`、`IOS_TEAM_ID=S935X7WSH2`、
+  `ASC_ISSUER_ID=96cae473-4d91-42a7-8a9e-08105f4c6c2a` を設定済み。
+  配布署名・APIキーの秘密情報とprovisioning profileは未設定。両配信フラグは引き続き `false`。
 - Apple Distribution証明書とAPIキーは作成フォームまで準備したが、発行・GitHubへの保存は承認待ち。
   ローカルのCSRと新しい暗号化秘密鍵は `/private/tmp/dear-mars-ios-signing/` に
   dir 0700 / file 0600で一時保管。CSRだけをAppleへ送り、秘密鍵はアップロードしない。
@@ -168,6 +309,9 @@ Webのセーブは今回のID変更の対象外。
 
 ## 検証記録
 
+以下は段階ごとの実施履歴。各時点の未実施・確認予定を現在の保留事項と混同せず、
+最新の配信状態は冒頭「現在地」とこの節末尾を参照する。
+
 - `mise exec -- bash tools/check.sh`: 依存方向・整形・静的解析と434テストが成功。
   既知の `agency_widget_test.dart` の画面外tap警告はあるが、失敗はない。
 - 候補Bundle IDでiOS Simulatorのdebugビルド成功。privacy manifest追加後は再検証する。
@@ -219,8 +363,75 @@ Webのセーブは今回のID変更の対象外。
   修正後のactionlintと `tools/check.sh`（Python6件・依存方向・整形・静的解析・Flutter434テスト）は成功。
   ローカルの初回検証はSDKキャッシュへの書込制限で開始できず、承認された権限で再実行した。
   修正後のnative release AAB生成はCIで確認する。未生成の成果物を配信成功として記録しない。
-- 未実施: 署名済みiOS archive / IPAの検証、ASCアプリレコード作成、両ストアの初回アップロード・実配信、
-  実機でのストア経由インストール、Android/iOSの長時間GPU・性能・電池検証。
+- 修正後のPR #30は[Flutter/Web](https://github.com/yakitama5/mars-terraforming/actions/runs/39131662182)と
+  [Android/iOS](https://github.com/yakitama5/mars-terraforming/actions/runs/39131662206)、
+  main反映前のPR #31も[Flutter/Web](https://github.com/yakitama5/mars-terraforming/actions/runs/39132466699)と
+  [Android/iOS](https://github.com/yakitama5/mars-terraforming/actions/runs/39132466643)がすべて成功した。
+  Android debug・署名なしrelease拒否に加え、破棄可能なCI専用鍵による実release AAB生成、
+  `IntegrationTestPlugin` の除外、lock不変を確認。iOS Simulatorとprivacy manifest / ID照合も成功した。
+  修正はmain `f2ddfb2` へ反映済み。
+- 2026-10-18の[bootstrap run `39133132502`](https://github.com/yakitama5/mars-terraforming/actions/runs/39133132502)は、
+  同じmain `f2ddfb2` で434テストを含むチェック、初回release AAB生成、lock不変、署名検証、
+  Artifact保存、署名材料の後片付けまで成功。
+  Artifact名は `android-first-upload-39133132502-1`、IDは `12139256098`、
+  保存期限は2026-10-21 22:54 JST。ストアへのアップロード・配信はこのrunの対象外で未実施。
+- 同Artifactを `/private/tmp/dear-mars-first-upload/android-first-upload-39133132502-1/app-release.aab`
+  へ取得し、bundletool 1.18.3のmanifest読取とvalidateが成功。
+  packageは確定ID、表示名はDear Mars、versionNameは `0.1.0`、versionCodeは `1`。
+  83,945,230 bytes、AABのSHA-256は
+  `4b407a60368997f4b5de219dac4f90e6e49bbda715dddf7b5635d6b2d88bae6a`。
+  jarsigner検証が成功し、署名証明書は保存済みupload鍵と一致。
+  ローカルJDK 21ではJarInputStreamとJarFileの読取結果が異なるという警告も出たが、
+  検証終了コードは0、bundletoolの検証も成功。
+  実ファイルのmanifestは末尾にあり、重複エントリはない。
+  [JarInputStreamの仕様](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/jar/JarInputStream.html)は
+  manifestが先頭付近にある場合にstream署名検証するため、この配置での警告と整合する。
+  警告を消すための再梱包・再署名は行わず、この時点ではPlay側の受理を次の確認事項として残した。
+- 10月18日の続行時にMacがロックされており、UI操作を停止してユーザーへロック解除を依頼した。
+  10月19日に解除を確認した。
+  操作範囲は引き続きVivaldiのCodexワークスペースだけとする。
+- 2026-10-19: Playが同じ初回AABを受理し、本人リストだけの内部テスト公開が成功。
+  06:20 JSTにbuild `1 (0.1.0)` の「有効」「内部テスターに公開」と参加リンクの有効化を確認した。
+  署名済みAABの生成成功から、Consoleでの初回公開確認へ進んだ。
+  この時点では自動CD・実機インストールは未検証だった。後続の自動CD結果は以下に記録する。
+- 2026-10-19: Apple Distribution / profile / P12とASCチームAPIキーの形式・保存を検証。
+  iOSの配信資格情報は揃ったが、06:17 JST時点でASC新規アプリ作成の契約更新制限が続いている。
+  この記録更新ではビルドを再実行せず、文書の差分検査だけを行った。
+- 2026-10-19: ユーザーのCloud SDK権限の明示許可後、隔離CLIで本人認証が終了0で成功。
+  専用projectの作成、請求先未関連付けの実query、5 API有効化、SA / WIF設定、
+  GitHub Variablesの保存まで完了した。続いてユーザー承認後、専用SAへDear Marsだけの
+  アプリ情報閲覧・テストリリース権限を期限なしで付与し、対象アプリ1件を確認した。
+  Androidフラグだけを有効化し、07:28 JSTにmain `f2ddfb2` から
+  [run `39172360969`](https://github.com/yakitama5/mars-terraforming/actions/runs/39172360969)を手動起動。
+  runが成功し、実WIF認証、build `301 (0.1.0)` のfastlane配信、internalトラックの
+  status `completed` / versionCode `301` の再確認、配信記録Artifactの保存、署名材料とWIFのcleanupまで成功。
+  完了後のPlay Console再読込でも「有効」「最新リリース 0.1.0」「内部テスターに公開」と
+  2026-10-19 07:36 JSTのリリース日時、概要のversionCode `301` を確認した。
+  請求先なしでAndroidの自動内部配信を実証した。実機インストールは未実施。
+  Apple Supportは本人が問い合わせる指定へ更新し、こちらからの送信は行っていない。
+- Androidのストア経由インストールは、その後ユーザーから成功報告を得た。
+  実際のビルド番号・端末機種・起動と性能の検証、およびiOSの署名済み配信は未実施。
+- 2026-10-20: 当該Bundle ID限定のAPI GETがHTTP 200 / アプリ0件となり、契約による作成制限の解消を確認。
+  UIでASCアプリ `6824716143`（iOS / Dear Mars / `ja` / SKU `dear-mars-ios`）を作成した。
+  「アクセス制限あり」を選び、対象として本人1名を指定し、既定のBundle IDを使用する。
+  DPLA警告は消えた。Paid Applications Schedule更新バナーは残るが、今回新たな契約同意は行っていない。
+  内部グループ `Internal` を作成し、本人1名を保存。全Xcodeビルドの自動配信はoffとした。
+  `IOS_TESTFLIGHT_GROUP=Internal`、`MOBILE_IOS_ENABLED=true` を設定・照合し、Androidもtrueを維持する。
+  main `f2ddfb2` から[run `39346520536`](https://github.com/yakitama5/mars-terraforming/actions/runs/39346520536)をiOSだけで起動した。
+  09:27 JSTにアップロード、09:36 JSTに処理と内部配信が成功。独立したAPI確認でも
+  0.1.0 (4.1)、`VALID`、非期限切れ、`IN_BETA_TESTING`、指定グループへの双方向所属を確認した。
+  fastlane 2.240.1の `ready_for_internal_testing?` は配信後の `IN_BETA_TESTING` をfalseとするため、
+  後続の独自検証だけでrunが失敗した。配信記録Artifactは0件。keychain・署名材料の削除は成功した。
+  配信済み4.1を重複アップロードせず、判定と回帰テストを修正する。
+  確認処理をヘルパーへ分け、`READY_FOR_BETA_TESTING` と `IN_BETA_TESTING` を許可しつつ、
+  `VALID`・明示的な非期限切れ・要求ビルド番号・指定グループへの実所属を毎回APIから再確認する。
+  未成立時は秘密値を含まない処理状態と所属有無を記録する。
+  ローカルでは依存方向・Python 6件・122ファイル整形・静的解析・Flutter 434件が成功。
+  既存の画面外tap警告1件は残る。固定gemでRuby回帰8件40 assertions、Fastfile読込・構文検査も成功。
+  ローカルRubyは4.0.6 / Bundler 4.0.16で、採用Ruby 3.4.11の確認と修正後の実自動配信はCIに残る。
 
-登録名はDear Mars、Playは無料で確定・新規登録済み。AppleはBundle ID登録済み。
-次はAppleのアプリレコード作成・配布資格情報、内部テスターの設定と実配信。
+登録名はDear Mars、Playの本人向け内部テストとWIF経由の自動CDは確認済み。
+Androidはユーザーによるインストール成功報告済み。端末機種・実際のビルド番号・起動動作・性能は未報告。
+iOSはASCアプリと本人1名の内部グループが作成済みで、0.1.0 (4.1) は内部配信済み。
+次はCDの完了判定を修正し、新しいビルドで自動配信・配信記録・後片付けまで正常終了することを検証する。
+Android / iOSの配信は両方有効。請求先の関連付けは行わず、Appleへの問い合わせはこちらから送信しない。

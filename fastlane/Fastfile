@@ -5,6 +5,7 @@ require "json"
 require "open3"
 require "securerandom"
 require "time"
+require_relative "testflight_verification"
 
 default_platform(:ios)
 
@@ -186,15 +187,11 @@ platform :ios do
         changelog: "内部テスト: #{ENV.fetch('GITHUB_SHA')[0, 12]}"
       )
       # pilot can report success when a group did not match. Read actual membership.
-      distributed = false
-      12.times do
-        build = Spaceship::ConnectAPI::Build.all(app_id: app.id, build_number: build_number, platform: "IOS").first
-        if build && build.ready_for_internal_testing? && group.fetch_builds.any? { |item| item.id == build.id }
-          distributed = true
-          break
-        end
-        sleep(10)
-      end
+      # fastlane's ready_for_internal_testing? excludes the already distributed state.
+      distributed = MobileTestflight.wait_for_distribution(
+        app_id: app.id, build_number: build_number, group: group,
+        report: ->(message) { UI.message(message) }
+      )
       UI.user_error!("IPA はアップロードされましたが、内部グループへの配信を確認できません。TestFlight を確認してください。") unless distributed
       mobile_record("ios", build_number, "TestFlight internal group")
     ensure
