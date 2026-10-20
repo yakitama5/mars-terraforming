@@ -67,8 +67,27 @@ iOS実画面: [研究全景](screenshots/research-mobile-ios-overview.png)、
 Pixel 8a実機の操作・性能・電池、通常時間の長期バランスは未検証。
 次の本人評価は、ラベル・数値の読みやすさ、研究全景と詳細の切替、各技術の未来像の文体とする。
 
-## 反映
+## 反映・配信結果
 
-意味ごとのコミットを作成し、作業ブランチ→develop→mainをPRで反映する。
-最終のCI・Pages・Android内部トラック・TestFlightの結果と番号は当該PR本文へ記録し、
-配信結果の記録だけでmainを再pushして別のCDを起動しない。
+- 意味ごとの6コミットを[PR #36](https://github.com/yakitama5/mars-terraforming/pull/36)からdevelop、
+  [PR #37](https://github.com/yakitama5/mars-terraforming/pull/37)からmainへ通常mergeした。
+  両PRとも固定したHEADで全チェック成功を確認してから反映した。
+- 最終mainは `02393fc0f0b17cb47c0af1d20bde0dba6a20f924`、
+  developは `a2391c86f12cd7fc3ea0b6a445a73194e8336d25`。
+- [main全体検証](https://github.com/yakitama5/mars-terraforming/actions/runs/39397506848)と
+  [Pages公開](https://github.com/yakitama5/mars-terraforming/actions/runs/39397506726)が成功。
+  公開deployment.jsonのmain・develop全SHAとrunが今回の反映内容に一致した。
+  [通常版](https://yakitama5.github.io/mars-terraforming/)から修正後のUIを試せる。
+- main CIで生成した17枚のうち、小画面の全景・詳細・文字拡大の3枚も目視した。
+  CIの一部アイコン・ボタンに既知のフォント制約があるため、文字・アイコンの実表示は
+  独立ChromeとiOS Simulatorで回収した画像を根拠とする。
+- [自動内部配信](https://github.com/yakitama5/mars-terraforming/actions/runs/39397506671)は全4job成功。
+  Android **701** はGoogle Play internalへ18:09:00 JST、
+  iOS **7.1** はTestFlight内部グループへ18:11:14 JSTに配信確認済み（2026-10-20）。
+  両記録のアプリID `io.github.yakitama5.marsterraforming`、main全SHA、run、build、配信先を二重照合した。
+  Android Artifact `12252942004`、iOS Artifact `12252583280`。
+  両OSの署名資材削除と、Android WIFの後片付けも成功した。
+- 配信結果は両PR本文にも記録済み。完了後の本節はローカル文書へ追記し、
+  記録のための追加main pushや重複配信は行わない。
+- 検証済み41ファイルを元の作業場所へ同期して内容と差分形式を照合した。
+  元のブランチ・未コミット作業を保持し、別作業のdocs/mobile-cd.mdは変更していない。
