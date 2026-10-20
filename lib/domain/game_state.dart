@@ -313,6 +313,39 @@ class GameState {
   /// Only the explored frontier exists in the UI: unseen roots, descendants,
   /// and graph geometry must never disclose the future shape of a field.
   Set<String> get discoveredResearchIds {
+    final visible = <String>{...research, ..._knownResearch};
+    for (final technology in ResearchCatalog.purchasableTechnologies) {
+      if (GameContent.starterResearchCatalogIds.contains(
+        technology.catalogId,
+      )) {
+        visible.add(technology.id);
+        continue;
+      }
+      if (technology.prerequisiteIds.isEmpty &&
+          technology.alternativePrerequisiteIds.isEmpty) {
+        if (GameContent.researchDiscoveryParentIds(technology.id)
+            .any(research.contains)) {
+          visible.add(technology.id);
+        }
+      } else if (technology.prerequisiteIds.every(research.contains) &&
+          (technology.alternativePrerequisiteIds.isEmpty ||
+              technology.alternativePrerequisiteIds.any(research.contains))) {
+        visible.add(technology.id);
+      }
+    }
+    // Already reserved old research is known to its player and stays inspectable.
+    visible.addAll(
+      plans
+          .where((plan) => plan.definition.unique && !plan.isFinished)
+          .map((plan) => plan.taskId),
+    );
+    return visible.where((id) => GameContent.tasks[id]?.unique == true).toSet();
+  }
+
+  /// Before v8, completing any research exposed another independent root.
+  /// Restore that historical frontier once when loading, without using it to
+  /// discover more roots in a current world.
+  Set<String> _legacyDiscoveredResearchIds() {
     final visible = <String>{...research};
     for (final field in ResearchField.values) {
       final technologies = ResearchCatalog.purchasableTechnologies
@@ -343,8 +376,8 @@ class GameState {
       final completed = technologies
           .where((technology) => research.contains(technology.id))
           .length;
-      for (final root in roots.take(1 + completed)) {
-        visible.add(root.id);
+      for (var index = 0; index < roots.length && index <= completed; index++) {
+        visible.add(roots[index].id);
       }
       for (final technology in technologies) {
         if (technology.prerequisiteIds.isEmpty &&
@@ -389,6 +422,7 @@ class GameState {
   int nextPlanId = 1;
   int contractRevenue = 0;
   final Set<String> research = {};
+  final Set<String> _knownResearch = {};
   final Set<String> achievements = {};
   final Set<String> claimedRewards = {};
   final Map<String, bool> facilities = {
@@ -1088,6 +1122,7 @@ class GameState {
     'nextPlanId': nextPlanId,
     'contractRevenue': contractRevenue,
     'research': research.toList(),
+    'discoveredResearch': discoveredResearchIds.toList()..sort(),
     'achievements': achievements.toList(),
     'claimedRewards': claimedRewards.toList(),
     'facilities': Map<String, bool>.of(facilities),
@@ -1114,6 +1149,7 @@ class GameState {
         json['schemaVersion'] == schemaVersion &&
         [
           GameContent.version,
+          'district-7',
           'district-6',
           'district-5',
           'district-4',
@@ -1149,6 +1185,7 @@ class GameState {
     state.habitatChoice = json['habitatChoice'] as String?;
     final currentAgency =
         json['contentVersion'] == GameContent.version ||
+        json['contentVersion'] == 'district-7' ||
         json['contentVersion'] == 'district-6' ||
         json['contentVersion'] == 'district-5';
     if (currentAgency) {
@@ -1176,6 +1213,20 @@ class GameState {
     state.nextPlanId = json['nextPlanId'] as int;
     state.contractRevenue = json['contractRevenue'] as int;
     state.research.addAll((json['research'] as List).cast<String>());
+    if (json.containsKey('discoveredResearch')) {
+      final known = json['discoveredResearch'];
+      if (known is! List ||
+          known.any(
+            (id) =>
+                id is! String ||
+                GameContent.researchTechnologies[id]?.isPurchasable != true,
+          )) {
+        throw const FormatException('保存された既知の研究が不正です。元のデータを保持してください。');
+      }
+      state._knownResearch.addAll(known.cast<String>());
+    }
+    // A missing optional key in hand-authored current fixtures starts from the
+    // v8 discovery rules. It must never reactivate the old root-count rule.
     state.achievements.addAll((json['achievements'] as List).cast<String>());
     state.claimedRewards.addAll(
       (json['claimedRewards'] as List).cast<String>(),
@@ -1366,6 +1417,9 @@ class GameState {
           1) {
         throw const FormatException('同じ設備で複数の作業が実行されています');
       }
+    }
+    if (json['contentVersion'] != GameContent.version) {
+      state._knownResearch.addAll(state._legacyDiscoveredResearchIds());
     }
     return state;
   }

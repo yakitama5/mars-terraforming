@@ -329,7 +329,7 @@ void main() {
     for (final id in [
       'orbital_gardens',
       ResearchCatalog.idForCatalog('M01'),
-      'local_resources',
+      ResearchCatalog.idForCatalog('M17'),
     ]) {
       await _tapDetail(tester, 'guide-short-research', 'planet-detail');
       await tester.tap(find.byKey(Key('guide-research-$id')));

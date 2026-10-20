@@ -83,8 +83,10 @@ void _verifyFrontierAndUnlocks() {
   _check(engine.state.isResearchDiscovered(_id('E13')), '都市基盤を先端炉より先に発見');
   _ok(engine.unlockResearch(_id('R01')), '初期資源研究');
   _check(engine.state.isResearchDiscovered(_id('R09')), '大気資源の入口を発見');
+  _check(engine.state.isResearchDiscovered(_id('R15')), '資源研究から製造基盤を発見');
+  _check(!engine.state.isResearchDiscovered(_id('R07')), '水源研究前には浄水を発見しない');
   _ok(engine.unlockResearch(_id('R09')), '大気資源研究');
-  _check(engine.state.isResearchDiscovered(_id('R15')), '製造基盤への入口');
+  _check(!engine.state.isResearchDiscovered(_id('R07')), '無関係の解放件数では浄水を発見しない');
   final before = engine.state.researchPointUnits;
   final money = engine.state.moneyUnits;
   _check(engine.unlockResearch(_id('R09')) != null, '二重解放不可');

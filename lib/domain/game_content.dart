@@ -76,7 +76,7 @@ class TaskDefinition {
 }
 
 abstract final class GameContent {
-  static const version = 'district-7';
+  static const version = 'district-8';
   // Common RP use integer fixed-point integration in GameState. Values below
   // are provisional game tuning, not scientific performance estimates.
   static const initialResearchPoints = 24;
@@ -89,6 +89,67 @@ abstract final class GameContent {
   static const maxOperationalDevelopments = 12;
   static const researchTechnologies = ResearchCatalog.technologies;
   static const starterResearchCatalogIds = ['B01', 'M22', 'R01', 'E01'];
+  // Discovery routes express how a new research idea appears in the game.
+  // They do not add scientific or operational prerequisites to the catalog.
+  // Multiple parents are alternatives: either can inspire the new idea.
+  static const researchDiscoveryParentCatalogIds = <String, List<String>>{
+    'B05': ['B01'],
+    'B13': ['B01'],
+    'B09': ['B05'],
+    'B17': ['B06'],
+    'B22': ['B23'],
+    'M01': ['M22'],
+    'M17': ['M22'],
+    'M21': ['M22'],
+    'M05': ['M01'],
+    'M09': ['M01'],
+    'M10': ['M09'],
+    'M25': ['M09'],
+    'M15': ['M10'],
+    'M11': ['M15'],
+    'M13': ['M25'],
+    'M12': ['M26'],
+    'R02': ['R01'],
+    'R09': ['R01'],
+    'R15': ['R01'],
+    'R06': ['R02'],
+    'R07': ['R05', 'R06'],
+    'R13': ['R04'],
+    'R14': ['R04'],
+    'R17': ['R04'],
+    'R18': ['R04'],
+    'R19': ['R14'],
+    'E09': ['E01'],
+    'E13': ['E01'],
+    'E21': ['E01'],
+    'E10': ['E09'],
+    'E05': ['E09'],
+    'E12': ['E10'],
+    'E17': ['E13'],
+  };
+
+  static List<String> researchDiscoveryParentIds(String id) {
+    final technology = researchTechnologies[id];
+    if (technology == null) return const [];
+    return _discoveryParentsForCatalogId(technology.catalogId);
+  }
+
+  static List<String> _discoveryParentsForCatalogId(String catalogId) => [
+    for (final parent
+        in researchDiscoveryParentCatalogIds[catalogId] ?? <String>[])
+      ResearchCatalog.idForCatalog(parent),
+  ];
+
+  static List<String> researchConnectionParentIds(
+    ResearchTechnology technology,
+  ) => {
+    ...technology.prerequisiteIds,
+    ...technology.alternativePrerequisiteIds,
+    ..._discoveryParentsForCatalogId(technology.catalogId),
+  }.toList();
+
+  // Canonical ordering, also retained when migrating the former count-based
+  // discovery frontier. New discovery uses the explicit routes above.
   static const researchRootOrderByField = <ResearchField, List<String>>{
     ResearchField.bio: ['B01', 'B05', 'B09', 'B13', 'B17', 'B22'],
     ResearchField.mechanics: [
