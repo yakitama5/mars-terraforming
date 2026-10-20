@@ -93,8 +93,8 @@ Flutter runnerによる正式な全体検証はGitHub CIで行った。
 
 上記の検証対象はlocal 7cd7eb8 / GitHub fb764fd3e298c81e1419cfc3296e2b7379b38d42。
 続く記録の更新は文書のみで、同じ製品コードを保つ。
-画面PNGの取得はダウンロード承認の不備で停止したため、取得制限を迂回せず、
-developの公開プレビューで直接目視する手順へ切り替えた。
+前セッションでは画面PNGの取得が停止し、公開プレビューのブラウザー接続も応答しなかった。
+その時点の目視は未実施。引き継ぎ後の確認は次節に区別して記録する。
 
 ## 反映と配信の記録
 
@@ -103,10 +103,44 @@ developの公開プレビューで直接目視する手順へ切り替えた。
 元のGit管理領域への書込みは環境の制限で許可されないため、元の作業ブランチを切り替えたとは扱わず、
 コミットとGitHubへの反映は独立した作業コピーから行った。
 
-developの実画面レビュー、mainへの反映、Android内部トラックとTestFlightの最終結果・ビルド番号は、
-[PR #34の反映・配信結果](https://github.com/yakitama5/mars-terraforming/pull/34)へ記録する。
-これにより、実配信後の記録更新だけでmainを再pushして別の配信を発火させず、文書から完了記録を辿れる。
-ストア側の配信成功と端末での実操作確認を分け、端末の確認はユーザーが行う。
+2026-10-20の引き継ぎ時に、[PR #34](https://github.com/yakitama5/mars-terraforming/pull/34)のdevelop反映と
+[PR #35](https://github.com/yakitama5/mars-terraforming/pull/35)のmain反映が完了していることを確認した。
+最終mainは `45060aec43b919233df40a4e16caf174c41adc71`、developは
+`639d96a31b8cc25749f29b8e8dcaf33fc94eff5c`。
+
+| 最終確認 | 結果 |
+| --- | --- |
+| [mainのPrototype checks](https://github.com/yakitama5/mars-terraforming/actions/runs/39371157545) | 全499テストを含むチェックと画面Artifact保存が成功 |
+| [Pages](https://github.com/yakitama5/mars-terraforming/actions/runs/39371157494) | 配信成功。公開deployment.jsonのmain/develop全SHAとrunがGitHubの現在HEADに一致 |
+| [両OSの内部配信](https://github.com/yakitama5/mars-terraforming/actions/runs/39371157614) | 全4job成功。Android 601、iOS 6.1の配信確認・記録保存・署名材料等の後片付けまで成功 |
+| 配信記録の照合 | 両JSONのアプリID・main全SHA・run・build・配信先が一致。Androidは13:53:16 JST、iOSは13:53:55 JSTに配信状態を確認 |
+| ローカル同期 | mainの475ファイル中474ファイルがバイト一致。不一致は別作業の追記があるdocs/mobile-cd.mdだけで、コード・画像は一致。既存のブランチと未コミット変更は保持 |
+
+配信ArtifactはAndroid `12242405302`、iOS `12241677839`。保存期限は2026-11-03。
+前セッションはブラウザー接続で停止していたが、実装・main反映・内部配信は完了済みだった。
+今回の引き継ぎでは再ビルド・再配信を行わず、完了結果を上記2件のPR本文とローカル文書へ補完した。
+ローカルの記録・画面追加だけでmainを再pushしてCDを発火させていない。
+ストア側の配信成功と端末での実操作確認を分け、今回版の実機インストール・起動・性能は未検証。
+
+### 引き継ぎ後の画面確認
+
+mainのCI Artifact `12241074947` から15枚を取得して目視した。
+Widgetテスト環境ではMaterialIconsと一部ボタン・分類名が四角になり、最初のバイオ背景も未ロードだった。
+この画像だけで文字・アイコン・画像の完成品質を確認済みとはしない。
+
+続いて公開developを、ユーザーのブラウザ保存と分離したChromeの新規contextで実操作した。
+1280×720と884×402で日本語、アイコン、4分類の背景・カード画像は正常で、上記症状は再現しなかった。
+初回7操作→4分類切替→共通RP蓄積→水耕栽培解放→650ms時点の枝伸長・光輪→演出終了→
+施設・機体の導入画面→再読込後の同一worldId・研究保持を確認し、終了コード0で後片付けまで完走した。
+pageerrorは0。物語スキップによる音楽取得のERR_ABORTEDが1件あり、通常操作の描画例外はなかった。
+
+実画面: [枝の成長](screenshots/research-handoff-web-growth.png)、
+[設備導入](screenshots/research-handoff-web-applications.png)、
+[小さい横画面](screenshots/research-handoff-web-small.png)。
+設備は導入条件と予約ボタンの表示まで確認し、資金不足のため導入実行は行っていない。
+今回の実ブラウザ確認はオフライン再開・iOS/Android実機操作・連続性能測定を含まない。
+アプリコードは変更せず、既に成功しているFlutter/iOSのビルドを再実行していない。
+記録追加後のgit diff --checkと、追加した画面リンクの実在検査が成功した。
 
 ## 制約と次の判断
 
