@@ -669,7 +669,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: SizedBox(
-                  height: 108,
+                  height: MediaQuery.textScalerOf(context).scale(108),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
