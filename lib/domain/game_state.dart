@@ -19,12 +19,14 @@ class PlannedTask {
     this.cityId,
     this.plotIndex,
     this.targetLevel,
+    this.developmentCityId,
   });
   final String id;
   final String taskId;
   final String? cityId;
   final int? plotIndex;
   final int? targetLevel;
+  final String? developmentCityId;
 
   /// Frozen when an iteration pays, including legacy iterations on migration.
   int iterationDurationMs = 0;
@@ -72,6 +74,7 @@ class PlannedTask {
     'cityId': cityId,
     'plotIndex': plotIndex,
     'targetLevel': targetLevel,
+    'developmentCityId': developmentCityId,
   };
   factory PlannedTask.fromJson(Map<String, dynamic> json) {
     final taskId = json['taskId'] as String;
@@ -85,6 +88,7 @@ class PlannedTask {
       cityId: json['cityId'] as String?,
       plotIndex: json['plotIndex'] as int?,
       targetLevel: json['targetLevel'] as int?,
+      developmentCityId: json['developmentCityId'] as String?,
     );
     plan.completedRuns = json['completedRuns'] as int;
     plan.status = json['status'] as String;
@@ -145,6 +149,17 @@ class PlannedTask {
         plan.targetLevel != null) {
       throw const FormatException('作業に不正な建設先があります');
     }
+    if (plan.definition.developmentId != null) {
+      final technologyId = plan.definition.developmentId!;
+      final city = GameContent.cities[plan.developmentCityId];
+      if (city == null ||
+          city.planet != GameContent.developmentPlanet(technologyId) ||
+          plan.remainingRepeats != (plan.status == 'completed' ? 0 : 1)) {
+        throw const FormatException('設備導入先または反復回数が不正です');
+      }
+    } else if (plan.developmentCityId != null) {
+      throw const FormatException('作業に不正な設備導入先があります');
+    }
     return plan;
   }
 }
@@ -155,6 +170,7 @@ class GameState {
   GameState._();
   static const schemaVersion = 2;
   static const moneyScale = 60000;
+  static const researchPointScale = 6000000;
   late String worldId;
   late int lastWallClockMs;
   int simulatedMs = 0;
@@ -171,8 +187,180 @@ class GameState {
   String? habitatChoice;
   int specialistCount = GameContent.initialSpecialists;
   int researchers = GameContent.baselineDepartmentStaff;
+  int researchPointUnits =
+      GameContent.initialResearchPoints * researchPointScale;
+  final Set<String> developments = {};
+  final Map<String, bool> developmentEnabled = {};
+  final Map<String, int> developmentResearchers = {};
+  final Map<String, String> developmentCityIds = {};
   final Map<String, String> partnershipChoices = {};
-  int get industrialWorkers => specialistCount - researchers;
+  int get industrialWorkers =>
+      specialistCount - researchers - developmentWorkers;
+  int get developmentWorkers => developments.fold(
+    0,
+    (sum, id) =>
+        sum +
+        (isDevelopmentOperational(id)
+            ? GameContent.developmentCrewRequirement(id)
+            : 0),
+  );
+  int get specializedResearchers => developmentResearchers.entries.fold(
+    0,
+    (sum, entry) =>
+        sum + (isDevelopmentOperational(entry.key) ? entry.value : 0),
+  );
+  int get minAssignableResearchers =>
+      reservedResearchers + specializedResearchers;
+  int get maxAssignableResearchers =>
+      specialistCount - developmentWorkers - reservedIndustrialWorkers;
+  int get labResearchers =>
+      math.max(0, researchers - specializedResearchers - reservedResearchers);
+  double get researchPoints => researchPointUnits / researchPointScale;
+  int get researchPointUnitsPerMs => _researchPointUnitsPerMsFor(researchers);
+  double get researchPointsPerMinute =>
+      researchPointUnitsPerMs * 60000 / researchPointScale;
+  double researchPointsPerMinuteForResearchers(int count) =>
+      _researchPointUnitsPerMsFor(count) * 60000 / researchPointScale;
+  int _researchPointUnitsPerMsFor(int count) {
+    if (count < minAssignableResearchers || count > maxAssignableResearchers) {
+      return 0;
+    }
+    final baseCount = math.max(
+      0,
+      count - specializedResearchers - reservedResearchers,
+    );
+    final modifier =
+        100 +
+        math.min(
+          facilityBonusCap('lab'),
+          districtEffects.research +
+              researchEfficiencyBonus('lab') +
+              staffEfficiencyBonusFor('lab', count) +
+              partnershipEfficiencyBonus('lab') +
+              developmentEfficiencyBonus('lab'),
+        );
+    var rate = facilities['lab']!
+        ? baseCount *
+              GameContent.researchPointsPerResearcherPerMinute *
+              modifier
+        : 0;
+    for (final entry in developmentResearchers.entries) {
+      if (isDevelopmentOperational(entry.key)) {
+        rate +=
+            entry.value *
+            GameContent.developmentResearchRate(entry.key) *
+            modifier;
+      }
+    }
+    return rate;
+  }
+
+  bool isDevelopmentOperational(String id) =>
+      developments.contains(id) &&
+      developmentEnabled[id] == true &&
+      facilities[GameContent.developmentFacilityId(id)] == true;
+  int get developmentUpkeepPerMinute => developments.fold(
+    0,
+    (sum, id) =>
+        sum +
+        (isDevelopmentOperational(id)
+            ? GameContent.developmentUpkeepPerMinute(id)
+            : 0),
+  );
+  int developmentEfficiencyBonus(String facilityId) {
+    var result = 0;
+    for (final id in developments) {
+      if (!isDevelopmentOperational(id)) continue;
+      final target = switch (GameContent.developmentEffect(id)) {
+        ResearchUnlockEffect.research => 'lab',
+        ResearchUnlockEffect.production => 'factory',
+        ResearchUnlockEffect.transport => 'launch',
+        ResearchUnlockEffect.construction => 'mars',
+        ResearchUnlockEffect.income || ResearchUnlockEffect.partnership => '',
+      };
+      if (target != facilityId) continue;
+      final capacity = GameContent.developmentResearchCapacity(id);
+      final assigned = developmentResearchers[id] ?? 0;
+      result += capacity == 0
+          ? GameContent.developmentEfficiencyBonus(id)
+          : GameContent.developmentEfficiencyBonus(id) *
+                (capacity - assigned) ~/
+                capacity;
+    }
+    return result;
+  }
+
+  int get developmentIncomePerMinute => developments.fold(0, (sum, id) {
+    if (!isDevelopmentOperational(id) ||
+        ![
+          ResearchUnlockEffect.income,
+          ResearchUnlockEffect.partnership,
+        ].contains(GameContent.developmentEffect(id))) {
+      return sum;
+    }
+    return sum + GameContent.developmentIncomePerMinute(id);
+  });
+
+  /// Only the explored frontier exists in the UI: unseen roots, descendants,
+  /// and graph geometry must never disclose the future shape of a field.
+  Set<String> get discoveredResearchIds {
+    final visible = <String>{...research};
+    for (final field in ResearchField.values) {
+      final technologies = ResearchCatalog.purchasableTechnologies
+          .where((technology) => technology.field == field)
+          .toList();
+      final starter = technologies.firstWhere(
+        (technology) => GameContent.starterResearchCatalogIds.contains(
+          technology.catalogId,
+        ),
+      );
+      final roots = [
+        starter,
+        ...technologies.where(
+          (technology) =>
+              technology.id != starter.id &&
+              technology.prerequisiteIds.isEmpty &&
+              technology.alternativePrerequisiteIds.isEmpty,
+        ),
+      ];
+      final completed = technologies
+          .where((technology) => research.contains(technology.id))
+          .length;
+      for (final root in roots.take(1 + completed)) {
+        visible.add(root.id);
+      }
+      for (final technology in technologies) {
+        if (technology.prerequisiteIds.isEmpty &&
+            technology.alternativePrerequisiteIds.isEmpty) {
+          continue;
+        }
+        if (technology.prerequisiteIds.every(research.contains) &&
+            (technology.alternativePrerequisiteIds.isEmpty ||
+                technology.alternativePrerequisiteIds.any(research.contains))) {
+          visible.add(technology.id);
+        }
+      }
+    }
+    // Already reserved old research is known to its player and stays inspectable.
+    visible.addAll(
+      plans
+          .where((plan) => plan.definition.unique && !plan.isFinished)
+          .map((plan) => plan.taskId),
+    );
+    return visible.where((id) => GameContent.tasks[id]?.unique == true).toSet();
+  }
+
+  Set<String> get visibleResearchIds => discoveredResearchIds;
+  bool isResearchDiscovered(String id) => discoveredResearchIds.contains(id);
+  int? researchWaitMs(String id) {
+    final gap =
+        GameContent.researchPointCost(id) * researchPointScale -
+        researchPointUnits;
+    if (gap <= 0) return 0;
+    final rate = researchPointUnitsPerMs;
+    return rate <= 0 ? null : (gap + rate - 1) ~/ rate;
+  }
+
   int get reservedResearchers =>
       currentPlanFor('lab')?.iterationSpecialists ?? 0;
   int get reservedIndustrialWorkers =>
@@ -255,10 +443,11 @@ class GameState {
   }
   String? staffAllocationReason(int count) {
     if (count < 0 || count > specialistCount) return '専門職の総数内で配分してください';
-    if (count < reservedResearchers) {
-      return '支払済みの研究に$reservedResearchers名を確保中です。完了まで減らせません';
+    if (count < minAssignableResearchers) {
+      return '研究と専門設備に$minAssignableResearchers名を確保中です。先に設備の配属を見直してください';
     }
-    if (specialistCount - count < reservedIndustrialWorkers) {
+    if (specialistCount - count - developmentWorkers <
+        reservedIndustrialWorkers) {
       return '支払済みの製造・建設に$reservedIndustrialWorkers名を確保中です。完了まで減らせません';
     }
     return null;
@@ -270,7 +459,7 @@ class GameState {
     }
     final assigned = switch (facilityId) {
       'lab' => researchCount,
-      'factory' => specialistCount - researchCount,
+      'factory' => specialistCount - researchCount - developmentWorkers,
       _ => GameContent.baselineDepartmentStaff,
     };
     return (assigned - GameContent.baselineDepartmentStaff) *
@@ -299,7 +488,8 @@ class GameState {
     final spaceResearch = research
         .where(
           (id) =>
-              ['輸送', '居住・現地生産'].contains(GameContent.tasks[id]?.researchBranch),
+              GameContent.researchTechnologies[id]?.field ==
+              ResearchField.mechanics,
         )
         .length;
     return AgencyStatus(
@@ -430,7 +620,18 @@ class GameState {
       final task = GameContent.tasks[id];
       if (task != null &&
           task.unique &&
-          (facilityId == 'lab' || task.researchBranch == branch)) {
+          (facilityId == 'lab' ||
+              task.researchBranch == branch ||
+              GameContent.legacyResearchBranchFor(id) == branch ||
+              (facilityId == 'factory' &&
+                  GameContent.researchTechnologies[id]?.unlockEffect ==
+                      ResearchUnlockEffect.production) ||
+              (facilityId == 'launch' &&
+                  GameContent.researchTechnologies[id]?.unlockEffect ==
+                      ResearchUnlockEffect.transport) ||
+              (facilityId == 'mars' &&
+                  GameContent.researchTechnologies[id]?.unlockEffect ==
+                      ResearchUnlockEffect.construction))) {
         stage = math.max(stage, task.researchStage);
       }
     }
@@ -450,7 +651,8 @@ class GameState {
     raw +
         researchEfficiencyBonus(facilityId) +
         staffEfficiencyBonus(facilityId) +
-        partnershipEfficiencyBonus(facilityId),
+        partnershipEfficiencyBonus(facilityId) +
+        developmentEfficiencyBonus(facilityId),
   );
   int get researchBonusPercent =>
       _cappedEfficiency('lab', districtEffects.research);
@@ -802,12 +1004,14 @@ class GameState {
   int get taxPerMinute =>
       GameContent.baseTaxPerMinute +
       (earthLevel - 1) * GameContent.districtTaxPerMinute +
-      districtEffects.tax;
+      districtEffects.tax +
+      developmentIncomePerMinute;
   int get upkeepPerMinute =>
       GameContent.facilities.values
           .where((f) => facilities[f.id]!)
           .fold(0, (sum, f) => sum + f.upkeepPerMinute) +
-      districtEffects.upkeep;
+      districtEffects.upkeep +
+      developmentUpkeepPerMinute;
   int get netPerMinute => taxPerMinute - upkeepPerMinute;
   int get activePlanCount => plans.where((p) => !p.isFinished).length;
   bool get awaitingHabitatChoice =>
@@ -850,6 +1054,11 @@ class GameState {
     'habitatChoice': habitatChoice,
     'specialistCount': specialistCount,
     'researchers': researchers,
+    'researchPointUnits': researchPointUnits,
+    'developments': developments.toList(),
+    'developmentEnabled': Map<String, bool>.of(developmentEnabled),
+    'developmentResearchers': Map<String, int>.of(developmentResearchers),
+    'developmentCityIds': Map<String, String>.of(developmentCityIds),
     'partnershipChoices': Map<String, String>.of(partnershipChoices),
     'nextPlanId': nextPlanId,
     'contractRevenue': contractRevenue,
@@ -880,6 +1089,7 @@ class GameState {
         json['schemaVersion'] == schemaVersion &&
         [
           GameContent.version,
+          'district-6',
           'district-5',
           'district-4',
           'district-3',
@@ -914,6 +1124,7 @@ class GameState {
     state.habitatChoice = json['habitatChoice'] as String?;
     final currentAgency =
         json['contentVersion'] == GameContent.version ||
+        json['contentVersion'] == 'district-6' ||
         json['contentVersion'] == 'district-5';
     if (currentAgency) {
       state.specialistCount = json['specialistCount'] as int;
@@ -922,6 +1133,21 @@ class GameState {
         Map<String, String>.from(json['partnershipChoices'] as Map),
       );
     }
+    // Old worlds receive no retroactive RP, construction, or achievement reward.
+    // New worlds alone begin with the explicitly budgeted starter RP.
+    state.researchPointUnits = json['researchPointUnits'] as int? ?? 0;
+    state.developments.addAll(
+      (json['developments'] as List? ?? []).cast<String>(),
+    );
+    state.developmentEnabled.addAll(
+      Map<String, bool>.from(json['developmentEnabled'] as Map? ?? {}),
+    );
+    state.developmentResearchers.addAll(
+      Map<String, int>.from(json['developmentResearchers'] as Map? ?? {}),
+    );
+    state.developmentCityIds.addAll(
+      Map<String, String>.from(json['developmentCityIds'] as Map? ?? {}),
+    );
     state.nextPlanId = json['nextPlanId'] as int;
     state.contractRevenue = json['contractRevenue'] as int;
     state.research.addAll((json['research'] as List).cast<String>());
@@ -941,6 +1167,17 @@ class GameState {
         (p) => PlannedTask.fromJson(Map<String, dynamic>.from(p as Map)),
       ),
     );
+    if (!json.containsKey('researchPointUnits') &&
+        state.firstRunTutorial != FirstRunTutorialStep.completed &&
+        !state.research.contains('life_support') &&
+        !state.plans.any(
+          (plan) => plan.taskId == 'life_support' && plan.status == 'running',
+        )) {
+      // The old protected walkthrough cannot advance its clock to earn RP.
+      // Carry only its unused starter research budget, once, into the new bank.
+      state.researchPointUnits =
+          GameContent.researchPointCost('life_support') * researchPointScale;
+    }
     state.log.addAll((json['log'] as List).cast<String>());
     // Optional additions keep existing saves playable without replaying history.
     if (json.containsKey('completionNotices')) {
@@ -988,6 +1225,42 @@ class GameState {
         state.districts[district.key] = district;
       }
     }
+    if (state.researchPointUnits < 0 ||
+        state.developments.any(
+          (id) => GameContent.researchTechnologies[id]?.isPurchasable != true,
+        ) ||
+        state.developmentEnabled.keys.any(
+          (id) => !state.developments.contains(id),
+        ) ||
+        state.developmentResearchers.keys.any(
+          (id) => !state.developments.contains(id),
+        ) ||
+        state.developmentCityIds.keys.any(
+          (id) => !state.developments.contains(id),
+        )) {
+      throw const FormatException('研究ポイントまたは導入設備の状態が不正です');
+    }
+    for (final id in state.developments) {
+      final city = GameContent.cities[state.developmentCityIds[id]];
+      final assigned = state.developmentResearchers[id] ?? 0;
+      if (!state.research.contains(id) ||
+          city == null ||
+          city.planet != GameContent.developmentPlanet(id) ||
+          assigned < 0 ||
+          assigned > GameContent.developmentResearchCapacity(id) ||
+          (state.developmentEnabled[id] != true && assigned != 0) ||
+          (state.developmentEnabled[id] == true &&
+              state.facilities[GameContent.developmentFacilityId(id)] !=
+                  true)) {
+        throw const FormatException('設備の導入先または配属が不正です');
+      }
+    }
+    if (state.specializedResearchers + state.reservedResearchers >
+            state.researchers ||
+        state.developments.where(state.isDevelopmentOperational).length >
+            GameContent.maxOperationalDevelopments) {
+      throw const FormatException('専門設備の配属または稼働数が不正です');
+    }
     if (state.specialistCount < GameContent.initialSpecialists ||
         state.specialistCount > GameContent.maxSpecialists ||
         state.researchers < 0 ||
@@ -1004,6 +1277,15 @@ class GameState {
             '${state.worldId}:partnership:${entry.key}',
           )) {
         throw const FormatException('提携の選択・受領記録が不正です');
+      }
+    }
+    final developmentTargets = <String>{};
+    for (final plan in state.plans.where(
+      (plan) => !plan.isFinished && plan.definition.developmentId != null,
+    )) {
+      final id = plan.definition.developmentId!;
+      if (!developmentTargets.add(id) || state.developments.contains(id)) {
+        throw const FormatException('設備の導入予約が重複しています');
       }
     }
     final targets = <String>{};
