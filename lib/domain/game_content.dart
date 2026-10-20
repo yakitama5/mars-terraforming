@@ -191,7 +191,7 @@ abstract final class GameContent {
     final bonus = developmentEfficiencyBonus(id);
     final capacity = developmentResearchCapacity(id);
     final effect = switch (developmentEffect(id)) {
-      ResearchUnlockEffect.research => '研究運営能力 +$bonus%',
+      ResearchUnlockEffect.research => '研究者配置時の研究運営能力 最大+$bonus%',
       ResearchUnlockEffect.production => '製造能力 +$bonus%',
       ResearchUnlockEffect.transport => '輸送運営能力 +$bonus%',
       ResearchUnlockEffect.construction => '現地建設能力 +$bonus%',
@@ -850,7 +850,7 @@ abstract final class GameContent {
     'technology':
         '技術力：研究1件+6、完成地区の総レベル+1ずつ。上限100。提携解禁に使います。実際の効率は各研究・地区・人員・提携の効果で決まります。',
     'friendship': '友好度：初期10＋選択した提携・支援の加点。上限100。宇宙支援の解禁に使います。追加の割引・自動支援はありません。',
-    'spaceContribution': '宇宙支援貢献：輸送・居住分野の研究1件+3、輸送・居住実績1件+8、火星地区総レベル×2、提携選択の加点。上限100。宇宙支援の解禁に使います。追加報酬は自動発生しません。',
+    'spaceContribution': '宇宙支援貢献：宇宙輸送・居住・現地運営の研究1件+3、輸送・居住実績1件+8、火星地区総レベル×2、提携選択の加点。上限100。宇宙支援の解禁に使います。追加報酬は自動発生しません。',
   };
   static const partnerships = <String, PartnershipDefinition>{
     'research_exchange': PartnershipDefinition(

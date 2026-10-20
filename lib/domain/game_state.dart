@@ -283,11 +283,18 @@ class GameState {
       if (target != facilityId) continue;
       final capacity = GameContent.developmentResearchCapacity(id);
       final assigned = developmentResearchers[id] ?? 0;
-      result += capacity == 0
-          ? GameContent.developmentEfficiencyBonus(id)
-          : GameContent.developmentEfficiencyBonus(id) *
-                (capacity - assigned) ~/
-                capacity;
+      if (target == 'lab') {
+        // An empty specialist laboratory has no autonomous RP or synergy.
+        result += capacity == 0
+            ? 0
+            : GameContent.developmentEfficiencyBonus(id) * assigned ~/ capacity;
+      } else {
+        result += capacity == 0
+            ? GameContent.developmentEfficiencyBonus(id)
+            : GameContent.developmentEfficiencyBonus(id) *
+                  (capacity - assigned) ~/
+                  capacity;
+      }
     }
     return result;
   }
@@ -499,7 +506,11 @@ class GameState {
         .where(
           (id) =>
               GameContent.researchTechnologies[id]?.field ==
-              ResearchField.mechanics,
+                  ResearchField.mechanics ||
+              [
+                '輸送',
+                '居住・現地生産',
+              ].contains(GameContent.legacyResearchBranchFor(id)),
         )
         .length;
     return AgencyStatus(

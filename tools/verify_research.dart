@@ -184,6 +184,25 @@ void _verifyPartitions() {
 }
 
 void _verifyPersonnelAndBudget() {
+  final laboratory = _fresh();
+  final analysis = _id('R01');
+  laboratory.state.research.add(analysis);
+  _build(laboratory, analysis);
+  final baseRate = laboratory.state.researchPointsPerMinute;
+  _ok(laboratory.setDevelopmentEnabled(analysis, true), '分析所の稼働');
+  _check(
+    laboratory.state.researchPointsPerMinute == baseRate,
+    '空の専門研究設備からRPを生まない',
+  );
+  _ok(laboratory.assignDevelopmentResearchers(analysis, 1), '分析所への研究者配属');
+  _check(laboratory.state.researchPointsPerMinute > baseRate, '専門配属で研究産出が変わる');
+  _check(
+    laboratory.state.researchPointsPerMinuteForResearchers(
+          laboratory.state.researchers,
+        ) ==
+        laboratory.state.researchPointsPerMinute,
+    '配属予測と実際の産出が一致',
+  );
   final engine = _fresh();
   final bio = _id('B01');
   engine.state.research.add(bio);
