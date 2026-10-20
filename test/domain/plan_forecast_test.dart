@@ -300,6 +300,43 @@ void main() {
     expect(game.state.plans.every((plan) => plan.completedRuns == 0), isTrue);
   });
 
+  test(
+    'paused installation keeps a paid transport waiting in the forecast',
+    () {
+      final game = ready();
+      const technology = 'cargo_packaging';
+      game.state.research.add(technology);
+      expect(
+        game.enqueueDevelopment(technology, cityId: 'earth_delta'),
+        isNull,
+      );
+      game.advanceBy(Duration(milliseconds: game.state.plans.last.remainingMs));
+      expect(game.setDevelopmentEnabled(technology, true), isNull);
+      game.state.earthKits = 1;
+      expect(
+        game.enqueue(GameContent.developmentOperationTaskId(technology)),
+        isNull,
+      );
+      final flight = game.state.currentPlanFor('launch')!;
+      expect(game.setDevelopmentEnabled(technology, false), isNull);
+      final before = jsonEncode(game.state.toJson());
+      final waiting = forecastPlans(game.state, const Duration(hours: 8));
+      expect(
+        facility(waiting, 'launch').status,
+        ForecastFacilityStatus.waiting,
+      );
+      expect(facility(waiting, 'launch').stopReason, contains('休止中'));
+      expect(facility(waiting, 'launch').remainingMs, flight.remainingMs);
+      expect(waiting.completedRuns, 0);
+      expect(waiting.marsKits, 0);
+      expect(jsonEncode(game.state.toJson()), before);
+      expect(game.setDevelopmentEnabled(technology, true), isNull);
+      final resumed = forecastPlans(game.state, const Duration(hours: 8));
+      expect(resumed.marsKits, 1);
+      expect(resumed.newAchievements, contains('first_landing'));
+    },
+  );
+
   test('RP forecast unlocks exactly at the affordable boundary without mutating its bank', () {
     final game = ready();
     game.state.researchPointUnits = 0;
