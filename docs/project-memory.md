@@ -513,3 +513,9 @@
 - 全520テストと静的解析・Web releaseが成功。873×393/1280×800で3列の成長済み研究を実操作し、
   右へのドラッグ、分類の入口復帰、閉じた後の枝の位置保持、未知研究の秘匿と保存再開を確認した。
   iOS Simulatorも最終版の通し試験・画像回収・driverが終了0。実機性能は未検証。
+- [PR #38](https://github.com/yakitama5/mars-terraforming/pull/38)→develop、
+  [PR #39](https://github.com/yakitama5/mars-terraforming/pull/39)→mainの反映と全チェックが完了。
+  main `03ae7ad7853b2e080a0d679ef14699c78d37d35b` の全体CI・Pagesも成功した。
+- 内部配信run `39406116937` は全4job成功し、Android **801**・iOS **8.1**を配信済み。
+  両記録のID・全SHA・run・build・配信先と、署名資材/WIFの後片付けを二重照合した。
+  最終記録は[横へ深まる研究ツリー](research-horizontal-tree.md)と両PR本文へ残し、記録だけのmain再pushは行わない。
