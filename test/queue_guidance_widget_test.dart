@@ -147,57 +147,75 @@ void main() {
     });
   }
 
-  testWidgets('research overview fits every node with enlarged text', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(780, 360);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final engine = GameEngine(GameState.initial(epoch));
-    String? selected;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData.dark(useMaterial3: true),
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context)
-              .copyWith(textScaler: const TextScaler.linear(1.4)),
-          child: child!,
-        ),
-        home: Scaffold(
-          body: SizedBox(
-            width: 390,
-            height: 300,
-            child: ResearchTree(
-              game: engine.state,
-              selectedId: 'life_support',
-              onSelected: (id) => selected = id,
-              requirementReasons: engine.researchRequirementReasons,
+  testWidgets(
+    'research overview fits the discovered field with enlarged text',
+    (tester) async {
+      tester.view.physicalSize = const Size(780, 360);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final engine = GameEngine(GameState.initial(epoch));
+      // An existing world's known discoveries are legitimate visible nodes.
+      // Unexplored fields and descendants must not affect this overview.
+      engine.state.research.addAll([
+        'life_support',
+        ResearchCatalog.idForCatalog('M01'),
+      ]);
+      String? selected;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(1.4)),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: SizedBox(
+              width: 390,
+              height: 300,
+              child: ResearchTree(
+                game: engine.state,
+                selectedId: 'life_support',
+                onSelected: (id) => selected = id,
+                requirementReasons: engine.researchRequirementReasons,
+              ),
             ),
           ),
         ),
-      ),
-    );
-    expect(tester.takeException(), isNull);
-    await tester.tap(find.byKey(const Key('research-fit')));
-    await tester.pumpAndSettle();
-    final canvas = tester.getRect(
-      find.byKey(const Key('research-tree-canvas')),
-    );
-    for (final task in GameContent.tasks.values.where((task) => task.unique)) {
-      final node = find.byKey(Key('research-node-${task.id}'));
-      final bounds = tester.getRect(node);
-      expect(canvas.contains(bounds.topLeft), isTrue, reason: task.id);
-      expect(canvas.contains(bounds.bottomRight), isTrue, reason: task.id);
-      expect(node.hitTestable(), findsOneWidget, reason: task.id);
-    }
-    await tester.tap(
-      find.byKey(const Key('research-node-automated_fabrication')),
-    );
-    await tester.pumpAndSettle();
-    expect(selected, 'automated_fabrication');
-    expect(tester.takeException(), isNull);
-  });
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byKey(const Key('research-fit')));
+      await tester.pumpAndSettle();
+      final canvas = tester.getRect(
+        find.byKey(const Key('research-tree-canvas')),
+      );
+      final visible = engine.state.discoveredResearchIds
+          .map((id) => ResearchCatalog.technologies[id]!)
+          .where(
+            (technology) =>
+                technology.field == ResearchField.mechanics &&
+                technology.isPurchasable,
+          );
+      for (final task in visible) {
+        final node = find.byKey(Key('research-node-${task.id}'));
+        final bounds = tester.getRect(node);
+        expect(canvas.contains(bounds.topLeft), isTrue, reason: task.id);
+        expect(canvas.contains(bounds.bottomRight), isTrue, reason: task.id);
+        expect(node.hitTestable(), findsOneWidget, reason: task.id);
+      }
+      expect(
+        find.byKey(const Key('research-node-process_design')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const Key('research-node-automated_fabrication')),
+      );
+      await tester.pumpAndSettle();
+      expect(selected, 'automated_fabrication');
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('research nodes show time, queue position and suspension', (
     tester,
@@ -206,9 +224,19 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final engine = GameEngine(GameState.initial(epoch)..money = 5000);
-    engine.enqueue('life_support');
-    engine.enqueue('urban_planning');
+    // Saved, already-paid research keeps its frozen time on migration. New
+    // enqueue calls use RP and cannot create this legacy running state.
+    final state = GameState.initial(epoch)..money = 5000;
+    state.plans.add(
+      PlannedTask(id: 'legacy-paid', taskId: 'life_support')
+        ..status = 'running'
+        ..iterationDurationMs = 120000
+        ..remainingMs = 120000
+        ..iterationSpecialists = GameContent.baselineDepartmentStaff,
+    );
+    state.plans.add(PlannedTask(id: 'legacy-next', taskId: 'cargo_packaging'));
+    state.nextPlanId = 3;
+    final engine = GameEngine(GameState.fromJson(state.toJson()));
     engine.advanceBy(const Duration(seconds: 30));
     Future<void> draw() => tester.pumpWidget(
       MaterialApp(

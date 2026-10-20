@@ -48,52 +48,58 @@ void main() {
     (tester) async {
       final engine = initial();
       final semantics = tester.ensureSemantics();
-      addTearDown(semantics.dispose);
-      await tester.pumpWidget(tree(engine));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const Key('research-node-life_support')),
-        findsOneWidget,
-      );
-      final hidden = ResearchCatalog.byCatalogId('M12')!;
-      expect(find.byKey(Key('research-node-${hidden.id}')), findsNothing);
-      expect(find.byKey(Key('research-semantics-${hidden.id}')), findsNothing);
-      expect(find.text(hidden.name), findsNothing);
-      expect(find.text('段階 1'), findsNothing);
-      expect(find.textContaining('/99'), findsNothing);
-      expect(find.textContaining('/98'), findsNothing);
-      final spoken = tester
-          .binding
-          .renderViews
-          .first
-          .owner!
-          .semanticsOwner!
-          .rootSemanticsNode!
-          .toStringDeep();
-      expect(spoken, isNot(contains(hidden.name)));
-      final before =
-          tester
-                  .widget<InteractiveViewer>(
-                    find.byKey(const Key('research-tree-canvas')),
-                  )
-                  .child
-              as SizedBox;
-      await tester.tap(find.byKey(const Key('research-fit')));
-      await tester.pumpAndSettle();
-      final after =
-          tester
-                  .widget<InteractiveViewer>(
-                    find.byKey(const Key('research-tree-canvas')),
-                  )
-                  .child
-              as SizedBox;
-      expect(
-        Size(before.width!, before.height!),
-        Size(after.width!, after.height!),
-      );
-      expect(before.width, lessThan(500));
-      expect(find.byKey(Key('research-node-${hidden.id}')), findsNothing);
-      expect(tester.takeException(), isNull);
+      try {
+        await tester.pumpWidget(tree(engine));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('research-node-life_support')),
+          findsOneWidget,
+        );
+        final hidden = ResearchCatalog.byCatalogId('M12')!;
+        expect(find.byKey(Key('research-node-${hidden.id}')), findsNothing);
+        expect(
+          find.byKey(Key('research-semantics-${hidden.id}')),
+          findsNothing,
+        );
+        expect(find.text(hidden.name), findsNothing);
+        expect(find.text('段階 1'), findsNothing);
+        expect(find.textContaining('/99'), findsNothing);
+        expect(find.textContaining('/98'), findsNothing);
+        final spoken = tester
+            .binding
+            .renderViews
+            .first
+            .owner!
+            .semanticsOwner!
+            .rootSemanticsNode!
+            .toStringDeep();
+        expect(spoken, isNot(contains(hidden.name)));
+        final before =
+            tester
+                    .widget<InteractiveViewer>(
+                      find.byKey(const Key('research-tree-canvas')),
+                    )
+                    .child
+                as SizedBox;
+        await tester.tap(find.byKey(const Key('research-fit')));
+        await tester.pumpAndSettle();
+        final after =
+            tester
+                    .widget<InteractiveViewer>(
+                      find.byKey(const Key('research-tree-canvas')),
+                    )
+                    .child
+                as SizedBox;
+        expect(
+          Size(before.width!, before.height!),
+          Size(after.width!, after.height!),
+        );
+        expect(before.width, lessThan(500));
+        expect(find.byKey(Key('research-node-${hidden.id}')), findsNothing);
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
     },
   );
 

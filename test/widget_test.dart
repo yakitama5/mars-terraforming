@@ -71,13 +71,14 @@ void main() {
         await tester.tap(find.byKey(const Key('queue-life_support')));
         await tester.pumpAndSettle();
         expect(controller.state.plans.single.taskId, 'life_support');
-        final researchSteps =
-            (GameContent.tasks['life_support']!.durationSeconds / 300).ceil();
-        for (var i = 0; i < researchSteps; i++) {
-          await tester.tap(find.byKey(const Key('advance-time')));
-          await tester.pumpAndSettle();
-        }
         expect(controller.state.research, contains('life_support'));
+        expect(controller.state.plans.single.status, 'completed');
+        expect(controller.state.plans.single.remainingMs, 0);
+        expect(controller.state.researchPointUnits, 0);
+        // Research now unlocks immediately. Open operations explicitly rather
+        // than relying on the former timer's completion navigation.
+        await tester.tap(find.byKey(const Key('navigation-3')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('operations-1')));
         await tester.pumpAndSettle();
         final factory = find.byKey(const Key('queue-factory_contract'));
@@ -148,10 +149,12 @@ void main() {
           await tester.tap(find.byKey(const Key('research-fit')));
           await tester.pumpAndSettle();
           expect(
-            find
-                .byKey(const Key('research-node-intercity_logistics'))
-                .hitTestable(),
+            find.byKey(const Key('research-node-life_support')).hitTestable(),
             findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('research-node-intercity_logistics')),
+            findsNothing,
           );
         }
         expect(tester.takeException(), isNull);
@@ -390,17 +393,26 @@ void main() {
   });
 
   testWidgets(
-    'research tree exposes practical requirements after prerequisite research',
+    'discovered research can wait for common RP without another cash bill',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      final controller = GameController(MemorySave());
+      final controller = GameController(
+        MemorySave(),
+        now: () => DateTime.utc(2026, 10, 20),
+      );
       await controller.initialize(startTimer: false);
       addTearDown(controller.dispose);
       await controller.command((engine) {
-        engine.state.research.add('urban_planning');
+        // Explicit imported knowledge fixture: its child is discovered, but
+        // the bank is empty and therefore cannot unlock it yet.
+        engine.state.research.addAll([
+          'life_support',
+          ResearchCatalog.idForCatalog('M01'),
+        ]);
+        engine.state.researchPointUnits = 0;
         return null;
       });
       await tester.pumpWidget(
@@ -420,8 +432,9 @@ void main() {
       expect(target.hitTestable(), findsOneWidget);
       await tester.tap(target);
       await tester.pumpAndSettle();
-      expect(find.text('開始に必要な条件'), findsOneWidget);
+      expect(find.text('必要な研究ポイント'), findsOneWidget);
       expect(find.byKey(const Key('research-unlocks')), findsOneWidget);
+      final moneyBefore = controller.state.moneyUnits;
       await tester.ensureVisible(
         find.byKey(const Key('queue-automated_fabrication')),
       );
@@ -429,12 +442,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.state.plans.single.taskId, 'automated_fabrication');
       expect(controller.state.plans.single.status, 'queued');
-      expect(controller.state.research, contains('urban_planning'));
+      expect(
+        controller.state.research,
+        contains(ResearchCatalog.idForCatalog('M01')),
+      );
       expect(
         controller.state.research,
         isNot(contains('automated_fabrication')),
       );
-      expect(controller.state.plans.single.stopReason, contains('実証待ち'));
+      expect(controller.state.plans.single.stopReason, contains('研究ポイント待ち'));
+      expect(controller.state.moneyUnits, moneyBefore);
       expect(tester.takeException(), isNull);
     },
   );

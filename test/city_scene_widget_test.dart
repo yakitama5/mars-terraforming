@@ -8,6 +8,7 @@ import 'package:mars_terraforming/domain/save_repository.dart';
 import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/main.dart';
+import 'package:mars_terraforming/presentation/research_tree.dart';
 import 'package:mars_terraforming/rendering/city_scene.dart';
 
 class _MemoryStore implements SaveRepository {
@@ -240,7 +241,7 @@ void main() {
   );
 
   testWidgets(
-    'locked city links directly to its required research before spending',
+    'locked city opens a known research entrance without exposing future names',
     (tester) async {
       tester.view.physicalSize = const Size(844, 390);
       tester.view.devicePixelRatio = 1;
@@ -287,11 +288,23 @@ void main() {
             .onPressed,
         isNull,
       );
+      final unknownId = GameContent.cities['earth_highland']!.requiredResearch!;
+      expect(controller.state.isResearchDiscovered(unknownId), isFalse);
+      expect(
+        find.textContaining(GameContent.tasks[unknownId]!.name),
+        findsNothing,
+      );
       await tester.tap(link);
       await tester.pumpAndSettle();
+      final selected = tester
+          .widget<ResearchTree>(find.byType(ResearchTree))
+          .selectedId;
+      expect(controller.state.isResearchDiscovered(selected), isTrue);
+      expect(find.byKey(Key('queue-$selected')).hitTestable(), findsOneWidget);
+      expect(find.byKey(Key('research-node-$unknownId')), findsNothing);
       expect(
-        find.byKey(const Key('queue-urban_planning')).hitTestable(),
-        findsOneWidget,
+        find.textContaining(GameContent.tasks[unknownId]!.name),
+        findsNothing,
       );
       expect(jsonEncode(controller.state.toJson()), before);
       expect(tester.takeException(), isNull);

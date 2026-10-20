@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/main.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/presentation/research_tree.dart';
+import 'package:mars_terraforming/presentation/research_display.dart';
 import 'package:mars_terraforming/presentation/early_development_guide.dart';
 
 import 'widget_test.dart' show MemorySave;
@@ -70,13 +72,16 @@ void main() {
     expect(controller.state.facilities['factory'], isFalse);
     expect(find.text('通知 1'), findsOneWidget);
     await tester.pump(const Duration(seconds: 9));
-    expect(tester.widget<Text>(status).data, contains('生命維持の実証が完了'));
+    expect(
+      tester.widget<Text>(status).data,
+      contains('${GameContent.tasks['life_support']!.name}が完了'),
+    );
     expect(controller.state.unreadCompletionNotices, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-    'research prerequisites lead to their actionable details without changing the world',
+    'unseen research selection falls back to a known actionable entrance',
     (tester) async {
       final controller = await open(tester);
       final before = jsonEncode(controller.state.toJson());
@@ -86,19 +91,22 @@ void main() {
           .widget<ResearchTree>(find.byType(ResearchTree))
           .onSelected('habitat_operations');
       await tester.pumpAndSettle();
-      final prerequisite = find.byKey(
-        const Key('research-prerequisite-life_support'),
+      expect(
+        controller.state.isResearchDiscovered('habitat_operations'),
+        isFalse,
       );
-      await tester.scrollUntilVisible(
-        prerequisite,
-        100,
-        scrollable: find.descendant(
-          of: find.byKey(const Key('research-detail')),
-          matching: find.byType(Scrollable),
-        ),
+      expect(
+        find.text(GameContent.tasks['habitat_operations']!.name),
+        findsNothing,
       );
-      await tester.pumpAndSettle();
-      await tester.tap(prerequisite);
+      final known = tester
+          .widget<ResearchTree>(find.byType(ResearchTree))
+          .selectedId;
+      expect(controller.state.isResearchDiscovered(known), isTrue);
+      expect(find.byKey(Key('queue-$known')), findsOneWidget);
+      tester
+          .widget<ResearchTree>(find.byType(ResearchTree))
+          .onSelected('life_support');
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('queue-life_support')), findsOneWidget);
       expect(find.byKey(const Key('research-unlocks')), findsOneWidget);
@@ -119,13 +127,41 @@ void main() {
         },
         rocket: controller.state.rocketName,
       );
+      // Imported knowledge is an explicit existing-world fixture. These three
+      // routes may then be inspected, while other discoveries remain hidden.
+      controller.state.research.addAll([
+        'urban_planning',
+        'orbital_logistics',
+        'intercity_logistics',
+      ]);
+      final namedPreview = TaskDefinition(
+        id: 'city_name_preview',
+        name: '都市名を使う解放説明',
+        facilityId: 'lab',
+        durationSeconds: 0,
+        cost: 0,
+        description: '',
+        unlockSummary: [
+          GameContent.cities['earth_highland']!.name,
+          GameContent.cities['mars_elysium']!.name,
+          GameContent.cities['mars_hellas']!.name,
+        ].join('・'),
+      );
+      expect(
+        researchUnlockSummary(controller.state, namedPreview),
+        'エリシウム研究都市・ヘラス・第2港・新しい空',
+      );
       await tester.tap(find.byKey(const Key('navigation-2')));
       await tester.pumpAndSettle();
-      for (final (id, expected) in [
-        ('urban_planning', '住宅Lv.2・研究地区・工業地区・エリシウム研究都市'),
-        ('orbital_logistics', '軌道補給受注・火星へ6基輸送・ヘラス・第2港・輸送効率上限45%'),
-        ('intercity_logistics', '全輸送の効率を追加+15%・新しい空・輸送効率上限60%'),
+      for (final id in [
+        'urban_planning',
+        'orbital_logistics',
+        'intercity_logistics',
       ]) {
+        final expected = researchUnlockSummary(
+          controller.state,
+          GameContent.tasks[id]!,
+        );
         tester.widget<ResearchTree>(find.byType(ResearchTree)).onSelected(id);
         await tester.pumpAndSettle();
         expect(

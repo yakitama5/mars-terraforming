@@ -316,15 +316,35 @@ class _CityDevelopmentState extends State<CityDevelopment> {
   }
 
   String? _facilityLockReason(DistrictDefinition definition) {
-    if (!game.cityUnlocked(city.id)) return game.cityLockReason(city.id);
+    if (!game.cityUnlocked(city.id)) {
+      return _discoverySafeReason(
+        game.cityLockReason(city.id),
+        city.requiredResearch,
+      );
+    }
     final research = definition.requiredResearch;
     if (research != null && !game.research.contains(research)) {
-      return '前提研究：${GameContent.tasks[research]!.name}';
+      return _discoverySafeReason(
+        '前提研究：${GameContent.tasks[research]!.name}',
+        research,
+      );
     }
     if (definition.id == 'mars_habitat' && game.habitatChoice == null) {
       return '居住方式を選択してください';
     }
     return null;
+  }
+
+  String? _discoverySafeReason(String? reason, String? researchId) {
+    if (reason == null ||
+        researchId == null ||
+        game.isResearchDiscovered(researchId)) {
+      return reason;
+    }
+    final name = GameContent.tasks[researchId]?.name;
+    return name != null && reason.contains(name)
+        ? '研究を進めて新しい手掛かりを探してください'
+        : reason;
   }
 
   bool get _needsFirstDelivery =>
@@ -430,9 +450,12 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     final saved = widget.savedInvestment;
     final isSaved = saved != null && _sameInvestment(saved, candidate);
     final terrain = GameContent.terrainNames[city.terrainAt(selectedPlot)];
-    final reason = hasPlotSelection
-        ? preview.blockedReason
-        : _facilityLockReason(definition);
+    final reason = _discoverySafeReason(
+      hasPlotSelection
+          ? preview.blockedReason
+          : _facilityLockReason(definition),
+      requiredResearch,
+    );
     final effects = [
       if (preview.researchBonusDelta != 0)
         '研究 ${signedNumber(preview.researchBonusDelta)}%',
@@ -1090,7 +1113,11 @@ class _CityDevelopmentState extends State<CityDevelopment> {
               if (!game.cityUnlocked(city.id)) ...[
                 StrategyCard(
                   child: Text(
-                    game.cityLockReason(city.id) ?? '都市の開発条件を満たしていません',
+                    _discoverySafeReason(
+                          game.cityLockReason(city.id),
+                          city.requiredResearch,
+                        ) ??
+                        '都市の開発条件を満たしていません',
                     style: const TextStyle(color: strategyCopper),
                   ),
                 ),
@@ -1217,7 +1244,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
               if (investmentResearch != null)
                 StrategyFact(
                   '必要研究',
-                  GameContent.tasks[investmentResearch]!.name,
+                  game.isResearchDiscovered(investmentResearch)
+                      ? GameContent.tasks[investmentResearch]!.name
+                      : '研究を進めると判明します',
                 ),
               if (requiredResearch != null)
                 TextButton.icon(
@@ -1280,7 +1309,10 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Text(
-                    preview.blockedReason!,
+                    _discoverySafeReason(
+                      preview.blockedReason,
+                      requiredResearch,
+                    )!,
                     key: const Key('district-blocked-reason-detail'),
                     style: const TextStyle(color: strategyCopper, fontSize: 12),
                   ),

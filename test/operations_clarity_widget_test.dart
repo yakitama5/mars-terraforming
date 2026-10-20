@@ -34,6 +34,7 @@ void main() {
       addTearDown(controller.dispose);
       await controller.command((engine) {
         engine.state.money = 5000;
+        engine.state.researchPointUnits = 0;
         engine.enqueue('life_support');
         engine.enqueue('factory_contract', repeats: 3);
         return engine.enqueue('mars_delivery');
