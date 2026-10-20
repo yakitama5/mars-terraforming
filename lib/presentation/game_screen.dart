@@ -6,6 +6,7 @@ import '../application/game_controller.dart';
 import '../domain/game_content.dart';
 import '../domain/contextual_tips.dart';
 import '../domain/game_state.dart';
+import '../domain/research_flavor.dart';
 import '../rendering/base_scene.dart';
 import 'city_development.dart';
 import 'first_run_tutorial.dart';
@@ -49,7 +50,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   int facilityTab = 0;
   int agencySection = 0;
   String cityId = 'earth_delta';
-  String researchId = 'life_support';
+  String? researchId;
   final researchScroll = ScrollController(keepScrollOffset: false);
   InvestmentCandidate? savedInvestment;
   final facilityKeys = {
@@ -57,9 +58,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   };
   GameController get controller => widget.controller;
   GameState get game => controller.state;
-  String get visibleResearchId => game.isResearchDiscovered(researchId)
+  String? get visibleResearchId =>
+      researchId != null && game.isResearchDiscovered(researchId!)
       ? researchId
-      : game.discoveredResearchIds.firstOrNull ?? 'life_support';
+      : null;
   bool get _firstRunActive =>
       widget.showIntroduction &&
       game.openingSeen &&
@@ -169,10 +171,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                             game: game,
                             selectedId: visibleResearchId,
                             onSelected: _selectResearch,
+                            onSelectionCleared: () =>
+                                setState(() => researchId = null),
                             requirementReasons:
                                 controller.engine!.researchRequirementReasons,
                           ),
-                          detail: _researchDetails(),
+                          detail: visibleResearchId == null
+                              ? null
+                              : _researchDetails(),
                         ),
                         3 => _facilities(),
                         _ => AgencyManagement(
@@ -264,7 +270,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 child: SizedBox.expand(
                   child: TextButton.icon(
                     key: Key('navigation-$index'),
-                    onPressed: () => setState(() => tab = index),
+                    onPressed: () => setState(() {
+                      if (index == 2 && tab != 2) researchId = null;
+                      tab = index;
+                    }),
                     style: TextButton.styleFrom(
                       foregroundColor: tab == index
                           ? strategyBlue
@@ -641,7 +650,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   Widget _researchDetails() {
     final id = visibleResearchId;
-    if (!game.isResearchDiscovered(id)) {
+    if (id == null || !game.isResearchDiscovered(id)) {
       return const Center(child: Text('研究を進めると、新しい着想が見つかります。'));
     }
     final task = GameContent.tasks[id]!;
@@ -666,6 +675,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             controller: researchScroll,
             padding: const EdgeInsets.all(16),
             children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('研究詳細', style: TextStyle(fontSize: 12)),
+                  ),
+                  IconButton(
+                    key: const Key('close-research-detail'),
+                    tooltip: '研究詳細を閉じる',
+                    onPressed: () => setState(() => researchId = null),
+                    icon: const Icon(Icons.close, size: 18),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: SizedBox(
@@ -747,13 +770,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 ),
                 StrategyFact('残り時間', gameDuration(activePlan!.remainingMs)),
               ] else ...[
-                StrategyFact('必要な研究ポイント', '$requiredPoints RP'),
+                StrategyFact('必要RP', '$requiredPoints RP'),
                 StrategyFact(
-                  '共通RPの保有',
+                  '保有RP',
                   '${game.researchPoints.toStringAsFixed(1)} RP',
                 ),
                 StrategyFact(
-                  '現在の研究生産',
+                  'RP生産',
                   '${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
                 ),
                 const Text(
@@ -809,24 +832,35 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ExpansionTile(
                 key: ValueKey('research-explanation-$id'),
                 tilePadding: EdgeInsets.zero,
-                title: const Text('方式の特徴・科学メモ', style: TextStyle(fontSize: 12)),
+                title: const Text('運用の特徴', style: TextStyle(fontSize: 12)),
                 children: [
-                  Text(
-                    task.description,
-                    style: const TextStyle(fontSize: 13, color: strategyMuted),
-                  ),
-                  const SizedBox(height: 10),
                   Text(
                     technology.tradeoff,
                     style: const TextStyle(fontSize: 12, color: strategyMuted),
                   ),
-                  if (task.science.isNotEmpty)
-                    TextButton.icon(
-                      onPressed: () => _science(task),
-                      icon: const Icon(Icons.menu_book_outlined, size: 17),
-                      label: const Text('科学メモ・出典'),
-                    ),
                 ],
+              ),
+              const SizedBox(height: 16),
+              StrategyCard(
+                key: Key('research-flavor-$id'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '未来の一景',
+                      style: TextStyle(fontSize: 12, color: strategyCopper),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      ResearchFlavor.forTechnology(id),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.7,
+                        color: strategyText,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1107,11 +1141,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             const SizedBox(height: 8),
             Row(
               children: [
-                if (task.science.isNotEmpty)
-                  TextButton(
-                    onPressed: () => _science(task),
-                    child: const Text('科学メモ'),
-                  ),
                 const Spacer(),
                 FilledButton.tonal(
                   key: Key('queue-$id'),
@@ -1536,18 +1565,4 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       ),
     );
   }
-
-  void _science(TaskDefinition task) => showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text('${task.name} / 科学メモ'),
-      content: SingleChildScrollView(child: SelectableText(task.science)),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('閉じる'),
-        ),
-      ],
-    ),
-  );
 }

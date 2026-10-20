@@ -80,40 +80,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'unseen research selection falls back to a known actionable entrance',
-    (tester) async {
-      final controller = await open(tester);
-      final before = jsonEncode(controller.state.toJson());
-      await tester.tap(find.byKey(const Key('navigation-2')));
-      await tester.pumpAndSettle();
-      tester
-          .widget<ResearchTree>(find.byType(ResearchTree))
-          .onSelected('habitat_operations');
-      await tester.pumpAndSettle();
-      expect(
-        controller.state.isResearchDiscovered('habitat_operations'),
-        isFalse,
-      );
-      expect(
-        find.text(GameContent.tasks['habitat_operations']!.name),
-        findsNothing,
-      );
-      final known = tester
-          .widget<ResearchTree>(find.byType(ResearchTree))
-          .selectedId;
-      expect(controller.state.isResearchDiscovered(known), isTrue);
-      expect(find.byKey(Key('queue-$known')), findsOneWidget);
-      tester
-          .widget<ResearchTree>(find.byType(ResearchTree))
-          .onSelected('life_support');
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('queue-life_support')), findsOneWidget);
-      expect(find.byKey(const Key('research-unlocks')), findsOneWidget);
-      expect(jsonEncode(controller.state.toJson()), before);
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('unseen research selection leaves the tree unselected', (
+    tester,
+  ) async {
+    final controller = await open(tester);
+    final before = jsonEncode(controller.state.toJson());
+    await tester.tap(find.byKey(const Key('navigation-2')));
+    await tester.pumpAndSettle();
+    tester
+        .widget<ResearchTree>(find.byType(ResearchTree))
+        .onSelected('habitat_operations');
+    await tester.pumpAndSettle();
+    expect(
+      controller.state.isResearchDiscovered('habitat_operations'),
+      isFalse,
+    );
+    expect(
+      find.text(GameContent.tasks['habitat_operations']!.name),
+      findsNothing,
+    );
+    final known = tester
+        .widget<ResearchTree>(find.byType(ResearchTree))
+        .selectedId;
+    expect(known, isNull);
+    expect(find.byKey(const Key('research-detail')), findsNothing);
+    tester
+        .widget<ResearchTree>(find.byType(ResearchTree))
+        .onSelected('life_support');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('queue-life_support')), findsOneWidget);
+    expect(find.byKey(const Key('research-unlocks')), findsOneWidget);
+    expect(jsonEncode(controller.state.toJson()), before);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'research unlocks use player city names without cascading replacements',
