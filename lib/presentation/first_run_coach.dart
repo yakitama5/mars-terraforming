@@ -12,31 +12,42 @@ class FirstRunCoach extends StatelessWidget {
     required this.step,
     required this.instruction,
     this.portraitVisible = true,
+    this.legacyResearchRunning = false,
   });
 
   final FirstRunTutorialStep step;
   final String instruction;
   final bool portraitVisible;
+  final bool legacyResearchRunning;
 
-  static String speech(FirstRunTutorialStep step) => switch (step) {
+  static String speech(
+    FirstRunTutorialStep step, {
+    bool legacyResearchRunning = false,
+  }) => switch (step) {
     FirstRunTutorialStep.placeHousing => 'まずは住宅地区です。施設、空地、建設予約の順に選びましょう。',
     FirstRunTutorialStep.finishConstruction =>
       '今回は私が建設をお手伝いします。「ルナに完成を頼む」を押してください。',
     FirstRunTutorialStep.income =>
       '完成です！ 住宅の税収が毎分入ります。維持費を引いた収支を、上の数字で確認しましょう。',
     FirstRunTutorialStep.startResearch =>
-      '次は「生命維持の実証」を研究します。街の収入が、宇宙で暮らす技術につながります。',
+      '次は共通の研究ポイントで、最初の居住技術を解放しましょう。街の研究者がRPを生み、必要量がそろえば必ず解放できます。',
     FirstRunTutorialStep.researchStarted =>
-      '研究が始まりました！ 次の住宅からは完成を待ちます。その間も街づくりを進められます。続きはガイドでご案内します。',
+      legacyResearchRunning
+          ? '着手済みの研究は、支払済みの残り時間から続きます。その間も街づくりを進められます。続きはガイドでご案内します。'
+          : '技術を解放できました！ 次は居住キットを製造して火星へ届けましょう。新しい施設は通常の費用と工期で建設します。続きはガイドでご案内します。',
     FirstRunTutorialStep.completed => '',
   };
 
-  static String summary(FirstRunTutorialStep step) => switch (step) {
+  static String summary(
+    FirstRunTutorialStep step, {
+    bool legacyResearchRunning = false,
+  }) => switch (step) {
     FirstRunTutorialStep.placeHousing => '海沿いの住宅は税収が増えます。',
     FirstRunTutorialStep.finishConstruction => '最初の1棟だけ、私が即完成！',
     FirstRunTutorialStep.income => '税収−維持費が毎分の収支です。',
-    FirstRunTutorialStep.startResearch => '街の収入を、宇宙で暮らす技術に。',
-    FirstRunTutorialStep.researchStarted => '次の建設は、通常の工期で完成します。',
+    FirstRunTutorialStep.startResearch => '街の研究者が、共通RPを生み出します。',
+    FirstRunTutorialStep.researchStarted =>
+      legacyResearchRunning ? '着手済みの研究は、残り時間から続きます。' : '技術を解放。次は設備へ投資します。',
     FirstRunTutorialStep.completed => '',
   };
 
@@ -46,7 +57,14 @@ class FirstRunCoach extends StatelessWidget {
     final enlarged = MediaQuery.textScalerOf(context).scale(13) > 17;
     final portraitSize = small ? 130.0 : 160.0;
     return MissionSpeech(
-      audioId: 'first_run_${step.name}',
+      // Recorded research narration predates common RP. Keep new text usable
+      // offline without playing contradictory narration from that old step.
+      audioId:
+          step == FirstRunTutorialStep.startResearch ||
+              (step == FirstRunTutorialStep.researchStarted &&
+                  !legacyResearchRunning)
+          ? 'first_run_rp_${step.name}'
+          : 'first_run_${step.name}',
       child: SizedBox(
         key: const Key('first-run-coach'),
         height: portraitVisible
@@ -79,7 +97,8 @@ class FirstRunCoach extends StatelessWidget {
                 child: Semantics(
                   key: ValueKey('first-run-announcement-${step.name}'),
                   liveRegion: true,
-                  label: 'ルナ。${speech(step)} $instruction',
+                  label:
+                      'ルナ。${speech(step, legacyResearchRunning: legacyResearchRunning)} $instruction',
                   excludeSemantics: true,
                   child: AnimatedSwitcher(
                     duration: MediaQuery.disableAnimationsOf(context)
@@ -102,7 +121,7 @@ class FirstRunCoach extends StatelessWidget {
                           child: SingleChildScrollView(
                             key: const Key('first-run-instruction-scroll'),
                             child: Text(
-                              '${summary(step)}\n$instruction',
+                              '${summary(step, legacyResearchRunning: legacyResearchRunning)}\n$instruction',
                               key: const Key('first-run-instruction'),
                               style: const TextStyle(
                                 fontSize: 13,

@@ -77,6 +77,10 @@ void main() {
         expect(controller.state.researchers, 6);
         expect(jsonEncode(controller.state.toJson()), unchanged);
         expect(find.text('研究 7人 / 工業 5人に変更'), findsOneWidget);
+        await tester.ensureVisible(
+          find.byKey(const Key('confirm-staff-allocation')),
+        );
+        await tester.pumpAndSettle();
         expect(
           find.byKey(const Key('confirm-staff-allocation')).hitTestable(),
           findsOneWidget,
@@ -87,13 +91,34 @@ void main() {
         expect(controller.state.industrialWorkers, 5);
         expect(store.data!['researchers'], 7);
 
-        // Begin paid research and factory work. Neither department can now
-        // release its reserved people, and opening the panel cannot alter time.
+        // A research paid before the RP update still holds its people.
+        // Preparing that old paid iteration is fixture setup, not a new bill.
         await controller.command((engine) {
-          engine.enqueue('life_support');
+          final legacy =
+              PlannedTask(
+                  id: 'plan-${engine.state.nextPlanId++}',
+                  taskId: 'life_support',
+                )
+                ..status = 'running'
+                ..remainingMs = 120000
+                ..iterationDurationMs = 120000
+                ..iterationSpecialists = engine.state.researchers;
+          engine.state.plans.add(legacy);
           engine.enqueue('factory_contract', repeats: null);
           return null;
         });
+        await tester.pumpAndSettle();
+        // The confirm action may have scrolled the lazily built controls out
+        // of the small viewport. Return to the allocation row before reading
+        // the paid-work locks on its buttons.
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('staff-research-less')),
+          -140,
+          scrollable: find.descendant(
+            of: find.byKey(const Key('agency-staff')),
+            matching: find.byType(Scrollable),
+          ),
+        );
         await tester.pumpAndSettle();
         expect(
           tester
@@ -232,6 +257,7 @@ void main() {
     );
     await controller.initialize(startTimer: false);
     addTearDown(controller.dispose);
+    controller.state.researchPointUnits = 0;
     await tester.pumpWidget(
       MarsApp(
         showIntroduction: false,
@@ -241,7 +267,9 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('navigation-2')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('research-node-urban_planning')));
+    await tester.tap(find.byKey(const Key('research-filter-bio')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('research-node-orbital_gardens')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('navigation-0')));
     await tester.pumpAndSettle();
@@ -252,13 +280,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('navigation-0')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('進行中 · 残り'), findsOneWidget);
+    expect(find.textContaining('予約済み · 研究ポイント待ち'), findsOneWidget);
     await controller.command(
       (engine) => engine.setFacilityEnabled('lab', false),
     );
     await tester.pumpAndSettle();
     expect(find.textContaining('停止中 · 設備休止中'), findsOneWidget);
-    expect(find.textContaining('進行中 · 残り'), findsNothing);
+    expect(find.textContaining('予約済み · 研究ポイント待ち'), findsNothing);
     final paused = jsonEncode(controller.state.toJson());
     await tester.tap(find.byKey(const Key('next-goal')));
     await tester.pumpAndSettle();
@@ -299,9 +327,9 @@ void main() {
     );
     final before = jsonEncode(controller.state.toJson());
     for (final id in [
-      'process_design',
-      'cargo_packaging',
-      'habitat_operations',
+      'orbital_gardens',
+      ResearchCatalog.idForCatalog('M01'),
+      'local_resources',
     ]) {
       await _tapDetail(tester, 'guide-short-research', 'planet-detail');
       await tester.tap(find.byKey(Key('guide-research-$id')));

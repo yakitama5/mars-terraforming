@@ -37,13 +37,15 @@ void main() {
     await tester.pump();
     expect(dismissed, {'parallel-city'});
     expect(find.byKey(const Key('contextual-tips-panel')), findsNothing);
-    expect(engine.state.currentPlanFor('lab'), isNotNull);
+    expect(engine.state.research, contains('life_support'));
+    expect(engine.state.currentPlanFor('lab'), isNull);
   });
 
   testWidgets('a narrow panel with larger text retains the full explanation', (
     tester,
   ) async {
     final engine = GameEngine(GameState.initial(DateTime.utc(2026, 1, 1)));
+    engine.state.researchPointUnits = 0;
     engine.enqueue('life_support');
     engine.setFacilityEnabled('lab', false);
     final tip = evaluateContextualTips(engine.state).first;
@@ -136,7 +138,8 @@ void main() {
         findsOneWidget,
       );
       expect(opened, 0);
-      expect(engine.state.currentPlanFor('lab'), isNotNull);
+      expect(engine.state.research, contains('life_support'));
+      expect(engine.state.currentPlanFor('lab'), isNull);
       await tester.tap(find.byKey(const Key('close-contextual-tip-dialogue')));
       await tester.pumpAndSettle();
       expect(find.byType(MissionDialogue), findsNothing);

@@ -92,13 +92,14 @@ void main() {
         containsAll([
           'life_support',
           'urban_planning',
-          'process_design',
-          'cargo_packaging',
-          'habitat_operations',
+          'deployable_solar_arrays',
+          'local_resources',
+          'orbital_gardens',
+          'autonomous_rovers',
         ]),
       );
-      expect(route.state.specialistCount, 16);
-      expect(route.state.researchers, 8);
+      expect(route.state.specialistCount, 18);
+      expect(route.state.researchers, 10);
       expect(route.state.industrialWorkers, 8);
       expect(route.state.districtAt('earth_delta', 0)?.level, 2);
       expect(route.state.marsResidents, greaterThanOrEqualTo(24));
@@ -107,7 +108,7 @@ void main() {
           (plan) =>
               plan.taskId == 'train_specialists' && plan.status == 'completed',
         ),
-        hasLength(2),
+        hasLength(3),
       );
       expect(
         route.state.plans.where(
@@ -147,13 +148,26 @@ void main() {
     );
     expect(funding.state.money, greaterThan(technology.state.money));
     expect(funding.state.districtAt('earth_delta', 8)?.districtId, 'industry');
-    expect(technology.state.districtAt('earth_delta', 8), isNull);
     expect(
-      technology.state.plans
-          .singleWhere((plan) => plan.taskId == 'district_industry')
-          .status,
-      'running',
+      technology.state.districtAt('earth_delta', 8)?.districtId,
+      'industry',
     );
+    for (final route in [funding, technology]) {
+      final advancedResearch = route.state.plans.singleWhere(
+        (plan) => plan.taskId == 'automated_fabrication',
+      );
+      expect(advancedResearch.isFinished, isFalse);
+      expect(
+        route.state.researchWaitMs('automated_fabrication'),
+        greaterThan(0),
+      );
+      expect(
+        route.state.plans.where(
+          (plan) => plan.taskId == 'district_mars_habitat' && !plan.isFinished,
+        ),
+        hasLength(1),
+      );
+    }
     expect(
       technology.state.researchBonusPercent,
       greaterThan(funding.state.researchBonusPercent),
@@ -168,7 +182,7 @@ void main() {
       everyElement('technology'),
     );
     expect(funding.state.partnershipChoices, hasLength(3));
-    expect(technology.state.partnershipChoices, hasLength(2));
+    expect(technology.state.partnershipChoices, hasLength(3));
   });
 
   test('decision opportunities and actual development completions are reported separately', () {

@@ -94,18 +94,29 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
     if (current == null &&
         head.stopReason.isNotEmpty &&
         !(head.stopReason.contains('居住方式') && game.awaitingHabitatChoice)) {
-      final reason = head.stopReason;
+      final hiddenPrerequisite = head.definition.prerequisiteIds.any(
+        (id) => !game.isResearchDiscovered(id),
+      );
+      final reason = hiddenPrerequisite
+          ? '研究を進めて必要な技術を見つけてください'
+          : head.stopReason;
       final staff = reason.startsWith('人員待ち');
       final budget = reason.startsWith('資金不足');
+      final points = reason.contains('RP') || reason.contains('研究ポイント');
       final resource = reason.startsWith('資源不足');
       final branch = reason.contains('居住方式');
       final trainingLimit = reason.startsWith('専門職は上限');
-      final researchTask = !staff && !budget && !resource && !branch
+      final candidateResearch = !staff && !budget && !resource && !branch
           ? head.definition.unique
                 ? head.taskId
                 : head.definition.prerequisiteIds
                       .where((id) => !game.research.contains(id))
                       .firstOrNull
+          : null;
+      final researchTask =
+          candidateResearch != null &&
+              game.isResearchDiscovered(candidateResearch)
+          ? candidateResearch
           : null;
       final category = staff
           ? 'staff'
@@ -121,12 +132,17 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
       tips.add(
         ContextualTip(
           id: '$category:${head.id}',
-          title: '${head.definition.name}の開始条件を確認',
+          title:
+              head.definition.unique && !game.isResearchDiscovered(head.taskId)
+              ? '予約した研究の条件を確認'
+              : '${head.definition.name}の開始条件を確認',
           detail:
               '$reason。${staff
                   ? '機関運営で専門職を配分できます。'
                   : budget
                   ? '税収や受注で資金を用意できます。後続に受注があれば「次に実行」で前へ移動できます。'
+                  : points
+                  ? '稼働している研究施設へ研究者を配置すると共通RPが蓄まります。必要量と前提がそろうと、予約した技術が解放されます。'
                   : trainingLimit
                   ? '育成の予約を取り消すと、この研究所の後続を進められます。完了済みの育成は保持されます。'
                   : resource
@@ -159,7 +175,11 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
                     ? ContextualTipOperationsSection.production
                     : ContextualTipOperationsSection.transport
               : ContextualTipOperationsSection.queues,
-          priority: staff || budget || trainingLimit ? 95 : 80,
+          priority: staff || budget || trainingLimit
+              ? 95
+              : points
+              ? 35
+              : 80,
           facilityId: facility.id,
           taskId: researchTask ?? head.taskId,
         ),
@@ -230,7 +250,7 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
       game.currentPlanFor(id) == null &&
       game.upcomingPlansFor(id).isEmpty;
   for (final (id, assigned, label) in [
-    ('lab', game.researchers, '研究者'),
+    ('lab', game.labResearchers, '研究者'),
     ('factory', game.industrialWorkers, '工業員'),
   ]) {
     if (assigned != 0 || !idle(id) || game.activePlanCount == 0) continue;
@@ -246,7 +266,10 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
       ),
     );
   }
-  if (game.currentPlanFor('lab') != null &&
+  if ((game.currentPlanFor('lab') != null ||
+          game.upcomingPlansFor('lab').any((plan) => plan.definition.unique) ||
+          (game.research.isNotEmpty && game.researchPointsPerMinute > 0)) &&
+      (game.activePlanCount > 0 || game.research.isNotEmpty) &&
       game.facilities['lab'] == true &&
       idle('factory') &&
       game.industrialWorkers > 0) {
@@ -254,7 +277,7 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
       const ContextualTip(
         id: 'parallel-city',
         title: '研究中も都市を開発できます',
-        detail: '研究所と工場は別々に動きます。都市の区画で建設費を比べ、住宅や産業への投資を検討しましょう。',
+        detail: '施設でRPを蓄える間も、工場や都市は並行して動きます。研究者と工業員を配分し、住宅や産業への投資を検討しましょう。',
         actionLabel: '都市を開く',
         destination: ContextualTipDestination.city,
         priority: 20,
@@ -263,7 +286,12 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
     );
   }
   final nextResearch = GameContent.tasks.values
-      .where((task) => task.unique && !game.research.contains(task.id))
+      .where(
+        (task) =>
+            task.unique &&
+            game.isResearchDiscovered(task.id) &&
+            !game.research.contains(task.id),
+      )
       .firstOrNull;
   if (game.currentPlanFor('factory') != null &&
       game.facilities['factory'] == true &&
@@ -274,7 +302,7 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
       ContextualTip(
         id: 'parallel-research',
         title: '工場の作業中に次の研究を検討できます',
-        detail: '研究所は空いています。研究ツリーで費用と前提条件を確認し、並行する計画を選べます。',
+        detail: '共通RPは、どの分野の技術にも使えます。見つかった技術の必要RPと解放先を比較し、次の投資を選べます。',
         actionLabel: '研究ツリーを開く',
         destination: ContextualTipDestination.research,
         taskId: nextResearch.id,

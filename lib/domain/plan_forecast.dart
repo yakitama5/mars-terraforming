@@ -164,9 +164,9 @@ ForecastFacility _facilityForecast(
       .fold(0, (sum, item) => sum + item.runs);
   final status = !enabled
       ? ForecastFacilityStatus.paused
-      : current != null
+      : current != null && current.stopReason.isEmpty
       ? ForecastFacilityStatus.running
-      : upcoming.isNotEmpty
+      : current != null || upcoming.isNotEmpty
       ? ForecastFacilityStatus.waiting
       : ForecastFacilityStatus.idle;
   return ForecastFacility(

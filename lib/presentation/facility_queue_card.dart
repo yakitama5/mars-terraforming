@@ -30,7 +30,11 @@ class FacilityQueueCard extends StatelessWidget {
     final status = !enabled
         ? '休止中'
         : current != null
-        ? '稼働中'
+        ? current.stopReason.isEmpty
+              ? '稼働中'
+              : '条件待ち'
+        : facilityId == 'lab' && game.researchPointsPerMinute > 0
+        ? 'RPを生産中'
         : upcoming.isNotEmpty
         ? '条件待ち'
         : '待機中';
@@ -84,6 +88,15 @@ class FacilityQueueCard extends StatelessWidget {
               ),
             ],
           ),
+          if (facilityId == 'lab')
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '共通RP ${game.researchPoints.toStringAsFixed(1)} RP · 全施設で ${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
+                key: const Key('lab-common-research-points'),
+                style: const TextStyle(color: _mint, fontSize: 11),
+              ),
+            ),
           const Divider(color: strategyLine),
           if (current != null)
             _current(current, enabled)
@@ -122,55 +135,75 @@ class FacilityQueueCard extends StatelessWidget {
     );
   }
 
-  Widget _current(PlannedTask plan, bool enabled) => Container(
-    key: Key('current-${plan.id}'),
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: strategySelected,
-      borderRadius: BorderRadius.circular(7),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                '${enabled ? '進行中' : '一時停止'} · ${_purpose(plan)}',
+  Widget _current(PlannedTask plan, bool enabled) {
+    final advancing = enabled && plan.stopReason.isEmpty;
+    final status = !enabled
+        ? '一時停止'
+        : advancing
+        ? '進行中'
+        : '条件待ち';
+    return Container(
+      key: Key('current-${plan.id}'),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: strategySelected,
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$status · ${_purpose(plan)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: advancing ? _mint : _copper,
+                  ),
+                ),
+              ),
+              Text(
+                '${(plan.progress * 100).floor()}%',
                 style: const TextStyle(fontSize: 11, color: _mint),
               ),
-            ),
-            Text(
-              '${(plan.progress * 100).floor()}%',
-              style: const TextStyle(fontSize: 11, color: _mint),
-            ),
-          ],
-        ),
-        const SizedBox(height: 5),
-        Text(plan.definition.name, style: const TextStyle(fontSize: 13)),
-        if (plan.cityId != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              _location(plan, controller.state),
-              style: const TextStyle(fontSize: 12, color: _mint),
-            ),
+            ],
           ),
-        const SizedBox(height: 8),
-        LinearProgressIndicator(
-          value: plan.progress.clamp(0, 1),
-          semanticsLabel: '${plan.definition.name}の進捗',
-          minHeight: 4,
-          backgroundColor: strategyLine,
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '${enabled ? '残り' : '再開後の残り'} ${gameDuration(plan.remainingMs)} · 支払済み',
-          style: TextStyle(color: enabled ? _mint : _copper, fontSize: 11),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: 5),
+          Text(plan.definition.name, style: const TextStyle(fontSize: 13)),
+          if (plan.stopReason.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                plan.stopReason,
+                key: Key('current-stop-reason-${plan.id}'),
+                style: const TextStyle(fontSize: 12, color: _copper),
+              ),
+            ),
+          if (plan.cityId != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _location(plan, controller.state),
+                style: const TextStyle(fontSize: 12, color: _mint),
+              ),
+            ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: plan.progress.clamp(0, 1),
+            semanticsLabel: '${plan.definition.name}の進捗',
+            minHeight: 4,
+            backgroundColor: strategyLine,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${advancing ? '残り' : '再開後の残り'} ${gameDuration(plan.remainingMs)} · 支払済み${plan.definition.unique ? '・追加RP不要' : ''}',
+            style: TextStyle(color: advancing ? _mint : _copper, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _queued(
     BuildContext context,
@@ -205,7 +238,7 @@ class FacilityQueueCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${index == 0 ? '次の作業' : '${index + 1}番目'} · ${_purpose(plan)} · $futureCount',
+                      '${index == 0 ? '次の作業' : '${index + 1}番目'} · ${_purpose(plan)}${plan.definition.unique ? '' : ' · $futureCount'}',
                       style: TextStyle(
                         fontSize: 10,
                         color: plan.taskId.endsWith('_contract')
@@ -260,7 +293,9 @@ class FacilityQueueCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(right: 9, bottom: 5),
             child: Text(
-              '1回の目安 ${gameDuration(controller.state.plannedDurationMs(plan))} · 開始時 ${dollars(controller.state.plannedCost(plan))}（未払い）',
+              plan.definition.unique
+                  ? '必要 ${GameContent.researchPointCost(plan.taskId)} RP · 保有 ${controller.state.researchPoints.toStringAsFixed(1)} RP'
+                  : '1回の目安 ${gameDuration(controller.state.plannedDurationMs(plan))} · 開始時 ${dollars(controller.state.plannedCost(plan))}（未払い）',
               key: Key('queue-estimate-${plan.id}'),
               style: const TextStyle(color: _muted, fontSize: 11),
             ),
@@ -320,7 +355,11 @@ class FacilityQueueCard extends StatelessWidget {
         content: Text(
           '${plan.definition.name}\n'
           '${plan.cityId == null ? '' : '${_location(plan, controller.state)}\n'}'
-          '${running ? '進行中の1回は完成まで続き、その後の反復を終了します。確保済みの費用と進捗は維持されます。' : '未着手の予約を取り消します。まだ費用は支払っていません。確認中に作業が始まった場合、その1回は完成まで続きます。'}',
+          '${running
+              ? '進行中の1回は完成まで続き、その後の反復を終了します。確保済みの費用と進捗は維持されます。'
+              : plan.definition.unique
+              ? '未解放の研究予約を取り消します。RPはまだ使っていません。確認中に技術が解放された場合、その成果は保持します。'
+              : '未着手の予約を取り消します。まだ費用は支払っていません。確認中に作業が始まった場合、その1回は完成まで続きます。'}',
         ),
         actions: [
           TextButton(
@@ -367,7 +406,8 @@ class QueueRulesDisclosure extends StatelessWidget {
           padding: EdgeInsets.only(bottom: 12),
           child: Text(
             '同じ設備では上から順に着手します。「次に実行」や↑↓で順番を変更できます。進行中の1回は中断しません。\n\n'
-            '費用は1回の着手ごとに支払います。未着手の費用・工期は、その時点の効率や土地で変わることがあります。\n\n'
+            '研究予約は、必要な共通RPと前提がそろうと技術を必ず解放します。RPの蓄積中は、施設と研究者の配分を見直せます。\n\n'
+            '建設・製造・育成などの費用は1回の着手ごとに支払います。未着手の費用・工期は、その時点の効率や土地で変わることがあります。\n\n'
             '先頭が資金・資材・研究の条件待ちなら、後続も待ちます。無期限反復の後ろにある作業は、反復より前に移すと進められます。\n\n'
             '取消は未着手の予約を取り消します。反復中なら現在の1回を最後に終了します。設備スイッチで休止した作業は、再開後に残り時間から続きます。',
             style: TextStyle(fontSize: 12, color: _muted),
@@ -383,7 +423,9 @@ String _purpose(PlannedTask plan) => plan.taskId.endsWith('_contract')
     : plan.taskId == 'train_specialists'
     ? '人員育成'
     : plan.definition.unique
-    ? '研究'
+    ? plan.status == 'running'
+          ? '研究（着手済み）'
+          : '技術解放'
     : plan.cityId != null
     ? '都市開発'
     : plan.taskId == 'earth_expansion'

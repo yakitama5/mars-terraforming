@@ -57,7 +57,8 @@ void main() {
     'queued dependencies proceed to the unselected habitat branch and stop',
     () {
       final game = ready();
-      game.enqueue('life_support');
+      game.state.researchPointUnits = 0;
+      expect(game.enqueue('life_support'), isNull);
       game.enqueue('habitat_kit');
       game.enqueue('mars_delivery');
       game.enqueue('build_habitat', repeats: null);
@@ -76,26 +77,32 @@ void main() {
     },
   );
 
-  test(
-    'practical proof, resource shortage and paused equipment remain waiting',
-    () {
-      final game = ready();
-      game.enqueue('urban_planning');
-      game.enqueue('automated_fabrication');
-      game.enqueue('mars_delivery');
-      game.setFacilityEnabled('factory', false);
-      game.enqueueDistrict('earth_delta', 0, 'housing');
-      final result = forecastPlans(game.state, const Duration(hours: 8));
-      expect(result.completedResearch, {'urban_planning'});
-      expect(facility(result, 'lab').status, ForecastFacilityStatus.waiting);
-      expect(facility(result, 'lab').stopReason, contains('工業地区'));
-      expect(facility(result, 'launch').status, ForecastFacilityStatus.waiting);
-      expect(facility(result, 'launch').stopReason, contains('資源不足'));
-      expect(facility(result, 'factory').status, ForecastFacilityStatus.paused);
-      expect(facility(result, 'factory').taskId, 'district_housing');
-      expect(result.districtDelta, 0);
-    },
-  );
+  test('RP, knowledge prerequisites, resources and paused equipment remain distinct', () {
+    final game = ready();
+    game.state.research.add(ResearchCatalog.idForCatalog('E01'));
+    game.state.researchPointUnits = 0;
+    expect(game.enqueue('urban_planning'), isNull);
+    // A reservation retained from the old tree remains inspectable while its
+    // new knowledge prerequisite is missing. New hidden nodes cannot be queued.
+    game.state.plans.add(
+      PlannedTask(
+        id: 'plan-${game.state.nextPlanId++}',
+        taskId: 'automated_fabrication',
+      ),
+    );
+    game.enqueue('mars_delivery');
+    game.setFacilityEnabled('factory', false);
+    game.enqueueDistrict('earth_delta', 0, 'housing');
+    final result = forecastPlans(game.state, const Duration(hours: 8));
+    expect(result.completedResearch, {'urban_planning'});
+    expect(facility(result, 'lab').status, ForecastFacilityStatus.waiting);
+    expect(facility(result, 'lab').stopReason, contains('前提研究待ち'));
+    expect(facility(result, 'launch').status, ForecastFacilityStatus.waiting);
+    expect(facility(result, 'launch').stopReason, contains('資源不足'));
+    expect(facility(result, 'factory').status, ForecastFacilityStatus.paused);
+    expect(facility(result, 'factory').taskId, 'district_housing');
+    expect(result.districtDelta, 0);
+  });
 
   test(
     'insufficient funds wait and reserved work starts when income recovers',
@@ -122,7 +129,13 @@ void main() {
     'eight-hour projection matches irregular advances and saved resumes',
     () {
       final game = ready();
-      game.state.research.addAll(['urban_planning', 'life_support']);
+      game.state.research.addAll([
+        'urban_planning',
+        'life_support',
+        'orbital_gardens',
+      ]);
+      final pendingResearch = ResearchCatalog.idForCatalog('B05');
+      game.state.researchPointUnits = 0;
       game.state.achievements.add('first_landing');
       game.chooseHabitat('dome');
       game.state.marsKits = 3;
@@ -133,7 +146,7 @@ void main() {
         'urban_planning',
       ); // Already researched: rejected, never duplicated.
       game.enqueueDistrict('mars_arcadia', 2, 'mars_habitat');
-      game.enqueue('closed_ecology');
+      expect(game.enqueue(pendingResearch), isNull);
       game.enqueue('launch_contract', repeats: 3);
       final before = jsonEncode(game.state.toJson());
       final result = forecastPlans(game.state, const Duration(hours: 8));
@@ -165,7 +178,7 @@ void main() {
       );
       expect(result.marsResidentsDelta, 24);
       expect(result.districtDelta, 3);
-      expect(result.completedResearch, contains('closed_ecology'));
+      expect(result.completedResearch, contains(pendingResearch));
       for (final item in result.facilities) {
         expect(item.enabled, actual.state.facilities[item.facilityId]);
         expect(
@@ -285,6 +298,67 @@ void main() {
     expect(facility(result, 'factory').queuedPlans, 1);
     expect(game.state.plans, hasLength(2));
     expect(game.state.plans.every((plan) => plan.completedRuns == 0), isTrue);
+  });
+
+  test(
+    'paused installation keeps a paid transport waiting in the forecast',
+    () {
+      final game = ready();
+      const technology = 'cargo_packaging';
+      game.state.research.add(technology);
+      expect(
+        game.enqueueDevelopment(technology, cityId: 'earth_delta'),
+        isNull,
+      );
+      game.advanceBy(Duration(milliseconds: game.state.plans.last.remainingMs));
+      expect(game.setDevelopmentEnabled(technology, true), isNull);
+      game.state.earthKits = 1;
+      expect(
+        game.enqueue(GameContent.developmentOperationTaskId(technology)),
+        isNull,
+      );
+      final flight = game.state.currentPlanFor('launch')!;
+      expect(game.setDevelopmentEnabled(technology, false), isNull);
+      final before = jsonEncode(game.state.toJson());
+      final waiting = forecastPlans(game.state, const Duration(hours: 8));
+      expect(
+        facility(waiting, 'launch').status,
+        ForecastFacilityStatus.waiting,
+      );
+      expect(facility(waiting, 'launch').stopReason, contains('休止中'));
+      expect(facility(waiting, 'launch').remainingMs, flight.remainingMs);
+      expect(waiting.completedRuns, 0);
+      expect(waiting.marsKits, 0);
+      expect(jsonEncode(game.state.toJson()), before);
+      expect(game.setDevelopmentEnabled(technology, true), isNull);
+      final resumed = forecastPlans(game.state, const Duration(hours: 8));
+      expect(resumed.marsKits, 1);
+      expect(resumed.newAchievements, contains('first_landing'));
+    },
+  );
+
+  test('RP forecast unlocks exactly at the affordable boundary without mutating its bank', () {
+    final game = ready();
+    game.state.researchPointUnits = 0;
+    expect(game.enqueue('life_support'), isNull);
+    final wait = game.state.researchWaitMs('life_support')!;
+    final before = jsonEncode(game.state.toJson());
+    final near = forecastPlans(game.state, Duration(milliseconds: wait - 1));
+    expect(near.completedResearch, isEmpty);
+    expect(facility(near, 'lab').status, ForecastFacilityStatus.waiting);
+    expect(facility(near, 'lab').stopReason, contains('研究ポイント待ち'));
+    final readyAtBoundary = forecastPlans(
+      game.state,
+      Duration(milliseconds: wait),
+    );
+    expect(readyAtBoundary.completedResearch, {'life_support'});
+    expect(readyAtBoundary.completedRuns, 1);
+    expect(
+      facility(readyAtBoundary, 'lab').status,
+      ForecastFacilityStatus.idle,
+    );
+    expect(jsonEncode(game.state.toJson()), before);
+    expect(game.state.researchPointUnits, 0);
   });
 
   test(

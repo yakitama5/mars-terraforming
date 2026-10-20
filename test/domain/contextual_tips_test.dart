@@ -5,7 +5,9 @@ import 'package:mars_terraforming/domain/game_engine.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 
 void main() {
-  GameEngine fresh() => GameEngine(GameState.initial(DateTime.utc(2026, 1, 1)));
+  GameEngine fresh() => GameEngine(
+    GameState.initial(DateTime.utc(2026, 1, 1))..researchPointUnits = 0,
+  );
   List<ContextualTip> tips(GameEngine engine) =>
       evaluateContextualTips(engine.state, limit: 20);
 
@@ -63,7 +65,7 @@ void main() {
   test('staff blockage directs to allocation and uses resolved reason', () {
     final engine = fresh();
     engine.assignResearchers(0);
-    engine.enqueue('life_support');
+    engine.enqueue('train_specialists');
     final tip = tips(engine).first;
     expect(tip.destination, ContextualTipDestination.agency);
     expect(tip.id, startsWith('staff:'));
@@ -131,6 +133,14 @@ void main() {
       evaluateContextualTips(
         engine.state,
         dismissedIds: {'paused:launch:plan-2'},
+        limit: 1,
+      ).first.id,
+      'requirements:plan-1',
+    );
+    expect(
+      evaluateContextualTips(
+        engine.state,
+        dismissedIds: {'paused:launch:plan-2', 'requirements:plan-1'},
         limit: 1,
       ).first.id,
       'parallel-city',
@@ -254,7 +264,9 @@ void main() {
     expect(tip.detail, isNot(contains('自動で始まります')));
     expect(tip.operationsSection, ContextualTipOperationsSection.queues);
     engine.cancelQueued(engine.state.plans.first.id);
-    expect(engine.state.currentPlanFor('lab')?.taskId, 'life_support');
+    expect(engine.state.upcomingPlansFor('lab').first.taskId, 'life_support');
+    engine.advanceBy(const Duration(minutes: 4));
+    expect(engine.state.research, contains('life_support'));
   });
 
   test(
@@ -273,28 +285,31 @@ void main() {
 
   test('funding wait clears only after funds actually start the work', () {
     final engine = fresh();
+    engine.state.research.add('life_support');
     engine.state.money = 100;
-    engine.setFacilityEnabled('factory', false);
-    engine.enqueue('life_support');
+    engine.setFacilityEnabled('launch', false);
+    engine.setFacilityEnabled('lab', false);
+    engine.enqueue('habitat_kit');
     final id = tips(engine).first.id;
     expect(id, startsWith('budget:'));
-    engine.advanceBy(const Duration(minutes: 10));
+    engine.advanceBy(const Duration(minutes: 1));
     expect(tips(engine).first.id, id);
-    engine.advanceBy(const Duration(minutes: 4));
-    expect(engine.state.currentPlanFor('lab')?.taskId, 'life_support');
+    engine.advanceBy(const Duration(minutes: 15));
+    expect(engine.state.currentPlanFor('factory')?.taskId, 'habitat_kit');
     expect(tips(engine).any((tip) => tip.id == id), isFalse);
   });
 
   test('a funding wait in deficit does not claim waiting will restart it', () {
     final engine = fresh();
+    engine.state.research.add('life_support');
     engine.state.money = 100;
-    engine.enqueue('life_support');
+    engine.enqueue('habitat_kit');
     expect(engine.state.netPerMinute, lessThan(0));
     engine.advanceBy(const Duration(minutes: 1));
     final tip = tips(engine).first;
     expect(tip.id, startsWith('budget:'));
     expect(tip.detail, isNot(contains('自動で始まります')));
-    expect(engine.state.currentPlanFor('lab'), isNull);
+    expect(engine.state.currentPlanFor('factory'), isNull);
   });
 
   test('waiting for cargo does not stop an independent research', () {
@@ -303,7 +318,7 @@ void main() {
     engine.enqueue('life_support');
     final id = tips(engine).first.id;
     expect(id, startsWith('resource:'));
-    engine.advanceBy(const Duration(minutes: 2));
+    engine.advanceBy(const Duration(minutes: 4));
     expect(engine.state.research, contains('life_support'));
     expect(tips(engine).first.id, id);
     expect(engine.state.currentPlanFor('launch'), isNull);

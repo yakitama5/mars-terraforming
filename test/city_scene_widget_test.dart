@@ -8,6 +8,7 @@ import 'package:mars_terraforming/domain/save_repository.dart';
 import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/main.dart';
+import 'package:mars_terraforming/presentation/research_tree.dart';
 import 'package:mars_terraforming/rendering/city_scene.dart';
 
 class _MemoryStore implements SaveRepository {
@@ -240,7 +241,7 @@ void main() {
   );
 
   testWidgets(
-    'locked city links directly to its required research before spending',
+    'locked city opens a known research entrance without exposing future names',
     (tester) async {
       tester.view.physicalSize = const Size(844, 390);
       tester.view.devicePixelRatio = 1;
@@ -287,11 +288,26 @@ void main() {
             .onPressed,
         isNull,
       );
+      final unknownId = GameContent.cities['earth_highland']!.requiredResearch!;
+      expect(controller.state.isResearchDiscovered(unknownId), isFalse);
+      expect(
+        find.textContaining(GameContent.tasks[unknownId]!.name),
+        findsNothing,
+      );
+      await tester.ensureVisible(link);
+      await tester.pumpAndSettle();
+      expect(link.hitTestable(), findsOneWidget);
       await tester.tap(link);
       await tester.pumpAndSettle();
+      final selected = tester
+          .widget<ResearchTree>(find.byType(ResearchTree))
+          .selectedId;
+      expect(controller.state.isResearchDiscovered(selected), isTrue);
+      expect(find.byKey(Key('queue-$selected')).hitTestable(), findsOneWidget);
+      expect(find.byKey(Key('research-node-$unknownId')), findsNothing);
       expect(
-        find.byKey(const Key('queue-urban_planning')).hitTestable(),
-        findsOneWidget,
+        find.textContaining(GameContent.tasks[unknownId]!.name),
+        findsNothing,
       );
       expect(jsonEncode(controller.state.toJson()), before);
       expect(tester.takeException(), isNull);
@@ -299,7 +315,7 @@ void main() {
   );
 
   testWidgets(
-    'unresearched upgrade keeps its reason above the fixed action on small landscape',
+    'undiscovered upgrade keeps its safe reason above the fixed action on small landscape',
     (tester) async {
       tester.view.physicalSize = const Size(844, 390);
       tester.view.devicePixelRatio = 1;
@@ -333,9 +349,14 @@ void main() {
       final action = find.byKey(const Key('confirm-district'));
       expect(reason.hitTestable(), findsOneWidget);
       expect(action.hitTestable(), findsOneWidget);
+      expect(tester.widget<Text>(reason).data, '前提研究：研究を進めて手掛かりを探してください');
       expect(
-        tester.widget<Text>(reason).data,
-        '前提研究：${GameContent.tasks['automated_fabrication']!.name}',
+        controller.state.isResearchDiscovered('automated_fabrication'),
+        isFalse,
+      );
+      expect(
+        find.textContaining(GameContent.tasks['automated_fabrication']!.name),
+        findsNothing,
       );
       expect(
         tester.getBottomLeft(reason).dy,

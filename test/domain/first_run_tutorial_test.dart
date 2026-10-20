@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/domain/game_engine.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 
@@ -65,7 +64,7 @@ void main() {
     }
     game.enqueue('life_support');
     final unrelated = game.state.toJson()
-      ..['firstRunTutorialPlanId'] = game.state.currentPlanFor('lab')!.id;
+      ..['firstRunTutorialPlanId'] = game.state.plans.last.id;
     expect(() => GameState.fromJson(unrelated), throwsFormatException);
     expect(
       copy(game).state.firstRunTutorial,
@@ -83,7 +82,11 @@ void main() {
   });
 
   test('construction help uses the paid completion once without advancing anything else', () {
-    final game = GameEngine(GameState.initial(epoch)..money = 10000);
+    final game = GameEngine(
+      GameState.initial(epoch)
+        ..money = 10000
+        ..researchPointUnits = 0,
+    );
     expect(game.enqueue('life_support'), isNull);
     expect(game.enqueue('launch_contract', repeats: 3), isNull);
     final price = game.state.districtPreview('earth_delta', 0, 'housing').cost;
@@ -159,46 +162,40 @@ void main() {
     expect(state.firstRunTutorialPlanId, isNull);
   });
 
-  test(
-    'each persisted step resumes and research keeps its normal paid duration',
-    () {
-      var game = GameEngine(GameState.initial(epoch));
-      expect(game.continueFirstRunTutorial(), isNotNull);
-      game.enqueueDistrict('earth_delta', 0, 'housing');
-      game = copy(game);
-      expect(
-        game.state.firstRunTutorial,
-        FirstRunTutorialStep.finishConstruction,
-      );
-      game.completeTutorialConstruction();
-      game = copy(game);
-      expect(game.state.firstRunTutorial, FirstRunTutorialStep.income);
-      final money = game.state.moneyUnits;
-      expect(game.continueFirstRunTutorial(), isNull);
-      expect(game.state.moneyUnits, money);
-      game = copy(game);
-      expect(game.state.firstRunTutorial, FirstRunTutorialStep.startResearch);
-      expect(game.continueFirstRunTutorial(), isNotNull);
-      expect(game.enqueue('life_support'), isNull);
-      game = copy(game);
-      expect(game.state.firstRunTutorial, FirstRunTutorialStep.researchStarted);
-      final research = game.state.currentPlanFor('lab')!;
-      expect(
-        research.remainingMs,
-        GameContent.tasks['life_support']!.durationMs,
-      );
-      expect(game.state.research, isEmpty);
-      expect(game.state.moneyUnits, money - 180 * GameState.moneyScale);
-      expect(game.continueFirstRunTutorial(), isNull);
-      game = copy(game);
-      expect(game.state.firstRunTutorial, FirstRunTutorialStep.completed);
-      expect(game.state.simulatedMs, 0);
-      expect(game.state.currentPlanFor('lab')!.remainingMs, 120000);
-      final finished = game.state.toJson();
-      expect(game.continueFirstRunTutorial(), isNotNull);
-      expect(game.state.toJson(), finished);
-    },
-  );
+  test('each persisted step resumes and RP unlock is committed once without another timer', () {
+    var game = GameEngine(GameState.initial(epoch));
+    expect(game.continueFirstRunTutorial(), isNotNull);
+    game.enqueueDistrict('earth_delta', 0, 'housing');
+    game = copy(game);
+    expect(
+      game.state.firstRunTutorial,
+      FirstRunTutorialStep.finishConstruction,
+    );
+    game.completeTutorialConstruction();
+    game = copy(game);
+    expect(game.state.firstRunTutorial, FirstRunTutorialStep.income);
+    final money = game.state.moneyUnits;
+    expect(game.continueFirstRunTutorial(), isNull);
+    expect(game.state.moneyUnits, money);
+    game = copy(game);
+    expect(game.state.firstRunTutorial, FirstRunTutorialStep.startResearch);
+    expect(game.continueFirstRunTutorial(), isNotNull);
+    expect(game.enqueue('life_support'), isNull);
+    game = copy(game);
+    expect(game.state.firstRunTutorial, FirstRunTutorialStep.researchStarted);
+    expect(game.state.currentPlanFor('lab'), isNull);
+    expect(game.state.research, contains('life_support'));
+    expect(game.state.researchPoints, 0);
+    expect(game.state.moneyUnits, money);
+    expect(game.continueFirstRunTutorial(), isNull);
+    game = copy(game);
+    expect(game.state.firstRunTutorial, FirstRunTutorialStep.completed);
+    expect(game.state.simulatedMs, 0);
+    expect(game.state.currentPlanFor('lab'), isNull);
+    final finished = game.state.toJson();
+    expect(game.continueFirstRunTutorial(), isNotNull);
+    expect(game.state.toJson(), finished);
+  });
 
   test(
     'a normally completed first house cannot receive the help a second time',
