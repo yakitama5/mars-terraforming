@@ -222,6 +222,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('navigation-2')));
       await tester.pumpAndSettle();
+      await _capture(tester, key, 'product_research_overview_$suffix');
+      expect(find.byKey(const Key('research-detail')), findsNothing);
+      await tester.tap(find.byKey(const Key('research-node-life_support')));
+      await tester.pumpAndSettle();
       await _capture(tester, key, 'product_research_detail_$suffix');
       expect(find.byKey(const Key('research-unlocks')), findsOneWidget);
       expect(find.textContaining('/99'), findsNothing);
@@ -283,6 +287,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('navigation-2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('research-node-life_support')));
       await tester.pumpAndSettle();
       await _capture(tester, key, 'product_research_large_text_884x402');
     },

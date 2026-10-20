@@ -275,6 +275,9 @@ void main() {
       expect(find.byType(FirstRunTutorial), findsNothing);
       await tester.tap(find.byKey(const Key('navigation-2')));
       await tester.pumpAndSettle();
+      expect(find.byKey(const Key('research-detail')), findsNothing);
+      await tester.tap(find.byKey(const Key('research-node-life_support')));
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('queue-life_support')).hitTestable(),
         findsOneWidget,

@@ -302,8 +302,8 @@ void main() {
       final selected = tester
           .widget<ResearchTree>(find.byType(ResearchTree))
           .selectedId;
-      expect(controller.state.isResearchDiscovered(selected), isTrue);
-      expect(find.byKey(Key('queue-$selected')).hitTestable(), findsOneWidget);
+      expect(selected, isNull);
+      expect(find.byKey(const Key('research-detail')), findsNothing);
       expect(find.byKey(Key('research-node-$unknownId')), findsNothing);
       expect(
         find.textContaining(GameContent.tasks[unknownId]!.name),
