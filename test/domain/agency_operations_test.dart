@@ -45,10 +45,13 @@ void main() {
       expect(game.assignResearchers(10), isNull);
       expect(game.state.staffEfficiencyBonus('lab'), 8);
       expect(game.state.staffEfficiencyBonus('factory'), -8);
-      game.enqueue('life_support');
+      game.enqueue('train_specialists');
       final research = game.state.currentPlanFor('lab')!;
       expect(research.iterationSpecialists, 10);
-      expect(research.iterationDurationMs, lessThan(120000));
+      expect(
+        research.iterationDurationMs,
+        lessThan(GameContent.tasks['train_specialists']!.durationMs),
+      );
       final paid = research.iterationDurationMs;
       expect(game.assignResearchers(0), contains('確保中'));
       game.setFacilityEnabled('lab', false);
@@ -70,13 +73,17 @@ void main() {
     () {
       final game = ready();
       expect(game.assignResearchers(0), isNull);
-      game.enqueue('life_support');
+      game.enqueue('train_specialists');
       expect(game.state.plans.single.status, 'queued');
       expect(game.state.plans.single.stopReason, contains('人員待ち'));
       final money = game.state.moneyUnits;
       expect(game.assignResearchers(6), isNull);
       expect(game.state.plans.single.status, 'running');
-      expect(game.state.moneyUnits, money - 180 * GameState.moneyScale);
+      expect(
+        game.state.moneyUnits,
+        money -
+            GameContent.tasks['train_specialists']!.cost * GameState.moneyScale,
+      );
       expect(game.assignResearchers(-1), isNotNull);
       expect(game.assignResearchers(13), isNotNull);
     },
@@ -158,7 +165,7 @@ void main() {
   test('technology partnership preserves paid work and adds only its stated future bonus', () {
     final game = ready();
     demonstrate(game.state);
-    game.enqueue('process_design');
+    game.enqueue('train_specialists');
     game.enqueue('factory_contract');
     final research = game.state.currentPlanFor('lab')!;
     final production = game.state.currentPlanFor('factory')!;
@@ -172,7 +179,7 @@ void main() {
     expect(research.iterationDurationMs, paidResearch);
     expect(production.iterationDurationMs, paidProduction);
     expect(
-      game.state.currentTaskDurationMs('process_design'),
+      game.state.currentTaskDurationMs('train_specialists'),
       lessThan(paidResearch),
     );
     expect(game.state.agencyStatus.friendship, 16);
@@ -220,7 +227,24 @@ void main() {
     'three optional applied studies add effects without raising stage caps',
     () {
       final game = ready();
-      game.state.research.addAll(['urban_planning', 'life_support']);
+      game.state.research.addAll([
+        'urban_planning',
+        'life_support',
+        'low_gravity_mobility',
+        'subsurface_access',
+        'local_resources',
+        'subsurface_ice_mapping',
+        'ground_penetrating_radar',
+        'in_situ_sampling',
+        'thermal_water_extraction',
+        'water_purification',
+        'atmospheric_collection',
+        'geopolymer_fabrication',
+      ]);
+      game.state.researchPointUnits = 100000 * GameState.researchPointScale;
+      final beforeFactory = game.state.researchEfficiencyBonus('factory');
+      final beforeLaunch = game.state.researchEfficiencyBonus('launch');
+      final beforeMars = game.state.researchEfficiencyBonus('mars');
       for (final id in [
         'process_design',
         'cargo_packaging',
@@ -238,9 +262,9 @@ void main() {
           'habitat_operations',
         ]),
       );
-      expect(game.state.researchEfficiencyBonus('factory'), 3);
-      expect(game.state.researchEfficiencyBonus('launch'), 3);
-      expect(game.state.researchEfficiencyBonus('mars'), 3);
+      expect(game.state.researchEfficiencyBonus('factory') - beforeFactory, 3);
+      expect(game.state.researchEfficiencyBonus('launch') - beforeLaunch, 3);
+      expect(game.state.researchEfficiencyBonus('mars') - beforeMars, 3);
       expect(game.state.facilityBonusCap('factory'), cap);
     },
   );
@@ -251,8 +275,8 @@ void main() {
     one.choosePartnership('research_exchange', 'technology');
     one.assignResearchers(8);
     one.enqueue('train_specialists', repeats: 2);
-    one.enqueue('process_design');
-    one.enqueue('cargo_packaging');
+    expect(one.enqueue('orbital_gardens'), isNull);
+    expect(one.enqueue('local_resources'), isNull);
     one.enqueue('factory_contract', repeats: 9);
     one.enqueue('launch_contract', repeats: 9);
     var split = GameEngine(copy(one.state));
@@ -266,7 +290,10 @@ void main() {
     }
     expect(split.state.toJson(), one.state.toJson());
     expect(one.state.specialistCount, 16);
-    expect(one.state.research, contains('cargo_packaging'));
+    expect(
+      one.state.research,
+      containsAll(['orbital_gardens', 'local_resources']),
+    );
     expect(one.state.partnershipChoices, {'research_exchange': 'technology'});
   });
 
@@ -276,13 +303,16 @@ void main() {
       var game = ready();
       demonstrate(game.state);
       expect(game.choosePartnership('research_exchange', 'funding'), isNull);
+      game.state.researchPointUnits = 0;
       game.enqueue('train_specialists');
-      game.enqueue('process_design');
+      game.enqueue('orbital_gardens');
       final completedAt = epoch.add(const Duration(minutes: 3));
       game.advanceTo(completedAt);
       expect(game.state.specialistCount, 14);
       expect(game.state.plans.first.completedRuns, 1);
-      expect(game.state.currentPlanFor('lab')!.taskId, 'process_design');
+      expect(game.state.currentPlanFor('lab'), isNull);
+      expect(game.state.plans.last.taskId, 'orbital_gardens');
+      expect(game.state.plans.last.stopReason, contains('研究ポイント待ち'));
       final saved = game.state.toJson();
       game = GameEngine(copy(game.state));
       game.advanceTo(completedAt);
@@ -304,19 +334,21 @@ void main() {
       );
       expect(game.state.moneyUnits, money);
       final expected = GameEngine(copy(game.state))
-        ..advanceBy(const Duration(minutes: 3));
+        ..advanceBy(const Duration(minutes: 4));
       game.advanceTo(backwards.add(const Duration(minutes: 1)));
       expect(game.state.specialistCount, 14);
-      expect(game.state.currentPlanFor('lab')!.remainingMs, 120000);
+      expect(game.state.currentPlanFor('lab'), isNull);
+      expect(game.state.researchPoints, greaterThan(0));
+      expect(game.state.research, isNot(contains('orbital_gardens')));
       game = GameEngine(copy(game.state));
-      game.advanceTo(backwards.add(const Duration(minutes: 3)));
+      game.advanceTo(backwards.add(const Duration(minutes: 4)));
       expect(game.state.toJson(), {
         ...expected.state.toJson(),
         'lastWallClockMs': backwards
-            .add(const Duration(minutes: 3))
+            .add(const Duration(minutes: 4))
             .millisecondsSinceEpoch,
       });
-      expect(game.state.research, contains('process_design'));
+      expect(game.state.research, contains('orbital_gardens'));
       expect(game.state.specialistCount, 14);
       expect(game.state.plans.first.completedRuns, 1);
       expect(game.state.claimedRewards, hasLength(1));
@@ -343,7 +375,7 @@ void main() {
 
   test('current save rejects impossible staffing and unrecorded partnership payouts', () {
     final game = ready();
-    game.enqueue('life_support');
+    game.enqueue('train_specialists');
     final invalid = game.state.toJson()..['researchers'] = 0;
     expect(() => GameState.fromJson(invalid), throwsFormatException);
     final fake = game.state.toJson()
