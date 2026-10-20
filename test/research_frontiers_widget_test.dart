@@ -174,7 +174,7 @@ void main() {
     final gesture = await tester.startGesture(tester.getCenter(canvas));
     await gesture.moveBy(const Offset(-20, 0));
     await tester.pump(const Duration(milliseconds: 16));
-    await gesture.moveBy(const Offset(-280, 95));
+    await gesture.moveBy(tester.getCenter(canvas) - tester.getCenter(child));
     await tester.pump(const Duration(milliseconds: 300));
     await gesture.up();
     await tester.pumpAndSettle();

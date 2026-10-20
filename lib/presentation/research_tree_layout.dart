@@ -48,10 +48,9 @@ class ResearchTreeLayout {
     final ids = known.keys.toList()..sort(compare);
     final parents = {
       for (final id in ids)
-        id: {
-          ...known[id]!.prerequisiteIds,
-          ...known[id]!.alternativePrerequisiteIds,
-        }.where(known.containsKey).toList()..sort(compare),
+        id: GameContent.researchConnectionParentIds(
+          known[id]!,
+        ).where(known.containsKey).toList()..sort(compare),
     };
     final depths = <String, int>{};
     final visiting = <String>{};

@@ -54,7 +54,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     await main.getByRole('button', { name: '人員配分を確定', exact: true }).click();
     await main.waitForTimeout(300);
     const mainBefore = await snapshot(main, mainKey);
-    assert.equal(mainBefore.contentVersion, 'district-6');
+    assert.equal(mainBefore.contentVersion, 'district-8');
     assert.equal(mainBefore.researchers, 7);
     assert.equal(mainBefore.specialistCount, 12);
     assert.equal(mainBefore.firstRunTutorial, 'completed');
@@ -115,7 +115,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     await inspectGuidance(develop, developKey);
     await develop.getByRole('button', { name: '機関運営', exact: true }).click();
     const devBefore = await snapshot(develop, developKey);
-    assert.equal(devBefore.contentVersion, 'district-6');
+    assert.equal(devBefore.contentVersion, 'district-8');
     assert.equal(devBefore.researchers, 6);
     assert.notEqual(mainBefore.worldId, devBefore.worldId);
     await develop.getByRole('button', { name: '開発 +5分' }).click();

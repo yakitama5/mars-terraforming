@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mars_terraforming/domain/research_catalog.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/presentation/research_tree_layout.dart';
 
 const _nodeSize = Size(212, 144);
@@ -83,15 +83,14 @@ void _expectGeometry(
         reason: '$id and $other must remain separate tappable cards',
       );
     }
-    final knownParents = [
-      ...nodes[id]!.prerequisiteIds,
-      ...nodes[id]!.alternativePrerequisiteIds,
-    ].where(nodes.containsKey).toSet();
+    final knownParents = GameContent.researchConnectionParentIds(nodes[id]!)
+        .where(nodes.containsKey)
+        .toSet();
     final primary = layout.primaryParentIds[id];
     expect(
       primary == null ? knownParents.isEmpty : knownParents.contains(primary),
       isTrue,
-      reason: '$id only attaches to a real known prerequisite',
+      reason: '$id only attaches to a known research connection',
     );
     for (final parent in knownParents) {
       expect(
