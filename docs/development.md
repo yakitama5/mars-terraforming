@@ -6,9 +6,10 @@
 今回の統合結果は [青い地球と物語の改善](blue-horizon-improvements.md) を参照。
 最新のユーザー意向と再開用の要約は [プロジェクトメモリ](project-memory.md) を参照。
 Android / iOSの署名・ストア登録・内部テストCDは [モバイル内部配信](mobile-cd.md) を参照。
-2026-10-20の研究相談は企画文書のみ。4分野・共通RPの採用と、技術で施設・機体等を解放する
-方向は [研究ツリー拡張案](research-tree-catalog.md)・[解放先の精査](research-unlocks.md)へ記録した。
-**ユーザーの明示指示により、この相談を根拠に研究・都市・ロケットの実装はまだ進めない。**
+2026-10-20の研究相談に続き、ユーザーは実装・細かいコミット・main反映・内部配信を依頼した。
+過去の「まだ実装しない」を更新し、4分類・共通RP・段階発見と都市設備／機体の導入を実装する。
+[実装・移行・検証](research-implementation.md)、[研究候補](research-tree-catalog.md)、
+[解放先の企画](research-unlocks.md)を参照。進行データはcontent district-7、schema 2を維持。
 円形の箱庭はユーザーから「いい感じ！」と評価され、以後の見た目の基準とする。細部は引き続き調整対象。
 前回の変更と検証は [製品としての操作性レビュー](product-usability.md) を参照。
 案内と通知の基盤は [導入ガイド](first-hour-guidance.md)、採用した景観は [円形の箱庭](circular-terrarium.md) を参照。

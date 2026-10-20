@@ -2,6 +2,8 @@
 
 作成: 2026-10-20。Dear Mars の企画精査用。
 [研究ツリー](research-tree-catalog.md)、[出典台帳](research-literature.md)と合わせて読む。
+後続の実装依頼による実装範囲・数値・移行・検証は[実装記録](research-implementation.md)を参照。
+以下は解放先を比較した企画時点の記録で、99件すべてが独立研究として実装された意味ではない。
 
 ## 1. 今回の方針
 
