@@ -187,7 +187,7 @@ void main() {
   });
 
   test(
-    'failed research reservation does not charge or advance its required step',
+    'failed research unlock does not consume RP or advance its required step',
     () async {
       final store = _TutorialRepository();
       final controller = await start(store);
@@ -205,53 +205,60 @@ void main() {
         controller.state.firstRunTutorial,
         FirstRunTutorialStep.researchStarted,
       );
-      expect(controller.state.money, 370);
-      expect(controller.state.currentPlanFor('lab')!.remainingMs, 120000);
+      expect(controller.state.money, 550);
+      expect(controller.state.currentPlanFor('lab'), isNull);
+      expect(controller.state.researchPoints, 0);
+      expect(controller.state.research, contains('life_support'));
     },
   );
 
-  test(
-    'failed exit, forward/back clocks and restart preserve the paused research',
-    () async {
-      var now = epoch;
-      final store = _TutorialRepository();
-      final controller = await start(store, now: () => now);
-      await startResearch(controller);
-      final money = controller.state.moneyUnits;
-      store.failure = StateError('disk full');
-      expect(await controller.continueFirstRunTutorial(), isFalse);
-      expect(
-        controller.state.firstRunTutorial,
-        FirstRunTutorialStep.researchStarted,
-      );
-      now = epoch.add(const Duration(days: 10));
-      await controller.resume();
-      now = epoch.subtract(const Duration(days: 5));
-      await controller.resume();
-      expect(controller.state.simulatedMs, 0);
-      expect(controller.state.moneyUnits, money);
-      expect(controller.state.currentPlanFor('lab')!.remainingMs, 120000);
-      store.failure = null;
-      final restarted = await start(store, now: () => now);
-      expect(restarted.state.simulatedMs, 0);
-      expect(restarted.state.moneyUnits, money);
-      expect(await restarted.continueFirstRunTutorial(), isTrue);
-      expect(restarted.state.firstRunTutorial, FirstRunTutorialStep.completed);
-      await restarted.resume();
-      expect(restarted.state.simulatedMs, 0);
-      now = now.add(const Duration(minutes: 1));
-      await restarted.resume();
-      expect(restarted.state.simulatedMs, 60000);
-      expect(restarted.state.currentPlanFor('lab')!.remainingMs, 60000);
-      expect(
-        restarted.state.moneyUnits,
-        money + restarted.state.netPerMinute * GameState.moneyScale,
-      );
-      final once = restarted.state.toJson();
-      final sameTime = await start(store, now: () => now);
-      expect(sameTime.state.toJson(), once);
-    },
-  );
+  test('failed exit, forward/back clocks and restart preserve unlocked research and RP', () async {
+    var now = epoch;
+    final store = _TutorialRepository();
+    final controller = await start(store, now: () => now);
+    await startResearch(controller);
+    final money = controller.state.moneyUnits;
+    final points = controller.state.researchPointUnits;
+    store.failure = StateError('disk full');
+    expect(await controller.continueFirstRunTutorial(), isFalse);
+    expect(
+      controller.state.firstRunTutorial,
+      FirstRunTutorialStep.researchStarted,
+    );
+    now = epoch.add(const Duration(days: 10));
+    await controller.resume();
+    now = epoch.subtract(const Duration(days: 5));
+    await controller.resume();
+    expect(controller.state.simulatedMs, 0);
+    expect(controller.state.moneyUnits, money);
+    expect(controller.state.currentPlanFor('lab'), isNull);
+    expect(controller.state.researchPointUnits, points);
+    expect(controller.state.research, contains('life_support'));
+    store.failure = null;
+    final restarted = await start(store, now: () => now);
+    expect(restarted.state.simulatedMs, 0);
+    expect(restarted.state.moneyUnits, money);
+    expect(restarted.state.researchPointUnits, points);
+    expect(await restarted.continueFirstRunTutorial(), isTrue);
+    expect(restarted.state.firstRunTutorial, FirstRunTutorialStep.completed);
+    await restarted.resume();
+    expect(restarted.state.simulatedMs, 0);
+    now = now.add(const Duration(minutes: 1));
+    await restarted.resume();
+    expect(restarted.state.simulatedMs, 60000);
+    expect(restarted.state.currentPlanFor('lab'), isNull);
+    expect(
+      restarted.state.researchPointUnits,
+      points + restarted.state.researchPointUnitsPerMs * 60000,
+    );
+    expect(
+      restarted.state.moneyUnits,
+      money + restarted.state.netPerMinute * GameState.moneyScale,
+    );
+    final once = restarted.state.toJson();
+    final sameTime = await start(store, now: () => now);
+    expect(sameTime.state.toJson(), once);
+  });
 
   test(
     'free-play controller catch-up is equal in one batch and across restarts',

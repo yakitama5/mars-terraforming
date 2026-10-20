@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/domain/game_engine.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/domain/save_repository.dart';
 import 'package:mars_terraforming/presentation/game_screen.dart';
+import 'package:mars_terraforming/presentation/facility_queue_card.dart';
 
 class QueueMemorySave implements SaveRepository {
   Map<String, dynamic>? data;
@@ -109,6 +111,77 @@ void main() {
       engine.advanceBy(const Duration(seconds: 120));
       expect(engine.state.currentPlanFor('launch'), delivery);
       expect(engine.state.earthKits, 1);
+    },
+  );
+
+  testWidgets(
+    'RP research reservation shows its point bank without a cash bill or timer',
+    (tester) async {
+      final controller = GameController(QueueMemorySave(), now: () => epoch);
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      controller.state.researchPointUnits = 0;
+      await controller.command((engine) => engine.enqueue('life_support'));
+      final plan = controller.state.plans.single;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: FacilityQueueCard(
+                controller: controller,
+                facilityId: 'lab',
+              ),
+            ),
+          ),
+        ),
+      );
+      final estimate = tester.widget<Text>(
+        find.byKey(Key('queue-estimate-${plan.id}')),
+      );
+      expect(
+        estimate.data,
+        '必要 ${GameContent.researchPointCost('life_support')} RP · 保有 0.0 RP',
+      );
+      expect(estimate.data, isNot(contains('ドル')));
+      expect(estimate.data, isNot(contains('目安')));
+      expect(
+        find.byKey(const Key('lab-common-research-points')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('研究ポイント待ち'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'already-paid legacy research keeps its progress without an RP charge',
+    (tester) async {
+      final controller = GameController(QueueMemorySave(), now: () => epoch);
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      final plan = PlannedTask(id: 'paid-research', taskId: 'life_support')
+        ..status = 'running'
+        ..iterationDurationMs = 120000
+        ..remainingMs = 60000
+        ..iterationSpecialists = GameContent.baselineDepartmentStaff;
+      controller.state.plans.add(plan);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: FacilityQueueCard(
+                controller: controller,
+                facilityId: 'lab',
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.byKey(Key('current-${plan.id}')), findsOneWidget);
+      expect(find.textContaining('支払済み・追加RP不要'), findsOneWidget);
+      expect(find.byKey(Key('queue-estimate-${plan.id}')), findsNothing);
+      expect(controller.state.research, isEmpty);
+      expect(tester.takeException(), isNull);
     },
   );
 
