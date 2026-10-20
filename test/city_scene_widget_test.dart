@@ -294,6 +294,9 @@ void main() {
         find.textContaining(GameContent.tasks[unknownId]!.name),
         findsNothing,
       );
+      await tester.ensureVisible(link);
+      await tester.pumpAndSettle();
+      expect(link.hitTestable(), findsOneWidget);
       await tester.tap(link);
       await tester.pumpAndSettle();
       final selected = tester
@@ -312,7 +315,7 @@ void main() {
   );
 
   testWidgets(
-    'unresearched upgrade keeps its reason above the fixed action on small landscape',
+    'undiscovered upgrade keeps its safe reason above the fixed action on small landscape',
     (tester) async {
       tester.view.physicalSize = const Size(844, 390);
       tester.view.devicePixelRatio = 1;
@@ -346,9 +349,14 @@ void main() {
       final action = find.byKey(const Key('confirm-district'));
       expect(reason.hitTestable(), findsOneWidget);
       expect(action.hitTestable(), findsOneWidget);
+      expect(tester.widget<Text>(reason).data, '前提研究：研究を進めて手掛かりを探してください');
       expect(
-        tester.widget<Text>(reason).data,
-        '前提研究：${GameContent.tasks['automated_fabrication']!.name}',
+        controller.state.isResearchDiscovered('automated_fabrication'),
+        isFalse,
+      );
+      expect(
+        find.textContaining(GameContent.tasks['automated_fabrication']!.name),
+        findsNothing,
       );
       expect(
         tester.getBottomLeft(reason).dy,
