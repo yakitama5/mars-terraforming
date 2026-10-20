@@ -29,9 +29,12 @@ void main() {
     },
   );
 
-  test('research progresses from queued to running, paused and completed', () {
-    final engine = GameEngine(GameState.initial(epoch)..money = 100000);
-    engine.enqueue('urban_planning');
+  test('RP reservations and already-paid research retain their real state', () {
+    final engine = GameEngine(
+      GameState.initial(epoch)
+        ..money = 100000
+        ..researchPointUnits = 0,
+    );
     engine.enqueue('life_support');
     expect(
       step(engine.state, 'first_research').status,
@@ -43,8 +46,12 @@ void main() {
       OnboardingStatus.completed,
     );
 
-    final running = GameEngine(GameState.initial(epoch));
-    running.enqueue('life_support');
+    final legacy = PlannedTask(id: 'paid-research', taskId: 'life_support')
+      ..status = 'running'
+      ..remainingMs = 120000
+      ..iterationDurationMs = 120000
+      ..iterationSpecialists = GameContent.baselineDepartmentStaff;
+    final running = GameEngine(GameState.initial(epoch)..plans.add(legacy));
     expect(
       step(running.state, 'first_research').status,
       OnboardingStatus.running,
@@ -61,8 +68,11 @@ void main() {
   });
 
   test('cancelled research is offered again and is never marked achieved', () {
-    final engine = GameEngine(GameState.initial(epoch)..money = 100000);
-    engine.enqueue('urban_planning');
+    final engine = GameEngine(
+      GameState.initial(epoch)
+        ..money = 100000
+        ..researchPointUnits = 0,
+    );
     engine.enqueue('life_support');
     engine.cancelQueued(engine.state.plans.last.id);
     expect(
@@ -72,14 +82,19 @@ void main() {
     expect(OnboardingGuide.fromState(engine.state).completedCount, 0);
   });
 
-  test('staff or money waits are shown with their actual reason', () {
-    final engine = GameEngine(GameState.initial(epoch));
+  test('RP accumulation is a reservation and a paused source is stopped', () {
+    final engine = GameEngine(GameState.initial(epoch)..researchPointUnits = 0);
     engine.assignResearchers(0);
     engine.enqueue('life_support');
     final waiting = step(engine.state, 'first_research');
-    expect(waiting.status, OnboardingStatus.stopped);
-    expect(waiting.reason, contains('人員待ち'));
+    expect(waiting.status, OnboardingStatus.queued);
+    expect(waiting.reason, contains('研究ポイント待ち'));
     expect(waiting.destination, OnboardingDestination.operations);
+    engine.setFacilityEnabled('lab', false);
+    expect(
+      step(engine.state, 'first_research').status,
+      OnboardingStatus.stopped,
+    );
   });
 
   test(
@@ -277,9 +292,10 @@ void main() {
     until(() => engine.state.research.contains('life_support'));
     until(
       () =>
-          engine.state.money >= GameContent.tasks['urban_planning']!.cost + 200,
+          engine.state.researchPoints >=
+          GameContent.researchPointCost('orbital_gardens'),
     );
-    expect(engine.enqueue('urban_planning'), isNull);
+    expect(engine.enqueue('orbital_gardens'), isNull);
     until(() => house.isFinished);
     final kit = prioritize(engine.enqueue('habitat_kit'));
     until(() => kit.isFinished);
@@ -293,7 +309,7 @@ void main() {
     until(
       () =>
           habitat.isFinished &&
-          engine.state.research.contains('urban_planning'),
+          engine.state.research.contains('orbital_gardens'),
     );
     expect(OnboardingGuide.fromState(engine.state).isComplete, isTrue);
     expect(engine.state.marsResidents, 24);

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
+import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/domain/save_repository.dart';
 import 'package:mars_terraforming/presentation/early_development_guide.dart';
 import 'package:mars_terraforming/presentation/mission_dialogue.dart';
@@ -224,32 +226,33 @@ void main() {
     },
   );
 
-  testWidgets('running and ordinarily queued research open equipment status', (
-    tester,
-  ) async {
-    final controller = GameController(_GuideSave(), now: () => epoch);
-    await controller.initialize(startTimer: false);
-    addTearDown(controller.dispose);
-    final opened = <String>[];
-    await controller.command((engine) {
-      engine.enqueue('urban_planning');
-      return engine.enqueue('life_support');
-    });
-    await _mount(tester, controller, opened, const Size(844, 390));
-    expect(find.textContaining('予約済み · 共用設備の順番待ち'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('next-goal')));
-    expect(opened.last, 'operations:0:lab');
-    await tester.tap(find.byKey(const Key('guide-roadmap')));
-    await tester.pumpAndSettle();
-    expect(find.text('予約済み · 設備の順番待ち'), findsOneWidget);
-    final queued = find.byKey(const Key('onboarding-open-first_research'));
-    await tester.ensureVisible(queued);
-    await tester.pumpAndSettle();
-    await tester.tap(queued);
-    await tester.pumpAndSettle();
-    expect(opened.last, 'operations:0:lab');
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'RP-waiting research opens equipment status without a second timer',
+    (tester) async {
+      final controller = GameController(_GuideSave(), now: () => epoch);
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      final opened = <String>[];
+      controller.state.researchPointUnits = 0;
+      await controller.command((engine) {
+        return engine.enqueue('life_support');
+      });
+      await _mount(tester, controller, opened, const Size(844, 390));
+      expect(find.textContaining('予約済み · 研究ポイント待ち'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('next-goal')));
+      expect(opened.last, 'operations:0:lab');
+      await tester.tap(find.byKey(const Key('guide-roadmap')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('予約済み · 研究ポイント待ち'), findsWidgets);
+      final queued = find.byKey(const Key('onboarding-open-first_research'));
+      await tester.ensureVisible(queued);
+      await tester.pumpAndSettle();
+      await tester.tap(queued);
+      await tester.pumpAndSettle();
+      expect(opened.last, 'operations:0:lab');
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final (taskId, stepId, facilityId) in [
     ('habitat_kit', 'first_kit', 'factory'),
@@ -322,6 +325,7 @@ void main() {
     await controller.initialize(startTimer: false);
     addTearDown(controller.dispose);
     controller.state.money = 100;
+    controller.state.research.add('life_support');
     final opened = <String>[];
     await _mount(tester, controller, opened, const Size(844, 390));
     expect(find.textContaining('の資金を準備'), findsOneWidget);
@@ -370,7 +374,13 @@ void main() {
     final controller = GameController(_GuideSave(), now: () => epoch);
     await controller.initialize(startTimer: false);
     addTearDown(controller.dispose);
-    controller.engine!.enqueue('life_support');
+    controller.state.plans.add(
+      PlannedTask(id: 'paid-research', taskId: 'life_support')
+        ..status = 'running'
+        ..remainingMs = 120000
+        ..iterationDurationMs = 120000
+        ..iterationSpecialists = GameContent.baselineDepartmentStaff,
+    );
     await _mount(tester, controller, [], const Size(568, 320));
     await tester.tap(find.byKey(const Key('guide-roadmap')));
     await tester.pumpAndSettle();
