@@ -38,6 +38,10 @@ class EarlyDevelopmentGuide extends StatelessWidget {
           : '予約済み · ${plan.stopReason.isEmpty ? '順番を確認' : plan.stopReason}';
     }
     final task = GameContent.tasks[id]!;
+    if (task.unique) {
+      return '必要 ${GameContent.researchPointCost(id)} RP · 保有 ${game.researchPoints.toStringAsFixed(1)} RP'
+          ' · ${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分';
+    }
     final missing = (task.cost - game.money).clamp(0, task.cost);
     return '必要 ${dollars(task.cost)} · ${gameDuration(game.currentTaskDurationMs(id))}'
         '${missing > 0 ? '（あと ${dollars(missing)}）' : ' · 資金あり'}';
@@ -46,7 +50,9 @@ class EarlyDevelopmentGuide extends StatelessWidget {
   bool _isStopped(PlannedTask plan) =>
       !plan.isFinished &&
       (game.facilities[plan.definition.facilityId] != true ||
-          (plan.stopReason.isNotEmpty && plan.stopReason != '共用設備の順番待ち'));
+          (plan.stopReason.isNotEmpty &&
+              plan.stopReason != '共用設備の順番待ち' &&
+              !plan.stopReason.startsWith('研究ポイント待ち')));
 
   String _stopReason(PlannedTask plan) =>
       plan.stopReason.isNotEmpty ? plan.stopReason : '設備休止中・手動で再開';
@@ -65,7 +71,8 @@ class EarlyDevelopmentGuide extends StatelessWidget {
   String _stepStatus(OnboardingStep step) => switch (step.status) {
     OnboardingStatus.completed => '達成済み',
     OnboardingStatus.running => '進行中 · 残り ${gameDuration(step.remainingMs)}',
-    OnboardingStatus.queued => '予約済み · 設備の順番待ち',
+    OnboardingStatus.queued =>
+      step.reason.isEmpty ? '予約済み · 設備の順番待ち' : '予約済み · ${step.reason}',
     OnboardingStatus.stopped => '停止中 · ${step.reason}',
     OnboardingStatus.locked => '準備中 · ${step.reason}',
     OnboardingStatus.available => '次に取り組めます',
@@ -351,16 +358,10 @@ class EarlyDevelopmentGuide extends StatelessWidget {
   Widget build(BuildContext context) {
     final guide = OnboardingGuide.fromState(game);
     final shortResearch = [
-      for (final id in [
-        'process_design',
-        'cargo_packaging',
-        'habitat_operations',
-      ])
-        if (!game.research.contains(id) &&
-            _plan(id) == null &&
-            controller.engine!.researchRequirementReasons(id).isEmpty)
+      for (final id in game.discoveredResearchIds)
+        if (!game.research.contains(id) && _plan(id) == null)
           GameContent.tasks[id]!,
-    ];
+    ].take(3).toList();
     final labWork = game.currentPlanFor('lab');
     late String title, detail;
     late VoidCallback open;
@@ -370,14 +371,9 @@ class EarlyDevelopmentGuide extends StatelessWidget {
     String? focusedTask;
     if (!game.research.contains('life_support')) {
       focusedTask = 'life_support';
-      title = '生命維持の実証';
+      title = GameContent.tasks['life_support']!.name;
       detail = _taskStatus('life_support');
       open = () => onResearch('life_support');
-    } else if (!game.research.contains('urban_planning')) {
-      focusedTask = 'urban_planning';
-      title = '都市基盤の計画';
-      detail = _taskStatus('urban_planning');
-      open = () => onResearch('urban_planning');
     } else if (!game.achievements.contains('first_landing')) {
       final delivery = _plan('mars_delivery') ?? _plan('cargo_delivery');
       final preparingDelivery = game.earthKits > 0 || delivery != null;
@@ -424,7 +420,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       }
     } else if (shortResearch.isNotEmpty) {
       expression = MinaExpression.delight;
-      title = '短い応用研究を選ぶ（任意）';
+      title = '見つかった技術を選ぶ（任意）';
       detail =
           '${shortResearch.first.name}：${_taskStatus(shortResearch.first.id)}';
       open = () => onResearch(shortResearch.first.id);
@@ -439,8 +435,13 @@ class EarlyDevelopmentGuide extends StatelessWidget {
     } else {
       expression = MinaExpression.delight;
       title = '研究と都市の次の投資を選ぶ';
-      detail = '地区の実証を重ねて増強・新都市・長期受注へ';
-      open = () => onResearch('automated_fabrication');
+      detail = '施設と人員でRPを蓄え、解放した技術を建設・製造へ';
+      open = () => onResearch(
+        game.discoveredResearchIds
+                .where((id) => !game.research.contains(id))
+                .firstOrNull ??
+            'life_support',
+      );
     }
     if (guide.isComplete) expression = MinaExpression.joy;
     final focusedPlan = focusedTask == null ? null : _plan(focusedTask);
@@ -458,6 +459,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       actionLabel = '進み具合・予約順を見る';
       actionIcon = Icons.view_timeline_outlined;
     } else if (focusedTask != null &&
+        !GameContent.tasks[focusedTask]!.unique &&
         GameContent.tasks[focusedTask]!.cost > game.money) {
       expression = MinaExpression.sorrow;
       title = '${GameContent.tasks[focusedTask]!.name}の資金を準備';
@@ -568,12 +570,12 @@ class EarlyDevelopmentGuide extends StatelessWidget {
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ),
-          if (game.research.contains('urban_planning') &&
+          if (game.research.contains('life_support') &&
               labWork == null &&
               shortResearch.isNotEmpty)
             PopupMenuButton<String>(
               key: const Key('guide-short-research'),
-              tooltip: '並行してできる短い研究（任意）',
+              tooltip: '見つかった研究を比較する',
               onSelected: onResearch,
               itemBuilder: (_) => [
                 for (final task in shortResearch)
@@ -581,14 +583,14 @@ class EarlyDevelopmentGuide extends StatelessWidget {
                     key: Key('guide-research-${task.id}'),
                     value: task.id,
                     child: Text(
-                      '${task.name} · ${dollars(task.cost)} · ${gameDuration(game.currentTaskDurationMs(task.id))}',
+                      '${task.name} · ${GameContent.researchPointCost(task.id)} RP',
                     ),
                   ),
               ],
               child: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  '並行してできる短い研究（任意） ▼',
+                  '見つかった研究を比較（任意） ▼',
                   style: TextStyle(fontSize: 11, color: strategyMint),
                 ),
               ),

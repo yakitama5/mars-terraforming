@@ -23,6 +23,7 @@ import 'habitat_choice_dialog.dart';
 import 'plan_forecast_dialog.dart';
 import 'research_tree.dart';
 import 'research_display.dart';
+import 'research_developments.dart';
 import 'resource_overview_dialog.dart';
 import 'strategy_widgets.dart';
 
@@ -56,6 +57,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   };
   GameController get controller => widget.controller;
   GameState get game => controller.state;
+  String get visibleResearchId => game.isResearchDiscovered(researchId)
+      ? researchId
+      : game.discoveredResearchIds.firstOrNull ?? 'life_support';
   bool get _firstRunActive =>
       widget.showIntroduction &&
       game.openingSeen &&
@@ -163,7 +167,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                         2 => StrategySplit(
                           overview: ResearchTree(
                             game: game,
-                            selectedId: researchId,
+                            selectedId: visibleResearchId,
                             onSelected: _selectResearch,
                             requirementReasons:
                                 controller.engine!.researchRequirementReasons,
@@ -630,21 +634,30 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   );
 
   void _selectResearch(String id) {
+    if (!game.isResearchDiscovered(id)) return;
     setState(() => researchId = id);
     if (researchScroll.hasClients) researchScroll.jumpTo(0);
   }
 
   Widget _researchDetails() {
-    final task = GameContent.tasks[researchId]!;
-    final requirements = controller.engine!.researchRequirements(task.id);
+    final id = visibleResearchId;
+    if (!game.isResearchDiscovered(id)) {
+      return const Center(child: Text('研究を進めると、新しい着想が見つかります。'));
+    }
+    final task = GameContent.tasks[id]!;
+    final technology = GameContent.researchTechnologies[id]!;
     final activePlan = game.plans
-        .where((plan) => plan.taskId == task.id && !plan.isFinished)
+        .where((plan) => plan.taskId == id && !plan.isFinished)
         .firstOrNull;
+    final legacyRunning = activePlan?.status == 'running';
+    final researched = game.research.contains(id);
     final status = researchStatus(
       game,
       task,
-      controller.engine!.researchRequirementReasons(task.id),
+      controller.engine!.researchRequirementReasons(id),
     );
+    final requiredPoints = GameContent.researchPointCost(id);
+    final canUnlock = game.researchPoints >= requiredPoints;
     return Column(
       children: [
         Expanded(
@@ -653,16 +666,54 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             controller: researchScroll,
             padding: const EdgeInsets.all(16),
             children: [
-              Text(
-                '${task.researchBranch} / $status',
-                style: const TextStyle(fontSize: 12, color: strategyMint),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                task.name,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  height: MediaQuery.textScalerOf(context).scale(108),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.asset(
+                        technology.field.assetPath,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.centerRight,
+                        excludeFromSemantics: true,
+                      ),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xF0081427), Color(0x70081427)],
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${technology.field.label} / ${technology.branch} · $status',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: strategyMint,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              task.name,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -671,7 +722,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      '完成すると',
+                      '解放される設計',
                       style: TextStyle(fontSize: 11, color: strategyMuted),
                     ),
                     const SizedBox(height: 4),
@@ -680,60 +731,47 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       key: const Key('research-unlocks'),
                       style: const TextStyle(fontSize: 14, color: strategyMint),
                     ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      '解放後、導入する都市と設備・人員への投資を決めます。',
+                      style: TextStyle(fontSize: 11, color: strategyMuted),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 10),
-              StrategyFact(
-                activePlan?.status == 'running' ? '支払済み' : '研究費',
-                dollars(task.cost),
-              ),
-              StrategyFact(
-                activePlan?.status == 'running' ? '残り時間' : '研究期間',
-                gameDuration(
-                  activePlan?.status == 'running'
-                      ? activePlan!.remainingMs
-                      : game.currentTaskDurationMs(task.id),
-                ),
-              ),
-              if (requirements.isNotEmpty) ...[
-                const SizedBox(height: 10),
+              if (legacyRunning) ...[
                 const Text(
-                  '開始に必要な条件',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  '更新前に支払った研究を続行しています。RPの追加消費はありません。',
+                  style: TextStyle(fontSize: 12, color: strategyCopper),
                 ),
-                for (final requirement in requirements)
+                StrategyFact('残り時間', gameDuration(activePlan!.remainingMs)),
+              ] else ...[
+                StrategyFact('必要な研究ポイント', '$requiredPoints RP'),
+                StrategyFact(
+                  '共通RPの保有',
+                  '${game.researchPoints.toStringAsFixed(1)} RP',
+                ),
+                StrategyFact(
+                  '現在の研究生産',
+                  '${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
+                ),
+                const Text(
+                  '必要なRPで必ず解放。解放後に追加の研究待機はありません。',
+                  style: TextStyle(fontSize: 12, color: strategyMuted),
+                ),
+                if (!researched && !canUnlock)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Row(
-                      children: [
-                        Icon(
-                          requirement.isMet
-                              ? Icons.check_circle_outline
-                              : Icons.lock_outline,
-                          size: 16,
-                          color: requirement.isMet
-                              ? strategyMint
-                              : strategyCopper,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            '${requirement.label}  ${requirement.current}/${requirement.required}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      game.researchWaitMs(id) == null
+                          ? '研究施設に人員を配分するとRPを生産できます。'
+                          : '今の生産を続けた場合、必要量まで約${gameDuration(game.researchWaitMs(id)!)}。予約済み研究の消費は別です。',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: strategyCopper,
+                      ),
                     ),
-                  ),
-                for (final id in task.prerequisiteIds.where(
-                  (id) => !game.research.contains(id),
-                ))
-                  TextButton.icon(
-                    key: Key('research-prerequisite-$id'),
-                    onPressed: () => _selectResearch(id),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: Text('${GameContent.tasks[id]!.name}を見る'),
                   ),
               ],
               if (activePlan != null)
@@ -757,34 +795,30 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   tab = 1;
                 }),
                 icon: const Icon(Icons.location_city_outlined, size: 17),
-                label: const Text('待ち時間に都市を開発'),
+                label: const Text('都市で研究と収入の基盤を育てる'),
+              ),
+              TextButton.icon(
+                key: const Key('research-agency'),
+                onPressed: () => setState(() {
+                  agencySection = 0;
+                  tab = 4;
+                }),
+                icon: const Icon(Icons.groups_outlined, size: 17),
+                label: const Text('研究者を配分する'),
               ),
               ExpansionTile(
-                key: ValueKey('research-explanation-${task.id}'),
+                key: ValueKey('research-explanation-$id'),
                 tilePadding: EdgeInsets.zero,
-                title: const Text('研究の詳細・科学メモ', style: TextStyle(fontSize: 12)),
+                title: const Text('方式の特徴・科学メモ', style: TextStyle(fontSize: 12)),
                 children: [
                   Text(
                     task.description,
                     style: const TextStyle(fontSize: 13, color: strategyMuted),
                   ),
                   const SizedBox(height: 10),
-                  StrategyFact(
-                    '使用設備',
-                    GameContent.facilities[task.facilityId]!.name,
-                  ),
-                  StrategyFact(
-                    '研究効率',
-                    '${signedNumber(game.researchBonusPercent)}% / 上限 ${game.facilityBonusCap('lab')}%',
-                  ),
-                  TextButton.icon(
-                    key: const Key('research-agency'),
-                    onPressed: () => setState(() {
-                      agencySection = 0;
-                      tab = 4;
-                    }),
-                    icon: const Icon(Icons.groups_outlined, size: 17),
-                    label: const Text('研究者を配分する'),
+                  Text(
+                    technology.tradeoff,
+                    style: const TextStyle(fontSize: 12, color: strategyMuted),
                   ),
                   if (task.science.isNotEmpty)
                     TextButton.icon(
@@ -798,20 +832,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ),
         ),
         StrategyActionBar(
-          message: status == '未解放' ? '予約できます。条件が揃うと開始します。' : null,
+          message: !researched && !legacyRunning && !canUnlock
+              ? '予約すると、順番と必要なRPが揃った時に解放します。'
+              : null,
           child: FilledButton.icon(
-            key: Key('queue-${task.id}'),
-            onPressed: status == '研究済み' || activePlan != null || controller.busy
+            key: Key('queue-$id'),
+            onPressed: controller.busy || activePlan != null
                 ? null
-                : () => _reserve(task.id),
-            icon: const Icon(Icons.science_outlined, size: 18),
+                : researched
+                ? () => setState(() {
+                    tab = 3;
+                    facilityTab = 4;
+                  })
+                : canUnlock
+                ? () =>
+                      controller.command((engine) => engine.unlockResearch(id))
+                : () => _reserve(id),
+            icon: Icon(
+              researched ? Icons.construction_outlined : Icons.auto_awesome,
+              size: 18,
+            ),
             label: Text(
               activePlan != null
                   ? status
-                  : status == '研究済み'
-                  ? status
-                  : '研究を予約する',
-              semanticsLabel: '${task.name}を予約',
+                  : researched
+                  ? '施設・機体の導入へ'
+                  : canUnlock
+                  ? '技術を解放する'
+                  : 'RPの蓄積を待って解放',
+              semanticsLabel: researched
+                  ? '${task.name}の導入計画を見る'
+                  : '${task.name}を解放',
             ),
           ),
         ),
@@ -830,6 +881,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               '製造・受注',
               '輸送・居住',
               '開発記録',
+              '技術の導入',
             ].indexed)
               Expanded(
                 child: TextButton(
@@ -876,6 +928,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               _taskCard('launch_contract'),
               ..._advancedTasks(['orbital_contract', 'cargo_delivery']),
             ],
+            4 => [
+              ResearchDevelopments(
+                controller: controller,
+                onReserveOperation: _reserve,
+              ),
+            ],
             _ => _journal(),
           },
         ),
@@ -883,28 +941,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     ],
   );
 
-  List<Widget> _advancedTasks(List<String> ids) {
-    final available = ids
-        .where(
-          (id) => GameContent.tasks[id]!.prerequisiteIds.every(
-            game.research.contains,
-          ),
-        )
-        .toList();
-    final locked = ids.where((id) => !available.contains(id)).toList();
-    return [
-      for (final id in available) _taskCard(id),
-      if (locked.isNotEmpty)
-        ExpansionTile(
-          key: ValueKey('future-tasks-$facilityTab'),
-          title: Text(
-            '研究で広がる計画（${locked.length}）',
-            style: const TextStyle(fontSize: 13),
-          ),
-          children: [for (final id in locked) _taskCard(id)],
-        ),
-    ];
-  }
+  List<Widget> _advancedTasks(List<String> ids) => [
+    for (final id in ids)
+      if (GameContent.tasks[id]!.prerequisiteIds.every(game.research.contains))
+        _taskCard(id),
+  ];
 
   Widget _cityShortcut(String label, String id) => Padding(
     padding: const EdgeInsets.only(bottom: 14),

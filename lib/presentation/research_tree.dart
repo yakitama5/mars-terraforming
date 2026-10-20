@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import '../domain/game_content.dart';
 import '../domain/game_state.dart';
 import '../domain/research_frontiers.dart';
-import 'strategy_widgets.dart';
 import 'research_display.dart';
+import 'research_theme.dart';
+import 'strategy_widgets.dart';
 
-/// Every edge is sourced from a playable research prerequisite.
+/// Hidden technology never affects canvas bounds, connections, semantics, or
+/// the fit operation. Only domain-discovered technology enters this widget.
 class ResearchTree extends StatefulWidget {
   const ResearchTree({
     super.key,
@@ -18,6 +20,7 @@ class ResearchTree extends StatefulWidget {
     required this.requirementReasons,
     this.controlsVisible = true,
   });
+
   final GameState game;
   final bool controlsVisible;
   final String selectedId;
@@ -28,416 +31,731 @@ class ResearchTree extends StatefulWidget {
   State<ResearchTree> createState() => _ResearchTreeState();
 }
 
-class _ResearchTreeState extends State<ResearchTree> {
+class _ResearchTreeState extends State<ResearchTree>
+    with TickerProviderStateMixin {
   final transformation = TransformationController();
-  Size viewportSize = Size.zero;
-  Size graphSize = Size.zero;
-  String? branchFilter;
-  Map<String, Offset> nodePositions = const {};
-  Size nodeSize = Size.zero;
+  late final _growth = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+    value: 1,
+  );
+  late final _camera = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+  );
+  Animation<Matrix4>? _cameraPath;
+  late ResearchField _field;
+  late Set<String> _knownResearch;
+  late Set<String> _knownDiscovered;
+  late String _worldId;
+  final List<String> _revealOrder = [];
+  Set<String> _newNodes = {};
+  Set<String> _unlockedNodes = {};
+  Size _viewportSize = Size.zero;
+  Size _graphSize = Size.zero;
+  Size _nodeSize = Size.zero;
+  Map<String, Offset> _positions = const {};
+
   GameState get game => widget.game;
-  String get selectedId => widget.selectedId;
+  ResearchTechnology? _technology(String id) =>
+      ResearchCatalog.technologies[id];
 
   @override
   void initState() {
     super.initState();
-    branchFilter = GameContent.tasks[selectedId]!.researchBranch;
+    _captureWorld();
+    _field = _technology(widget.selectedId)?.field ?? ResearchField.mechanics;
+    _camera.addListener(_moveCamera);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode(selectedId);
+      if (mounted) _focusSelection(animate: false);
     });
+  }
+
+  void _captureWorld() {
+    _worldId = game.worldId;
+    _knownResearch = Set.of(game.research);
+    _knownDiscovered = Set.of(game.discoveredResearchIds);
+    _revealOrder
+      ..clear()
+      ..addAll(_knownDiscovered);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _growth.value = 1;
+      if (_camera.isAnimating && _cameraPath != null) {
+        _camera.value = 1;
+      }
+    }
   }
 
   @override
   void didUpdateWidget(covariant ResearchTree oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedId != selectedId &&
-        !nodePositions.containsKey(selectedId)) {
-      branchFilter = GameContent.tasks[selectedId]!.researchBranch;
+    if (_worldId != game.worldId) {
+      _captureWorld();
+      _newNodes = {};
+      _unlockedNodes = {};
+      _growth.value = 1;
+    } else {
+      final discovered = game.discoveredResearchIds;
+      final newNodes = discovered.difference(_knownDiscovered);
+      final unlocked = game.research.difference(_knownResearch);
+      if (newNodes.isNotEmpty || unlocked.isNotEmpty) {
+        _newNodes = newNodes;
+        _unlockedNodes = unlocked;
+        _revealOrder.addAll(newNodes);
+        if (MediaQuery.disableAnimationsOf(context)) {
+          _growth.value = 1;
+        } else {
+          _growth.forward(from: 0);
+        }
+        if (newNodes.isNotEmpty && unlocked.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _focusGrowth();
+          });
+        }
+      }
+      _knownDiscovered = Set.of(discovered);
+      _knownResearch = Set.of(game.research);
+    }
+    final selection = _technology(widget.selectedId);
+    if (oldWidget.selectedId != widget.selectedId &&
+        selection != null &&
+        game.isResearchDiscovered(selection.id)) {
+      _field = selection.field;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _focusNode(selectedId);
+        if (mounted) _focusSelection();
       });
     }
   }
 
-  void _focusNode(String id) {
-    final position = nodePositions[id];
-    if (position == null || viewportSize.isEmpty || nodeSize.isEmpty) return;
-    final widthScale = (viewportSize.width - 24) / nodeSize.width;
-    final scale = widget.controlsVisible
-        ? widthScale.clamp(.8, 1.0)
-        : math
-              .min(widthScale, (viewportSize.height - 16) / nodeSize.height)
-              .clamp(.3, 1.0);
-    transformation.value = Matrix4.diagonal3Values(scale, scale, 1)
-      ..setTranslationRaw(
-        (viewportSize.width - nodeSize.width * scale) / 2 - position.dx * scale,
-        (viewportSize.height - nodeSize.height * scale) / 2 -
-            position.dy * scale,
-        0,
-      );
-  }
-
   @override
   void dispose() {
+    _camera.removeListener(_moveCamera);
+    _camera.dispose();
+    _growth.dispose();
     transformation.dispose();
     super.dispose();
   }
 
-  void _fit() {
-    if (viewportSize.width <= 24 || viewportSize.height <= 16) return;
+  void _moveCamera() {
+    final path = _cameraPath;
+    if (path != null) transformation.value = path.value;
+  }
+
+  void _setCamera(Matrix4 target, {bool animate = true}) {
+    if (!animate || MediaQuery.disableAnimationsOf(context)) {
+      _camera.stop();
+      transformation.value = target;
+      return;
+    }
+    _cameraPath = Matrix4Tween(
+      begin: transformation.value.clone(),
+      end: target,
+    ).animate(CurvedAnimation(parent: _camera, curve: Curves.easeInOutCubic));
+    _camera.forward(from: 0);
+  }
+
+  void _focusSelection({bool animate = true}) {
+    if (_positions.isEmpty) return;
+    _focusNode(
+      _positions.containsKey(widget.selectedId)
+          ? widget.selectedId
+          : _positions.keys.first,
+      animate: animate,
+    );
+  }
+
+  void _focusNode(String id, {bool animate = true}) {
+    final position = _positions[id];
+    if (position == null || _viewportSize.isEmpty || _nodeSize.isEmpty) return;
     final scale = math
         .min(
-          (viewportSize.width - 24) / graphSize.width,
-          (viewportSize.height - 16) / graphSize.height,
+          (_viewportSize.width - 36) / _nodeSize.width,
+          (_viewportSize.height - 28) / _nodeSize.height,
         )
-        .clamp(.01, 1.0);
-    transformation.value = Matrix4.diagonal3Values(scale, scale, 1)
-      ..setTranslationRaw(
-        (viewportSize.width - graphSize.width * scale) / 2,
-        (viewportSize.height - graphSize.height * scale) / 2,
+        .clamp(.45, 1.0);
+    _setCamera(
+      Matrix4.diagonal3Values(scale, scale, 1)..setTranslationRaw(
+        (_viewportSize.width - _nodeSize.width * scale) / 2 -
+            position.dx * scale,
+        (_viewportSize.height - _nodeSize.height * scale) / 2 -
+            position.dy * scale,
         0,
-      );
+      ),
+      animate: animate,
+    );
+  }
+
+  void _fitDiscovered() {
+    if (_viewportSize.isEmpty || _graphSize.isEmpty) return;
+    final scale = math
+        .min(
+          (_viewportSize.width - 28) / _graphSize.width,
+          (_viewportSize.height - 24) / _graphSize.height,
+        )
+        .clamp(.12, 1.0);
+    _setCamera(
+      Matrix4.diagonal3Values(scale, scale, 1)..setTranslationRaw(
+        (_viewportSize.width - _graphSize.width * scale) / 2,
+        (_viewportSize.height - _graphSize.height * scale) / 2,
+        0,
+      ),
+    );
+  }
+
+  void _focusGrowth() {
+    final sources = _unlockedNodes.where(_positions.containsKey).toList();
+    final targets = _newNodes.where(_positions.containsKey).toList();
+    if (sources.isEmpty || targets.isEmpty || _viewportSize.isEmpty) return;
+    final source = sources.contains(widget.selectedId)
+        ? widget.selectedId
+        : sources.first;
+    final target = targets.firstWhere(
+      (id) =>
+          _technology(id)!.prerequisiteIds.contains(source) ||
+          _technology(id)!.alternativePrerequisiteIds.contains(source),
+      orElse: () => targets.first,
+    );
+    final bounds =
+        (Rect.fromLTWH(
+              _positions[source]!.dx,
+              _positions[source]!.dy,
+              _nodeSize.width,
+              _nodeSize.height,
+            ).expandToInclude(
+              Rect.fromLTWH(
+                _positions[target]!.dx,
+                _positions[target]!.dy,
+                _nodeSize.width,
+                _nodeSize.height,
+              ),
+            ))
+            .inflate(18);
+    final scale = math
+        .min(
+          _viewportSize.width / bounds.width,
+          _viewportSize.height / bounds.height,
+        )
+        .clamp(.12, 1.0);
+    _setCamera(
+      Matrix4.diagonal3Values(scale, scale, 1)..setTranslationRaw(
+        _viewportSize.width / 2 - bounds.center.dx * scale,
+        _viewportSize.height / 2 - bounds.center.dy * scale,
+        0,
+      ),
+    );
+  }
+
+  List<ResearchTechnology> _visibleTechnologies(ResearchField field) =>
+      _revealOrder
+          .where(game.discoveredResearchIds.contains)
+          .map(_technology)
+          .whereType<ResearchTechnology>()
+          .where(
+            (technology) =>
+                technology.field == field && technology.isPurchasable,
+          )
+          .toList();
+
+  void _selectField(ResearchField field) {
+    final candidates = _visibleTechnologies(field);
+    if (candidates.isEmpty) return;
+    final current = _technology(widget.selectedId);
+    final target =
+        current?.field == field && game.isResearchDiscovered(widget.selectedId)
+        ? widget.selectedId
+        : candidates
+              .firstWhere(
+                (technology) => !game.research.contains(technology.id),
+                orElse: () => candidates.first,
+              )
+              .id;
+    setState(() => _field = field);
+    widget.onSelected(target);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode(target);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final allResearch = GameContent.tasks.values
-        .where((task) => task.unique)
-        .toList();
-    final visibleIds = <String>{};
-    void includePrerequisites(TaskDefinition task) {
-      if (!visibleIds.add(task.id)) return;
-      for (final id in task.prerequisiteIds) {
-        includePrerequisites(GameContent.tasks[id]!);
+    final technologies = _visibleTechnologies(_field);
+    final visibleIds = technologies.map((technology) => technology.id).toSet();
+    final textScale = MediaQuery.textScalerOf(context).scale(13) / 13;
+    final nodeWidth = 212.0 * math.max(1.0, textScale);
+    final nodeHeight = 164.0 * math.max(1.0, textScale);
+    const horizontalGap = 78.0, verticalGap = 30.0;
+    final depths = <String, int>{};
+    final visiting = <String>{};
+    int depth(ResearchTechnology technology) {
+      final existing = depths[technology.id];
+      if (existing != null) return existing;
+      if (!visiting.add(technology.id)) return 0;
+      var result = 0;
+      for (final id in [
+        ...technology.prerequisiteIds,
+        ...technology.alternativePrerequisiteIds,
+      ]) {
+        if (!visibleIds.contains(id)) continue;
+        final parent = _technology(id);
+        if (parent != null) result = math.max(result, depth(parent) + 1);
       }
+      visiting.remove(technology.id);
+      return depths[technology.id] = result;
     }
 
-    for (final task in allResearch) {
-      if (branchFilter == null || task.researchBranch == branchFilter) {
-        includePrerequisites(task);
-      }
-    }
-    final research = allResearch
-        .where((task) => visibleIds.contains(task.id))
-        .toList();
-    final depths = <String, int>{};
-    int depth(TaskDefinition task) => depths.putIfAbsent(task.id, () {
-      var result = 0;
-      for (final id in task.prerequisiteIds) {
-        final candidate = depth(GameContent.tasks[id]!) + 1;
-        if (candidate > result) result = candidate;
-      }
-      return result;
-    });
-    final stages = research.map(depth).toSet().toList()..sort();
-    final branches = research
-        .map((task) => task.researchBranch)
-        .toSet()
-        .toList();
-    final textScale = MediaQuery.textScalerOf(context).scale(13) / 13;
-    final nodeWidth = 24.0 + 150.0 * math.max(1.0, textScale);
-    final nodeHeight = 24.0 + 102.0 * math.max(1.0, textScale);
-    const horizontalGap = 48.0;
-    const verticalGap = 32.0;
     final positions = <String, Offset>{};
-    // Reserve complete bands per discipline. Optional nodes no longer push
-    // themselves into the next discipline's row as the tree grows.
-    var rows = 0;
-    final bandRows = <String, int>{};
-    for (final branch in branches) {
-      bandRows[branch] = rows;
-      final columnCounts = <int, int>{};
-      for (final task in research.where((t) => t.researchBranch == branch)) {
-        final column = stages.indexOf(depth(task));
-        final slot = columnCounts[column] ?? 0;
-        columnCounts[column] = slot + 1;
-        positions[task.id] = Offset(
-          20 + column * (nodeWidth + horizontalGap),
-          60 + (rows + slot) * (nodeHeight + verticalGap),
-        );
-      }
-      rows += columnCounts.values.fold(1, math.max);
-      // The extra row gives each discipline its own readable heading.
-      rows++;
+    final columnRows = <int, int>{};
+    for (final technology in technologies) {
+      final column = depth(technology);
+      final row = columnRows[column] ?? 0;
+      columnRows[column] = row + 1;
+      positions[technology.id] = Offset(
+        94 + column * (nodeWidth + horizontalGap),
+        32 + row * (nodeHeight + verticalGap),
+      );
     }
-    final width = stages.length * (nodeWidth + horizontalGap) + 4;
-    final height = (rows - 1) * (nodeHeight + verticalGap) + 68;
-    graphSize = Size(width, height);
-    nodePositions = positions;
-    nodeSize = Size(nodeWidth, nodeHeight);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.controlsVisible)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 8, 0),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    '研究航路',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                  ),
-                ),
-                IconButton(
-                  key: const Key('research-futures'),
-                  tooltip: '居住編のその先',
-                  onPressed: () => showDialog<void>(
-                    context: context,
-                    builder: (context) => const _ResearchFuturesDialog(),
-                  ),
-                  icon: const Icon(Icons.auto_awesome_outlined, size: 20),
-                ),
-                TextButton.icon(
-                  key: const Key('research-fit'),
-                  onPressed: () {
-                    setState(() => branchFilter = null);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) _fit();
-                    });
-                  },
-                  icon: const Icon(Icons.zoom_out_map, size: 16),
-                  label: const Text(
-                    '全体',
-                    semanticsLabel: '全体表示',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-                IconButton(
-                  key: const Key('research-reset-zoom'),
-                  tooltip: '選択した研究を読みやすい大きさで表示',
-                  onPressed: () => _focusNode(selectedId),
-                  icon: const Icon(Icons.center_focus_strong, size: 20),
-                ),
-              ],
-            ),
-          ),
-        if (widget.controlsVisible)
-          SizedBox(
-            height: 38,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
+    final columns = depths.values.fold(0, math.max) + 1;
+    final rows = columnRows.values.fold(1, math.max);
+    _graphSize = Size(
+      94 + columns * (nodeWidth + horizontalGap) - horizontalGap + 32,
+      32 + rows * (nodeHeight + verticalGap) - verticalGap + 32,
+    );
+    _positions = positions;
+    _nodeSize = Size(nodeWidth, nodeHeight);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: ColoredBox(
+        color: _field.shadowColor,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.controlsVisible) _header(),
+            if (widget.controlsVisible) _fieldPicker(),
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  for (final entry in const <String?, String>{
-                    null: 'すべて',
-                    '都市・産業': '産業',
-                    '輸送': '輸送',
-                    '居住・現地生産': '暮らし',
-                  }.entries)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        key: Key('research-filter-${entry.key ?? 'all'}'),
-                        label: Text(entry.value),
-                        selected: branchFilter == entry.key,
-                        onSelected: (_) {
-                          final target =
-                              entry.key == null ||
-                                  GameContent
-                                          .tasks[selectedId]!
-                                          .researchBranch ==
-                                      entry.key
-                              ? selectedId
-                              : allResearch
-                                    .firstWhere(
-                                      (task) =>
-                                          task.researchBranch == entry.key,
-                                    )
-                                    .id;
-                          setState(() => branchFilter = entry.key);
-                          widget.onSelected(target);
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) _focusNode(target);
-                          });
-                        },
-                        visualDensity: VisualDensity.compact,
-                        labelStyle: const TextStyle(fontSize: 12),
+                  ResearchArtwork(
+                    key: ValueKey('research-background-${_field.name}'),
+                    field: _field,
+                    alignment: Alignment.centerRight,
+                    opacity: .42,
+                  ),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xe6081728), Color(0xb3081728)],
                       ),
                     ),
+                  ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final previousSize = _viewportSize;
+                      _viewportSize = constraints.biggest;
+                      if (previousSize != _viewportSize) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _focusSelection(animate: false);
+                        });
+                      }
+                      return ClipRect(
+                        child: InteractiveViewer(
+                          key: const Key('research-tree-canvas'),
+                          transformationController: transformation,
+                          constrained: false,
+                          minScale: .12,
+                          maxScale: 1.8,
+                          boundaryMargin: const EdgeInsets.all(140),
+                          onInteractionStart: (_) => _camera.stop(),
+                          child: SizedBox.fromSize(
+                            size: _graphSize,
+                            child: AnimatedBuilder(
+                              animation: _growth,
+                              builder: (context, _) => CustomPaint(
+                                painter: _ResearchConnections(
+                                  technologies: technologies,
+                                  positions: positions,
+                                  completed: game.research,
+                                  newNodes: _newNodes,
+                                  unlockedNodes: _unlockedNodes,
+                                  nodeSize: _nodeSize,
+                                  field: _field,
+                                  progress: _growth.value,
+                                ),
+                                child: Stack(
+                                  children: [
+                                    Positioned(
+                                      left: 17,
+                                      top: 32 + nodeHeight / 2 - 20,
+                                      child: _knowledgeSeed(),
+                                    ),
+                                    for (final technology in technologies)
+                                      Positioned(
+                                        key: ValueKey(
+                                          'research-position-${technology.id}',
+                                        ),
+                                        left: positions[technology.id]!.dx,
+                                        top: positions[technology.id]!.dy,
+                                        width: nodeWidth,
+                                        height: nodeHeight,
+                                        child: _growingNode(technology),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  _unlockAnnouncement(),
                 ],
               ),
             ),
-          ),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              viewportSize = constraints.biggest;
-              return ClipRect(
-                child: InteractiveViewer(
-                  key: const Key('research-tree-canvas'),
-                  transformationController: transformation,
-                  constrained: false,
-                  minScale: .01,
-                  maxScale: 1.6,
-                  boundaryMargin: const EdgeInsets.all(30),
-                  child: SizedBox(
-                    width: width,
-                    height: height,
-                    child: CustomPaint(
-                      painter: _ResearchConnections(
-                        research,
-                        positions,
-                        game.research,
-                        nodeWidth,
-                        nodeHeight,
-                      ),
-                      child: Stack(
-                        children: [
-                          for (final (index, stage) in stages.indexed)
-                            Positioned(
-                              left: 20 + index * (nodeWidth + horizontalGap),
-                              top: 8,
-                              child: Text(
-                                '段階 ${stage + 1}',
-                                style: const TextStyle(
-                                  color: strategyMuted,
-                                  fontSize: 11,
-                                  letterSpacing: 1.5,
-                                ),
-                              ),
-                            ),
-                          for (final entry in bandRows.entries)
-                            Positioned(
-                              left: 20,
-                              top:
-                                  36 + entry.value * (nodeHeight + verticalGap),
-                              child: Text(
-                                entry.key,
-                                style: const TextStyle(
-                                  color: strategyBlue,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          for (final task in research)
-                            Positioned(
-                              left: positions[task.id]!.dx,
-                              top: positions[task.id]!.dy,
-                              width: nodeWidth,
-                              height: nodeHeight,
-                              child: _node(task),
-                            ),
-                        ],
-                      ),
-                    ),
+            if (widget.controlsVisible)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                child: Text(
+                  '発見した道筋だけを表示 · ドラッグで移動',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _field.color.withValues(alpha: .8),
+                    fontSize: 10,
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+          ],
         ),
-        if (widget.controlsVisible)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-            child: Text(
-              '${game.research.length}/${allResearch.length}研究済み · 線は前提研究${branchFilter == null ? ' · ドラッグで移動' : ' · 前提分野も表示'}',
-              style: const TextStyle(color: strategyMuted, fontSize: 11),
-            ),
-          ),
-      ],
+      ),
     );
   }
 
-  Widget _node(TaskDefinition task) {
+  Widget _header() => SizedBox(
+    height: 69,
+    child: Stack(
+      fit: StackFit.expand,
+      children: [
+        ResearchArtwork(
+          field: _field,
+          alignment: Alignment.centerRight,
+          opacity: .74,
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xff081728),
+                _field.shadowColor.withValues(alpha: .5),
+              ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 12, right: 4),
+          child: Row(
+            children: [
+              Icon(_field.icon, size: 25, color: _field.color),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _field.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: _field.color,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${formatResearchPoints(game.researchPoints)} RP · '
+                      '${formatResearchPoints(game.researchPointsPerMinute)} RP/分',
+                      key: const Key('research-point-balance'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11, color: strategyText),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                key: const Key('research-futures'),
+                tooltip: 'いまの知見から描く未来',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (context) => _ResearchFuturesDialog(game: game),
+                ),
+                icon: const Icon(Icons.auto_awesome_outlined, size: 19),
+              ),
+              IconButton(
+                key: const Key('research-fit'),
+                tooltip: '発見した範囲を表示',
+                visualDensity: VisualDensity.compact,
+                onPressed: _fitDiscovered,
+                icon: const Icon(Icons.zoom_out_map, size: 19),
+              ),
+              IconButton(
+                key: const Key('research-reset-zoom'),
+                tooltip: '選択した研究へ戻る',
+                visualDensity: VisualDensity.compact,
+                onPressed: _focusSelection,
+                icon: const Icon(Icons.center_focus_strong, size: 19),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _fieldPicker() => SizedBox(
+    height: 44,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          for (final field in ResearchField.values)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                key: Key('research-filter-${field.name}'),
+                avatar: ClipOval(
+                  child: SizedBox.square(
+                    dimension: 22,
+                    child: ResearchArtwork(field: field),
+                  ),
+                ),
+                label: Text(field.label),
+                selected: _field == field,
+                onSelected: (_) => _selectField(field),
+                showCheckmark: false,
+                visualDensity: VisualDensity.compact,
+                selectedColor: field.shadowColor,
+                side: BorderSide(
+                  color: _field == field ? field.color : strategyLine,
+                ),
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _field == field ? field.color : strategyMuted,
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _knowledgeSeed() => ExcludeSemantics(
+    child: Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _field.shadowColor,
+        border: Border.all(color: _field.color.withValues(alpha: .6)),
+        boxShadow: [
+          BoxShadow(color: _field.color.withValues(alpha: .15), blurRadius: 20),
+        ],
+      ),
+      child: Icon(_field.icon, size: 21, color: _field.color),
+    ),
+  );
+
+  Widget _growingNode(ResearchTechnology technology) {
+    final progress = _newNodes.contains(technology.id)
+        ? Curves.easeOutCubic.transform(
+            ((_growth.value - .23) / .77).clamp(0.0, 1.0),
+          )
+        : 1.0;
+    return Opacity(
+      opacity: progress,
+      child: Transform.translate(
+        offset: Offset(-24 * (1 - progress), 8 * (1 - progress)),
+        child: Transform.scale(
+          scale: .82 + .18 * progress,
+          alignment: Alignment.centerLeft,
+          child: _node(technology),
+        ),
+      ),
+    );
+  }
+
+  Widget _node(ResearchTechnology technology) {
+    final task = GameContent.tasks[technology.id]!;
     final status = researchStatus(
       game,
       task,
       widget.requirementReasons(task.id),
     );
+    final complete = game.research.contains(task.id);
+    final selected = task.id == widget.selectedId;
+    final cost = GameContent.researchPointCost(task.id);
+    final color = complete ? strategyBenefit : _field.color;
+    final pulse = _unlockedNodes.contains(task.id)
+        ? math.sin(_growth.value * math.pi) * (1 - _growth.value)
+        : 0.0;
     final plan = game.plans
         .where((plan) => plan.taskId == task.id && !plan.isFinished)
         .firstOrNull;
     final paused = plan != null && !game.facilities[task.facilityId]!;
     final displayStatus = paused ? '$status・休止' : status;
-    final queue = game.upcomingPlansFor(task.facilityId);
-    final queueIndex = plan == null ? -1 : queue.indexOf(plan);
+    final queueIndex = plan == null
+        ? -1
+        : game.upcomingPlansFor(task.facilityId).indexOf(plan);
     final detail = plan?.status == 'running'
         ? '残り ${gameDuration(plan!.remainingMs)}${paused ? ' · 再開待ち' : ''}'
         : plan != null
-        ? '予約 ${queueIndex + 1}番目 · ${plan.stopReason.isEmpty ? '開始待ち' : plan.stopReason}'
-        : task.researchPromise.isNotEmpty
-        ? task.researchPromise
+        ? '予約 ${queueIndex + 1}番目 · ${plan.stopReason.isEmpty ? 'RPを蓄積中' : plan.stopReason}'
         : researchUnlockSummary(game, task);
-    final color = status == '研究済み'
-        ? strategyBenefit
-        : status == '研究中' || status == '予約済み'
-        ? strategyWarning
-        : status == '研究可能'
-        ? strategyBlue
-        : strategyMuted;
     return Semantics(
       key: Key('research-semantics-${task.id}'),
       container: true,
       excludeSemantics: true,
       button: true,
-      selected: task.id == selectedId,
-      label: '${task.name}、$displayStatus、$detail',
+      selected: selected,
+      label: plan != null
+          ? '${task.name}、$displayStatus、$detail'
+          : '${task.name}、$status、${complete ? '解放済み' : '$cost RP'}、$detail',
       onTap: () => widget.onSelected(task.id),
-      child: Material(
-        color: task.id == selectedId ? strategySelected : strategyPanel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: BorderSide(
-            color: task.id == selectedId ? strategyBlue : strategyLine,
-            width: task.id == selectedId ? 2 : 1,
-          ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: [
+            if (selected || pulse > 0)
+              BoxShadow(
+                color: color.withValues(alpha: .16 + pulse * .4),
+                blurRadius: 18 + pulse * 30,
+                spreadRadius: pulse * 5,
+              ),
+          ],
         ),
-        child: InkWell(
-          key: Key('research-node-${task.id}'),
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => widget.onSelected(task.id),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: Material(
+          color: strategyPanel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+            side: BorderSide(
+              color: selected
+                  ? color
+                  : color.withValues(alpha: complete ? .55 : .28),
+              width: selected ? 1.8 : 1,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: Key('research-node-${task.id}'),
+            onTap: () => widget.onSelected(task.id),
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                Row(
-                  children: [
-                    Icon(
-                      status == '研究済み'
-                          ? Icons.check_circle_outline
-                          : status == '未解放'
-                          ? Icons.lock_outline
-                          : Icons.science_outlined,
-                      size: 15,
-                      color: color,
-                    ),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        displayStatus,
-                        style: TextStyle(fontSize: 11, color: color),
-                      ),
-                    ),
-                  ],
+                ResearchArtwork(
+                  key: Key('research-card-art-${task.id}'),
+                  field: technology.field,
+                  alignment: technology.field.cardAlignment,
+                  opacity: complete ? .4 : .28,
                 ),
-                const SizedBox(height: 7),
-                Expanded(
-                  child: Text(
-                    task.name,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        const Color(0xe6102639),
+                        technology.field.shadowColor.withValues(alpha: .72),
+                        const Color(0xe3081728),
+                      ],
                     ),
-                    maxLines: 2,
                   ),
                 ),
-                Tooltip(
-                  message: detail,
-                  child: Text(
-                    detail,
-                    key: Key('research-progress-${task.id}'),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: paused ? strategyCopper : strategyMuted,
-                      fontSize: 11,
-                    ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              technology.branch,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: technology.field.color,
+                                fontSize: 9,
+                                letterSpacing: .5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            complete
+                                ? Icons.check_circle_rounded
+                                : Icons.science_outlined,
+                            color: color,
+                            size: 15,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        task.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: strategyText,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        detail,
+                        key: Key('research-progress-${task.id}'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: strategyMuted,
+                          fontSize: 10,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              displayStatus,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: color, fontSize: 10),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            complete ? '解放済み' : '$cost RP',
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -445,6 +763,70 @@ class _ResearchTreeState extends State<ResearchTree> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _unlockAnnouncement() {
+    final unlocked = _unlockedNodes
+        .map(_technology)
+        .whereType<ResearchTechnology>()
+        .where((technology) => technology.field == _field)
+        .toList();
+    if (unlocked.isEmpty) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: _growth,
+      builder: (context, _) {
+        final t = _growth.value;
+        if (t >= 1) return const SizedBox.shrink();
+        final opacity = math.min(t * 8, (1 - t) * 5).clamp(0.0, 1.0);
+        return Positioned(
+          top: 10,
+          left: 12,
+          right: 12,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: opacity,
+              child: Semantics(
+                liveRegion: true,
+                label: '${unlocked.last.name}を解放しました',
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xf20b2334),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _field.color.withValues(alpha: .6),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.auto_awesome, color: _field.color, size: 20),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            '${unlocked.last.name}を解放',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: _field.color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -460,63 +842,134 @@ String researchStatus(
   );
   if (plans.any((plan) => plan.status == 'running')) return '研究中';
   if (plans.isNotEmpty) return '予約済み';
-  if (unmetRequirements.isNotEmpty ||
-      task.prerequisiteIds.any((id) => !game.research.contains(id))) {
-    return '未解放';
-  }
-  return '研究可能';
+  if (!game.isResearchDiscovered(task.id)) return '未発見';
+  if (unmetRequirements.isNotEmpty) return '未解放';
+  return game.researchWaitMs(task.id) == 0 ? '研究可能' : 'RP待ち';
 }
 
 class _ResearchConnections extends CustomPainter {
-  _ResearchConnections(
-    this.tasks,
-    this.positions,
-    this.completed,
-    this.nodeWidth,
-    this.nodeHeight,
-  );
-  final List<TaskDefinition> tasks;
+  _ResearchConnections({
+    required this.technologies,
+    required this.positions,
+    required this.completed,
+    required this.newNodes,
+    required this.unlockedNodes,
+    required this.nodeSize,
+    required this.field,
+    required this.progress,
+  });
+
+  final List<ResearchTechnology> technologies;
   final Map<String, Offset> positions;
-  final Set<String> completed;
-  final double nodeWidth;
-  final double nodeHeight;
+  final Set<String> completed, newNodes, unlockedNodes;
+  final Size nodeSize;
+  final ResearchField field;
+  final double progress;
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final task in tasks) {
-      final target = positions[task.id]! + Offset(0, nodeHeight / 2);
-      for (final prerequisite in task.prerequisiteIds) {
-        final position = positions[prerequisite];
-        if (position == null) continue;
-        final source = position + Offset(nodeWidth, nodeHeight / 2);
-        final paint = Paint()
-          ..color = completed.contains(prerequisite)
-              ? strategyMint.withValues(alpha: .65)
-              : strategyLine
-          ..strokeWidth = 2
-          ..style = PaintingStyle.stroke;
-        final middle = (source.dx + target.dx) / 2;
-        canvas.drawPath(
-          Path()
-            ..moveTo(source.dx, source.dy)
-            ..cubicTo(
-              middle,
-              source.dy,
-              middle,
-              target.dy,
-              target.dx,
-              target.dy,
-            ),
-          paint,
-        );
-        canvas.drawPath(
-          Path()
-            ..moveTo(target.dx - 5, target.dy - 4)
-            ..lineTo(target.dx, target.dy)
-            ..lineTo(target.dx - 5, target.dy + 4),
-          paint,
+    final seed = Offset(57, 32 + nodeSize.height / 2);
+    for (final technology in technologies) {
+      final position = positions[technology.id]!;
+      final target = position + Offset(0, nodeSize.height / 2);
+      final parents = [
+        ...technology.prerequisiteIds,
+        ...technology.alternativePrerequisiteIds,
+      ].where(positions.containsKey).toList();
+      if (parents.isEmpty) {
+        _drawBranch(canvas, seed, target, technology.id, true);
+      } else {
+        for (final parent in parents) {
+          _drawBranch(
+            canvas,
+            positions[parent]! + Offset(nodeSize.width, nodeSize.height / 2),
+            target,
+            technology.id,
+            completed.contains(parent),
+          );
+        }
+      }
+      if (unlockedNodes.contains(technology.id) && progress < 1) {
+        _drawUnlock(
+          canvas,
+          position + Offset(nodeSize.width / 2, nodeSize.height / 2),
         );
       }
+    }
+  }
+
+  void _drawBranch(
+    Canvas canvas,
+    Offset source,
+    Offset target,
+    String targetId,
+    bool activated,
+  ) {
+    final middle = (source.dx + target.dx) / 2;
+    final path = Path()
+      ..moveTo(source.dx, source.dy)
+      ..cubicTo(middle, source.dy, middle, target.dy, target.dx, target.dy);
+    final growth = newNodes.contains(targetId)
+        ? Curves.easeInOutCubic.transform((progress / .8).clamp(0.0, 1.0))
+        : 1.0;
+    for (final metric in path.computeMetrics()) {
+      final length = metric.length * growth;
+      if (length <= 0) continue;
+      final grownPath = metric.extractPath(0, length);
+      if (activated) {
+        canvas.drawPath(
+          grownPath,
+          Paint()
+            ..color = field.color.withValues(alpha: .12)
+            ..strokeWidth = 7
+            ..style = PaintingStyle.stroke
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        );
+      }
+      canvas.drawPath(
+        grownPath,
+        Paint()
+          ..color = activated ? field.color.withValues(alpha: .7) : strategyLine
+          ..strokeWidth = activated ? 2 : 1.5
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round,
+      );
+      if (newNodes.contains(targetId) && progress < .8) {
+        final tip = metric.getTangentForOffset(length)?.position;
+        if (tip != null) {
+          canvas.drawCircle(tip, 4, Paint()..color = field.color);
+          canvas.drawCircle(
+            tip,
+            10,
+            Paint()
+              ..color = field.color.withValues(alpha: .35)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+          );
+        }
+      }
+    }
+  }
+
+  void _drawUnlock(Canvas canvas, Offset center) {
+    final t = Curves.easeOut.transform(progress);
+    final radius = nodeSize.width * (.35 + t * .42);
+    final opacity = (1 - progress) * .5;
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = field.color.withValues(alpha: opacity)
+        ..strokeWidth = 2 * (1 - progress) + .5
+        ..style = PaintingStyle.stroke,
+    );
+    for (var i = 0; i < 12; i++) {
+      final angle = i * math.pi / 6 + .2;
+      final point = center + Offset(math.cos(angle), math.sin(angle)) * radius;
+      canvas.drawCircle(
+        point,
+        1 + (1 - progress) * 2,
+        Paint()..color = field.color.withValues(alpha: opacity),
+      );
     }
   }
 
@@ -525,83 +978,88 @@ class _ResearchConnections extends CustomPainter {
 }
 
 class _ResearchFuturesDialog extends StatelessWidget {
-  const _ResearchFuturesDialog();
+  const _ResearchFuturesDialog({required this.game});
+  final GameState game;
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('居住編のその先'),
-    content: SizedBox(
-      width: 540,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'ドームや地下都市の物語から、さらに遠い未来へ。'
-              'いま育てる技術が、どんな暮らしにつながるか。',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              '以下は将来の物語案です。到達判定・報酬はまだありません。',
-              style: TextStyle(fontSize: 12, color: strategyMuted),
-            ),
-            const SizedBox(height: 12),
-            for (final frontier in ResearchFrontiers.destinations)
-              ExpansionTile(
-                key: Key('research-future-${frontier.id}'),
-                tilePadding: EdgeInsets.zero,
-                title: Text(
-                  frontier.title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: strategyBlue,
+  Widget build(BuildContext context) {
+    final discovered = game.discoveredResearchIds;
+    final frontiers = ResearchFrontiers.destinations.where(
+      (frontier) => frontier.researchIds.any(game.research.contains),
+    );
+    return AlertDialog(
+      title: const Text('いまの知見から描く未来'),
+      content: SizedBox(
+        width: 500,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'ひとつの発見から、次の可能性へ。研究を進めると、新しい道筋が姿を現します。',
+                style: TextStyle(fontSize: 13),
+              ),
+              if (frontiers.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 16),
+                  child: Text(
+                    'まだ見ぬ未来は、これからの研究の中に。まずは気になる分野の小さな一歩を選びましょう。',
+                    style: TextStyle(fontSize: 12, color: strategyMuted),
                   ),
                 ),
-                subtitle: Text(
-                  frontier.promise,
-                  style: const TextStyle(fontSize: 12),
-                ),
-                childrenPadding: const EdgeInsets.only(bottom: 16),
-                expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(frontier.scene, style: const TextStyle(fontSize: 13)),
-                  const SizedBox(height: 12),
-                  Text(
-                    '関連する研究：${frontier.researchIds.map((id) => GameContent.tasks[id]!.name).join('・')}',
+              for (final frontier in frontiers)
+                ExpansionTile(
+                  key: Key('research-future-${frontier.id}'),
+                  tilePadding: EdgeInsets.zero,
+                  title: Text(
+                    frontier.title,
                     style: const TextStyle(
-                      fontSize: 12,
-                      color: strategyBenefit,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: strategyBlue,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    frontier.nextChallenge,
+                  subtitle: Text(
+                    frontier.promise,
                     style: const TextStyle(fontSize: 12),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    frontier.scientificBoundary,
-                    style: const TextStyle(fontSize: 11, color: strategyMuted),
-                  ),
-                ],
+                  childrenPadding: const EdgeInsets.only(bottom: 16),
+                  expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(frontier.scene, style: const TextStyle(fontSize: 13)),
+                    const SizedBox(height: 12),
+                    Text(
+                      '発見した関連研究：${frontier.researchIds.where(discovered.contains).map((id) => GameContent.tasks[id]!.name).join('・')}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: strategyBenefit,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      frontier.scientificBoundary,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: strategyMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 14),
+              const Text(
+                '物語は技術の応用を描く未来像です。閉鎖居住や温暖化だけでは、全球の屋外居住が成立したことにはなりません。',
+                style: TextStyle(fontSize: 11, color: strategyMuted),
               ),
-            const SizedBox(height: 4),
-            const Text(
-              '全球の屋外居住には、気温だけでなく大気・水・放射線への防護と維持能力が必要です。'
-              '閉鎖居住の完成や、この研究の完了だけでは達成しません。',
-              style: TextStyle(fontSize: 11, color: strategyMuted),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('研究に戻る'),
-      ),
-    ],
-  );
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('研究に戻る'),
+        ),
+      ],
+    );
+  }
 }

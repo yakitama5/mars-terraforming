@@ -50,6 +50,14 @@ class FirstRunTutorial extends StatelessWidget {
     final plan = game.plans
         .where((plan) => plan.taskId == task.id && !plan.isFinished)
         .firstOrNull;
+    final legacyRunning = plan?.status == 'running';
+    final unlocked = game.research.contains(task.id);
+    final pointCost = GameContent.researchPointCost(task.id);
+    final facts = legacyRunning
+        ? '着手済み · 残り ${gameDuration(plan!.remainingMs)}'
+        : unlocked
+        ? '$pointCost RPを使用 · 解放済み'
+        : '必要 $pointCost RP · 保有 ${game.researchPoints.toStringAsFixed(1)} RP';
     return LayoutBuilder(
       builder: (context, constraints) => Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -71,7 +79,12 @@ class FirstRunTutorial extends StatelessWidget {
                 ),
                 FirstRunCoach(
                   step: step,
-                  instruction: started ? '待つ間も街づくりを。続きはガイドへ！' : '右で最初の研究を予約。',
+                  legacyResearchRunning: legacyRunning,
+                  instruction: started
+                      ? legacyRunning
+                            ? '着手済みの研究は継続中。続きはガイドへ！'
+                            : '次は居住キットを製造。続きはガイドへ！'
+                      : '共通RPを使って、右で最初の技術を解放。',
                 ),
               ],
             ),
@@ -92,7 +105,11 @@ class FirstRunTutorial extends StatelessWidget {
                       padding: const EdgeInsets.all(14),
                       children: [
                         Text(
-                          started ? '研究が始まりました' : task.name,
+                          started
+                              ? legacyRunning
+                                    ? '着手済みの研究を継続中'
+                                    : '技術を解放しました'
+                              : task.name,
                           key: const Key('first-run-research-title'),
                           style: const TextStyle(
                             fontSize: 18,
@@ -101,11 +118,12 @@ class FirstRunTutorial extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${dollars(task.cost)} · ${started ? '残り ' : ''}${gameDuration(plan?.remainingMs ?? game.currentTaskDurationMs(task.id))}',
+                          facts,
                           key: const Key('first-run-research-cost-time'),
-                          semanticsLabel:
-                              '${started ? '支払済み' : '研究費'} ${dollars(task.cost)}。${started ? '残り時間' : '研究期間'} ${gameDuration(plan?.remainingMs ?? game.currentTaskDurationMs(task.id))}',
-                          maxLines: 1,
+                          semanticsLabel: legacyRunning
+                              ? '研究費は支払済み。残り時間 ${gameDuration(plan!.remainingMs)}。追加RPは必要ありません。'
+                              : facts,
+                          maxLines: 2,
                           style: const TextStyle(fontSize: 12, height: 1.3),
                         ),
                         const SizedBox(height: 10),
@@ -119,8 +137,10 @@ class FirstRunTutorial extends StatelessWidget {
                         const SizedBox(height: 10),
                         Text(
                           started
-                              ? '次の建設は通常の工期です。研究を待つ間も、街づくりや受注を並行できます。'
-                              : '水や空気を循環させる技術から、火星へ届ける居住キットを開発します。',
+                              ? legacyRunning
+                                    ? '着手済みの研究は、追加RPを使わず残り時間から続きます。その間も、街づくりや受注を並行できます。'
+                                    : '技術を確実に解放できました。資金と工場を使って居住キットを製造し、火星へ届けましょう。新しい施設の建設には通常の費用と工期を使います。'
+                              : '研究者を配置した稼働施設で共通RPを蓄え、必要量を使って技術を必ず解放します。解放後は、資金と工場を使って居住キットを製造できます。',
                           style: const TextStyle(fontSize: 13),
                         ),
                       ],
@@ -132,7 +152,12 @@ class FirstRunTutorial extends StatelessWidget {
                       key: Key(
                         started ? 'tutorial-finish' : 'queue-life_support',
                       ),
-                      onPressed: controller.busy || controller.error != null
+                      onPressed:
+                          controller.busy ||
+                              controller.error != null ||
+                              (!started &&
+                                  (plan != null ||
+                                      game.researchPoints < pointCost))
                           ? null
                           : () async {
                               if (started) {
@@ -142,7 +167,7 @@ class FirstRunTutorial extends StatelessWidget {
                                 }
                               } else {
                                 await controller.command(
-                                  (engine) => engine.enqueue(task.id),
+                                  (engine) => engine.unlockResearch(task.id),
                                 );
                               }
                             },
@@ -150,7 +175,7 @@ class FirstRunTutorial extends StatelessWidget {
                         started ? Icons.check : Icons.science_outlined,
                         size: 18,
                       ),
-                      label: Text(started ? 'ガイドと開発を続ける' : '研究を予約する'),
+                      label: Text(started ? 'ガイドと開発を続ける' : '技術を解放する'),
                     ),
                   ),
                 ],

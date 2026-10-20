@@ -90,9 +90,16 @@ class _AgencyManagementState extends State<AgencyManagement> {
       (
         '研究者',
         '${game.researchers}人',
-        '研究所へ割り当てた専門職。',
-        '右の人員配分で変更。研究所の人員効果 ${signedNumber(game.staffEfficiencyBonus('lab'))}%。育成で総人数を増やせます。',
+        '研究施設へ配分した専門職。',
+        '基礎研究所 ${game.labResearchers}人・専門設備 ${game.specializedResearchers}人。現在 ${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分を生産します。',
         Icons.school_outlined,
+      ),
+      (
+        '共通RP',
+        '${game.researchPoints.toStringAsFixed(1)} RP',
+        '全分野の技術解放に使う研究ポイント。',
+        '研究者を配置した稼働施設から蓄積します。必要RPと前提がそろえば技術を必ず解放できます。',
+        Icons.auto_awesome_outlined,
       ),
       (
         '工業員',
@@ -216,8 +223,8 @@ class _AgencyManagementState extends State<AgencyManagement> {
   );
 
   Widget _staffPanel({required bool scrollConfirmation}) {
-    final minimum = game.reservedResearchers;
-    final maximum = game.specialistCount - game.reservedIndustrialWorkers;
+    final minimum = game.minAssignableResearchers;
+    final maximum = game.maxAssignableResearchers;
     final candidate = (proposedResearchers ?? game.researchers).clamp(
       minimum,
       maximum,
@@ -243,13 +250,17 @@ class _AgencyManagementState extends State<AgencyManagement> {
               ),
               const SizedBox(height: 6),
               const Text(
-                '研究と工場に人員を配分します。',
+                '研究を増やすか、受注・製造へ人員を残すかを選びます。',
                 style: TextStyle(fontSize: 12, color: strategyMuted),
               ),
               const SizedBox(height: 12),
               StrategyFact(
                 '現在の配分',
-                '研究 ${game.researchers}人 / 工業 ${game.industrialWorkers}人',
+                '研究 ${game.researchers}人 / 工業 ${game.industrialWorkers}人 / 設備運用 ${game.developmentWorkers}人',
+              ),
+              StrategyFact(
+                '研究者の配置',
+                '基礎研究所 ${game.labResearchers}人 / 専門設備 ${game.specializedResearchers}人',
               ),
               Row(
                 children: [
@@ -265,7 +276,7 @@ class _AgencyManagementState extends State<AgencyManagement> {
                   ),
                   Expanded(
                     child: Text(
-                      '研究 $candidate人 / 工業 ${game.specialistCount - candidate}人',
+                      '研究 $candidate人 / 工業 ${game.specialistCount - game.developmentWorkers - candidate}人',
                       key: const Key('staff-proposed'),
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontWeight: FontWeight.w700),
@@ -287,8 +298,8 @@ class _AgencyManagementState extends State<AgencyManagement> {
                 children: [
                   Expanded(
                     child: StrategyStat(
-                      '研究の人員効果',
-                      '${signedNumber(game.staffEfficiencyBonus('lab'))}% → ${signedNumber(game.staffEfficiencyBonusFor('lab', candidate))}%',
+                      '研究ポイントの生産',
+                      '${game.researchPointsPerMinute.toStringAsFixed(1)} → ${game.researchPointsPerMinuteForResearchers(candidate).toStringAsFixed(1)} RP/分',
                     ),
                   ),
                   Expanded(
@@ -299,14 +310,6 @@ class _AgencyManagementState extends State<AgencyManagement> {
                   ),
                 ],
               ),
-              if (game.researchers > 0 &&
-                  candidate > game.researchers &&
-                  game.facilityBonusPercent('lab') >=
-                      game.facilityBonusCap('lab'))
-                const Text(
-                  '研究効率は現在の上限に達しているため、この増員だけでは工期を短縮できません。',
-                  style: TextStyle(fontSize: 11, color: strategyCopper),
-                ),
               if (game.industrialWorkers > 0 &&
                   candidate < game.researchers &&
                   game.facilityBonusPercent('factory') >=
@@ -337,7 +340,8 @@ class _AgencyManagementState extends State<AgencyManagement> {
                   Padding(
                     padding: EdgeInsets.only(bottom: 10),
                     child: Text(
-                      '±で1人ずつ調整し、下のボタンで確定します。人員効果は設備上限を適用する前の値です。\n\n'
+                      '±で研究者の総人数を調整し、下のボタンで確定します。専門設備への配属は保持し、残りが基礎研究所で共通RPを生産します。同じ人を工場と研究施設へ二重には配置できません。\n\n'
+                      '専門設備の配属は、開発設備の操作で変更します。研究者を減らすと、工業へ回せる人員が増えます。\n\n'
                       '作業中の人数と工期は完成まで固定され、変更は次の着手から反映されます。\n\n'
                       '無期限の反復中は、設備・進行で反復を終了してから現在の1回の完成を待つと再配分できます。設備の休止だけでは人員は解放されません。',
                       style: TextStyle(fontSize: 12, color: strategyMuted),
@@ -410,7 +414,7 @@ class _AgencyManagementState extends State<AgencyManagement> {
   Widget _staffConfirmation(int candidate, String? reason) => StrategyActionBar(
     message: candidate == game.researchers
         ? '現在の配分です'
-        : '研究 $candidate人 / 工業 ${game.specialistCount - candidate}人に変更',
+        : '研究 $candidate人 / 工業 ${game.specialistCount - game.developmentWorkers - candidate}人に変更',
     child: FilledButton(
       key: const Key('confirm-staff-allocation'),
       onPressed:
@@ -491,7 +495,12 @@ class _AgencyManagementState extends State<AgencyManagement> {
         '提携・支援の選択',
         '架空の協力機関による提案です。各協定は一度だけ選び、設備の強化か当面の資金を得ます。',
       ),
-      for (final event in GameContent.partnerships.values) ...[
+      for (final event in GameContent.partnerships.values.where(
+        (event) =>
+            event.requiredResearch == null ||
+            game.isResearchDiscovered(event.requiredResearch!) ||
+            game.partnershipChoices.containsKey(event.id),
+      )) ...[
         Text(
           event.title,
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),

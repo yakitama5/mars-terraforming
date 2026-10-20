@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/domain/colony_ending.dart';
 import 'package:mars_terraforming/domain/contextual_tips.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/domain/game_engine.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/domain/save_repository.dart';
@@ -77,9 +78,10 @@ void main() {
     'tip expressions distinguish opportunity blockage caution and success',
     (tester) async {
       final parallel = fresh()..enqueue('life_support');
-      final paused = fresh()
-        ..enqueue('life_support')
-        ..setFacilityEnabled('lab', false);
+      final paused = fresh();
+      paused.state.researchPointUnits = 0;
+      paused.enqueue('life_support');
+      paused.setFacilityEnabled('lab', false);
       final repeated = fresh();
       repeated.state.research.add('life_support');
       repeated.enqueue('factory_contract', repeats: null);
@@ -128,9 +130,11 @@ void main() {
       addTearDown(controller.dispose);
       final lowFunds = fresh();
       lowFunds.state.money = 0;
-      final paused = fresh()
-        ..enqueue('life_support')
-        ..setFacilityEnabled('lab', false);
+      lowFunds.state.research.add('life_support');
+      final paused = fresh();
+      paused.state.researchPointUnits = 0;
+      paused.enqueue('life_support');
+      paused.setFacilityEnabled('lab', false);
       final delivery = fresh();
       delivery.state.research.addAll({'life_support', 'urban_planning'});
       delivery.state.earthKits = 1;
@@ -144,9 +148,21 @@ void main() {
       complete.state.habitatChoice = 'dome';
       complete.state.marsHabitats = 1;
       for (final (engine, title, expression) in [
-        (fresh(), '生命維持の実証', MinaExpression.normal),
-        (lowFunds, '生命維持の実証の資金を準備', MinaExpression.sorrow),
-        (paused, '生命維持の実証の停止を確認・再開', MinaExpression.sorrow),
+        (
+          fresh(),
+          GameContent.tasks['life_support']!.name,
+          MinaExpression.normal,
+        ),
+        (
+          lowFunds,
+          '${GameContent.tasks['habitat_kit']!.name}の資金を準備',
+          MinaExpression.sorrow,
+        ),
+        (
+          paused,
+          '${GameContent.tasks['life_support']!.name}の停止を確認・再開',
+          MinaExpression.sorrow,
+        ),
         (delivery, '火星への輸送を準備', MinaExpression.delight),
         (landed, '火星の居住方式を選ぶ', MinaExpression.joy),
         (complete, '導入達成 · 次にできること', MinaExpression.joy),

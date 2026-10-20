@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
+import 'package:mars_terraforming/domain/game_engine.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/main.dart';
 import 'package:mars_terraforming/presentation/first_run_tutorial.dart';
@@ -109,7 +111,11 @@ void main() {
       final detail = find.byKey(const Key('first-run-research-detail'));
       final costTime = find.byKey(const Key('first-run-research-cost-time'));
       final title = find.byKey(const Key('first-run-research-title'));
-      expect(tester.widget<Text>(costTime).data, '180ドル · 2分');
+      expect(
+        tester.widget<Text>(costTime).data,
+        '必要 ${GameContent.researchPointCost('life_support')} RP · 保有 24.0 RP',
+      );
+      expect(find.text('技術を解放する'), findsOneWidget);
       expect(
         tester
             .state<ScrollableState>(
@@ -118,7 +124,7 @@ void main() {
             .position
             .pixels,
         0,
-        reason: 'The first price and wait must be readable before scrolling.',
+        reason: 'The RP cost and bank must be readable before scrolling.',
       );
       final visible = tester.getRect(detail);
       final facts = tester.getRect(costTime);
@@ -135,6 +141,13 @@ void main() {
       expect(
         controller.state.plans.where((p) => p.taskId == 'life_support'),
         hasLength(1),
+      );
+      expect(controller.state.research, contains('life_support'));
+      expect(controller.state.currentPlanFor('lab'), isNull);
+      expect(find.text('技術を解放しました'), findsOneWidget);
+      expect(
+        tester.widget<Text>(costTime).data,
+        '${GameContent.researchPointCost('life_support')} RPを使用 · 解放済み',
       );
       final done = find.byKey(const Key('tutorial-finish'));
       expect(done.hitTestable(), findsOneWidget);
@@ -173,6 +186,46 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.state.firstRunTutorial, FirstRunTutorialStep.income);
       expect(controller.state.completionNotices, hasLength(1));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'paid research resumed from an older save keeps its remaining time',
+    (tester) async {
+      final engine = GameEngine(
+        GameState.initial(DateTime.utc(2026, 10, 16))..openingSeen = true,
+      );
+      engine.enqueueDistrict('earth_delta', 0, 'housing');
+      engine.completeTutorialConstruction();
+      engine.continueFirstRunTutorial();
+      engine.state
+        ..firstRunTutorial = FirstRunTutorialStep.researchStarted
+        ..researchPointUnits = 0
+        ..plans.add(
+          PlannedTask(
+              id: 'plan-${engine.state.nextPlanId++}',
+              taskId: 'life_support',
+            )
+            ..status = 'running'
+            ..iterationDurationMs = 120000
+            ..remainingMs = 90000
+            ..iterationSpecialists = GameContent.baselineDepartmentStaff,
+        );
+      final old = engine.state.toJson()
+        ..['contentVersion'] = 'district-6'
+        ..remove('researchPointUnits');
+      final store = MemorySave()..data = old;
+      final controller = await open(tester, store: store);
+      final facts = tester.widget<Text>(
+        find.byKey(const Key('first-run-research-cost-time')),
+      );
+      expect(facts.data, contains('着手済み · 残り'));
+      expect(facts.semanticsLabel, contains('支払済み'));
+      expect(facts.semanticsLabel, contains('追加RPは必要ありません'));
+      expect(find.text('着手済みの研究を継続中'), findsOneWidget);
+      expect(controller.state.currentPlanFor('lab')!.remainingMs, 90000);
+      expect(controller.state.researchPoints, 0);
       expect(tester.takeException(), isNull);
     },
   );

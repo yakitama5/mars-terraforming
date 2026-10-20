@@ -1,4 +1,6 @@
 import 'agency_state.dart';
+import 'research_catalog.dart';
+export 'research_catalog.dart';
 export 'agency_state.dart';
 
 /// Tuning data for the first playable prototype. Money is in dollars,
@@ -37,6 +39,9 @@ class TaskDefinition {
     this.inputAmount = 1,
     this.outputAmount = 1,
     this.researchRequirements = const ResearchRequirements(),
+    this.alternativePrerequisites = const [],
+    this.developmentId,
+    this.requiredDevelopmentId,
   });
   final String id;
   final String name;
@@ -64,11 +69,224 @@ class TaskDefinition {
   final int inputAmount;
   final int outputAmount;
   final ResearchRequirements researchRequirements;
+  final List<String> alternativePrerequisites;
+  final String? developmentId;
+  final String? requiredDevelopmentId;
   int get durationMs => durationSeconds * 1000;
 }
 
 abstract final class GameContent {
-  static const version = 'district-6';
+  static const version = 'district-7';
+  // Common RP use integer fixed-point integration in GameState. Values below
+  // are provisional game tuning, not scientific performance estimates.
+  static const initialResearchPoints = 24;
+  static const researchPointsPerResearcherPerMinute = 1;
+  static const researchPointCostsByStage = [120, 2400, 24000];
+  static const developmentCostsByStage = [1200, 12000, 85000];
+  static const developmentDurationsByStage = [300, 1800, 14400];
+  static const developmentUpkeepByStage = [3, 12, 35];
+  static const developmentBonusesByStage = [3, 7, 12];
+  static const maxOperationalDevelopments = 12;
+  static const researchTechnologies = ResearchCatalog.technologies;
+  static const starterResearchCatalogIds = ['B01', 'M22', 'R01', 'E01'];
+  static const researchRootOrderByField = <ResearchField, List<String>>{
+    ResearchField.bio: ['B01', 'B05', 'B09', 'B13', 'B17', 'B22'],
+    ResearchField.mechanics: [
+      'M22',
+      'M01',
+      'M05',
+      'M09',
+      'M25',
+      'M17',
+      'M10',
+      'M21',
+      'M15',
+      'M13',
+      'M11',
+      'M12',
+    ],
+    ResearchField.materials: [
+      'R01',
+      'R09',
+      'R15',
+      'R02',
+      'R07',
+      'R13',
+      'R14',
+      'R17',
+      'R18',
+      'R19',
+      'R06',
+    ],
+    ResearchField.energy: [
+      'E01',
+      'E13',
+      'E09',
+      'E21',
+      'E10',
+      'E05',
+      'E12',
+      'E17',
+    ],
+  };
+  static const researchPointCostOverrides = {'process_design': 480};
+  static const preparatoryResearchCatalogIds = {
+    'M13',
+    'M16',
+    'M19',
+    'E03',
+    'E20',
+    'E24',
+  };
+  static ResearchTechnology technology(String id) => researchTechnologies[id]!;
+  static int researchPointCost(String id) {
+    final technology = researchTechnologies[id];
+    if (technology == null || !technology.isPurchasable) return 0;
+    if (starterResearchCatalogIds.contains(technology.catalogId)) return 24;
+    return researchPointCostOverrides[id] ??
+        researchPointCostsByStage[technology.stage];
+  }
+
+  static String developmentTaskId(String id) => 'develop_$id';
+  static String developmentOperationTaskId(String id) => 'operate_$id';
+  static bool developmentIsPreparatory(String id) =>
+      preparatoryResearchCatalogIds.contains(technology(id).catalogId);
+  static ResearchUnlockEffect developmentEffect(String id) =>
+      developmentIsPreparatory(id)
+      ? ResearchUnlockEffect.research
+      : technology(id).unlockEffect;
+  static String developmentPlanet(String id) =>
+      !developmentIsPreparatory(id) && technology(id).unlockFacilityId == 'mars'
+      ? 'mars'
+      : 'earth';
+  static String developmentScopeLabel(String id) => developmentIsPreparatory(id)
+      ? '月面展開に向けた地上実証'
+      : developmentPlanet(id) == 'mars'
+      ? '火星拠点への導入'
+      : '地球都市への導入';
+  static String developmentFacilityId(String id) =>
+      developmentIsPreparatory(id) ? 'lab' : technology(id).unlockFacilityId;
+  static int developmentCost(String id) =>
+      developmentCostsByStage[technology(id).stage];
+  static int developmentUpkeepPerMinute(String id) =>
+      developmentUpkeepByStage[technology(id).stage];
+  static int developmentCrewRequirement(String id) =>
+      developmentEffect(id) == ResearchUnlockEffect.research
+      ? 0
+      : technology(id).unlockKind == ResearchUnlockKind.vehicle
+      ? 2
+      : 1;
+  static int developmentResearchCapacity(String id) =>
+      developmentEffect(id) == ResearchUnlockEffect.research ||
+          technology(id).unlockKind == ResearchUnlockKind.facility
+      ? 4 + technology(id).stage * 2
+      : 0;
+  static int developmentResearchRate(String id) => 2 + technology(id).stage;
+  static int developmentEfficiencyBonus(String id) =>
+      developmentBonusesByStage[technology(id).stage];
+  static int developmentIncomePerMinute(String id) =>
+      [6, 22, 65][technology(id).stage];
+
+  static String developmentBenefitLabel(String id) {
+    final bonus = developmentEfficiencyBonus(id);
+    final capacity = developmentResearchCapacity(id);
+    final effect = switch (developmentEffect(id)) {
+      ResearchUnlockEffect.research => '研究者配置時の研究運営能力 最大+$bonus%',
+      ResearchUnlockEffect.production => '製造能力 +$bonus%',
+      ResearchUnlockEffect.transport => '輸送運営能力 +$bonus%',
+      ResearchUnlockEffect.construction => '現地建設能力 +$bonus%',
+      ResearchUnlockEffect.income =>
+        '事業収入 +${developmentIncomePerMinute(id)}ドル/分',
+      ResearchUnlockEffect.partnership =>
+        '共同事業収入 +${developmentIncomePerMinute(id)}ドル/分（提携合意が必要）',
+    };
+    final research = capacity > 0
+        ? '。実験へ最大$capacity名、基準${developmentResearchRate(id)}RP/人・分（生産能力と配分）'
+        : '';
+    return '稼働中：$effect$research。部署の能力上限内で適用';
+  }
+
+  static String? legacyResearchBranchFor(String id) {
+    if (id == 'life_support') return _starterTasks[id]!.researchBranch;
+    for (final task in _researchTasks) {
+      if (task.id == id) return task.researchBranch;
+    }
+    return null;
+  }
+
+  static TaskDefinition _technologyTask(ResearchTechnology technology) {
+    final legacy = <String, TaskDefinition>{
+      'life_support': _starterTasks['life_support']!,
+      for (final task in _researchTasks) task.id: task,
+    }[technology.id];
+    return TaskDefinition(
+      id: technology.id,
+      name: technology.name,
+      facilityId: 'lab',
+      // Kept only to finish already-paid old iterations and show their progress.
+      durationSeconds: legacy?.durationSeconds ?? 1,
+      cost: 0,
+      unique: true,
+      description: technology.description,
+      science: technology.science,
+      researchBranch: technology.field.label,
+      researchStage: legacy != null && legacy.researchStage > technology.stage
+          ? legacy.researchStage
+          : technology.stage,
+      prerequisites: technology.prerequisiteIds,
+      alternativePrerequisites: technology.alternativePrerequisiteIds,
+      unlockSummary: technology.unlockName,
+      researchPromise: technology.description,
+    );
+  }
+
+  static TaskDefinition _developmentTask(
+    ResearchTechnology technology,
+  ) => TaskDefinition(
+    id: developmentTaskId(technology.id),
+    name:
+        '${technology.unlockName}を${developmentIsPreparatory(technology.id) ? '試作' : '導入'}',
+    facilityId: developmentFacilityId(technology.id),
+    durationSeconds: developmentDurationsByStage[technology.stage],
+    cost: developmentCost(technology.id),
+    requiredResearch: technology.id,
+    developmentId: technology.id,
+    description:
+        '${technology.unlockDescription}\n${developmentScopeLabel(technology.id)}。完成後は休止状態で保有し、稼働と人員を配分します。',
+    science: technology.science,
+  );
+  static TaskDefinition _developmentOperation(ResearchTechnology technology) {
+    final cargo = ['M09', 'M26'].contains(technology.catalogId);
+    final amount = technology.catalogId == 'M26' ? 12 : 1;
+    return TaskDefinition(
+      id: developmentOperationTaskId(technology.id),
+      name: cargo
+          ? '${technology.unlockName}で火星へ輸送'
+          : '${technology.unlockName}の事業運転',
+      facilityId:
+          cargo ||
+              developmentEffect(technology.id) == ResearchUnlockEffect.transport
+          ? 'launch'
+          : 'factory',
+      durationSeconds: cargo
+          ? (amount == 12 ? 1800 : 300)
+          : [600, 3600, 14400][technology.stage],
+      cost: cargo
+          ? (amount == 12 ? 1800 : 260)
+          : [180, 1600, 8000][technology.stage],
+      reward: cargo ? 0 : [1500, 12500, 65000][technology.stage],
+      requiredResearch: technology.id,
+      requiredDevelopmentId: technology.id,
+      inputResource: cargo ? 'earthKits' : null,
+      inputAmount: amount,
+      outputResource: cargo ? 'marsKits' : null,
+      outputAmount: amount,
+      description: cargo
+          ? '対応機体と宇宙港を使い居住キットを輸送。機体の稼働維持費と航路枠が必要です。'
+          : '導入済み設備を使う外部受注。担当部署の作業枠を使い、自前の製造・輸送と競合します。',
+    );
+  }
+
   static const initialSpecialists = 12;
   static const baselineDepartmentStaff = 6;
   static const maxSpecialists = 36;
@@ -239,6 +457,21 @@ abstract final class GameContent {
           inputResource: district.planet == 'mars' ? 'marsKits' : null,
           requiresHabitatChoice: district.id == 'mars_habitat',
           description: district.description,
+        ),
+    for (final technology in ResearchCatalog.purchasableTechnologies)
+      technology.id: _technologyTask(technology),
+    for (final technology in ResearchCatalog.purchasableTechnologies)
+      developmentTaskId(technology.id): _developmentTask(technology),
+    for (final technology in ResearchCatalog.purchasableTechnologies)
+      if (!developmentIsPreparatory(technology.id) &&
+          (technology.unlockKind == ResearchUnlockKind.vehicle ||
+              [
+                ResearchUnlockEffect.income,
+                ResearchUnlockEffect.partnership,
+                ResearchUnlockEffect.production,
+              ].contains(technology.unlockEffect)))
+        developmentOperationTaskId(technology.id): _developmentOperation(
+          technology,
         ),
   };
 
@@ -617,7 +850,7 @@ abstract final class GameContent {
     'technology':
         '技術力：研究1件+6、完成地区の総レベル+1ずつ。上限100。提携解禁に使います。実際の効率は各研究・地区・人員・提携の効果で決まります。',
     'friendship': '友好度：初期10＋選択した提携・支援の加点。上限100。宇宙支援の解禁に使います。追加の割引・自動支援はありません。',
-    'spaceContribution': '宇宙支援貢献：輸送・居住分野の研究1件+3、輸送・居住実績1件+8、火星地区総レベル×2、提携選択の加点。上限100。宇宙支援の解禁に使います。追加報酬は自動発生しません。',
+    'spaceContribution': '宇宙支援貢献：宇宙輸送・居住・現地運営の研究1件+3、輸送・居住実績1件+8、火星地区総レベル×2、提携選択の加点。上限100。宇宙支援の解禁に使います。追加報酬は自動発生しません。',
   };
   static const partnerships = <String, PartnershipDefinition>{
     'research_exchange': PartnershipDefinition(

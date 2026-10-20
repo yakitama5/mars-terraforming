@@ -37,10 +37,23 @@ class ResourceOverviewDialog extends StatelessWidget {
                       StrategyFact('税収', '${dollars(game.taxPerMinute)}/分'),
                       StrategyFact('維持費', '${dollars(game.upkeepPerMinute)}/分'),
                       const Text(
-                        '受注の報酬と、建設・研究などの開始費用は毎分収支に含みません。',
+                        '受注の報酬と、建設・製造・育成の開始費用は毎分収支に含みません。研究施設の維持費は含みます。',
                         style: TextStyle(fontSize: 12, color: strategyMuted),
                       ),
                       const Divider(),
+                      StrategyFact(
+                        '共通研究ポイント',
+                        '${game.researchPoints.toStringAsFixed(1)} RP',
+                      ),
+                      StrategyFact(
+                        '研究ポイントの生産',
+                        '${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
+                      ),
+                      const Text(
+                        '研究者を配置した稼働施設でRPを蓄えます。技術の解放には共通RPを使い、設備の建設・製造には別途投資します。',
+                        style: TextStyle(fontSize: 12, color: strategyMuted),
+                      ),
+                      const SizedBox(height: 10),
                       StrategyFact(
                         '研究者 / 工業員',
                         '${game.researchers}人 / ${game.industrialWorkers}人',

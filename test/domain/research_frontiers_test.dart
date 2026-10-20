@@ -33,6 +33,17 @@ void main() {
       'closed_ecology',
       'local_resources',
       'automated_fabrication',
+      // Earlier, inexpensive knowledge exposes the chosen optional roots.
+      'autonomous_rovers', 'low_gravity_mobility',
+      'cargo_packaging', 'methalox_surface_transport', 'lunar_shuttles',
+      'relay_communications',
+      'deployable_solar_arrays', 'battery_banks', 'hydrogen_storage',
+      'habitat_insulation',
+      'subsurface_ice_mapping', 'ground_penetrating_radar', 'in_situ_sampling',
+      'thermal_water_extraction',
+      'water_purification',
+      'atmospheric_collection',
+      'geopolymer_fabrication', 'process_design',
     ]);
     for (final (city, index, id) in [
       ('earth_delta', 0, 'spaceport'),
@@ -69,12 +80,12 @@ void main() {
     for (final task in GameContent.tasks.values.where((task) => task.unique)) {
       visit(task.id);
     }
-    expect(seen, hasLength(19));
+    expect(seen, hasLength(ResearchCatalog.purchasableTechnologies.length));
     for (final id in frontierIds) {
       final task = GameContent.tasks[id]!;
-      expect(task.prerequisiteIds, isNotEmpty);
+      expect(GameContent.researchTechnologies[id]!.sourceIds, isNotEmpty);
       expect(task.researchPromise, isNotEmpty);
-      expect(task.science, contains('出典：'));
+      expect(task.science, contains('成立条件・限界：'));
       expect(task.science, contains('ゲーム上の仮定'));
       expect(GameContent.researchEfficiencyBonuses[id], isNotEmpty);
     }
@@ -127,11 +138,15 @@ void main() {
       final launch = state.currentPlanFor('launch')!;
       final paidDuration = launch.remainingMs;
       final before = state.currentTaskDurationMs('orbital_contract');
-      engine.enqueue('electric_tugs');
-      final researchDuration = state.currentPlanFor('lab')!.remainingMs;
-      engine.advanceBy(Duration(milliseconds: researchDuration));
+      state.researchPointUnits =
+          GameContent.researchPointCost('electric_tugs') *
+          GameState.researchPointScale;
+      final money = state.moneyUnits;
+      expect(engine.unlockResearch('electric_tugs'), isNull);
       expect(state.research, contains('electric_tugs'));
-      expect(launch.remainingMs, paidDuration - researchDuration);
+      expect(launch.remainingMs, paidDuration);
+      expect(state.moneyUnits, money);
+      expect(state.researchPointUnits, 0);
       expect(launch.iterationDurationMs, paidDuration);
       expect(state.currentTaskDurationMs('orbital_contract'), lessThan(before));
       engine.advanceBy(Duration(milliseconds: launch.remainingMs));
@@ -142,11 +157,13 @@ void main() {
     },
   );
 
-  test('research still needs physical proof and cannot exceed the established efficiency cap', () {
+  test('research uses discovered knowledge and RP while retained effects stay within their caps', () {
     final fresh = GameEngine(GameState.initial(epoch));
-    for (final id in frontierIds) {
-      expect(fresh.researchRequirementReasons(id), isNotEmpty, reason: id);
-    }
+    expect(fresh.enqueue('electric_tugs'), contains('手掛かり'));
+    expect(fresh.enqueue('orbital_gardens'), isNull);
+    expect(fresh.state.research, contains('orbital_gardens'));
+    expect(fresh.state.marsHabitats, 0);
+    expect(fresh.state.developments, isEmpty);
     final state = developed()..research.addAll(frontierIds);
     for (final facility in GameContent.facilities.keys) {
       expect(

@@ -63,6 +63,9 @@ class OnboardingGuide {
         if (state.facilities[plan.definition.facilityId] != true) {
           status = OnboardingStatus.stopped;
           reason = '設備休止中・設備配分から手動で再開';
+        } else if (plan.stopReason.startsWith('研究ポイント待ち')) {
+          status = OnboardingStatus.queued;
+          reason = plan.stopReason;
         } else if (plan.stopReason.isNotEmpty &&
             plan.stopReason != '共用設備の順番待ち') {
           status = OnboardingStatus.stopped;
@@ -121,14 +124,18 @@ class OnboardingGuide {
         state.districts.values.any(
           (district) => GameContent.cities[district.cityId]?.planet == 'earth',
         );
+    final nextResearch = state.discoveredResearchIds
+        .where((id) => id != 'life_support' && !state.research.contains(id))
+        .firstOrNull;
+    final secondResearchComplete = state.research.length >= 2;
     return OnboardingGuide._(
       List.unmodifiable([
         step(
           id: 'first_research',
-          story: '地球で循環させた一滴の水を、火星での一日に変える。その最初の実証です。',
-          title: '生命維持の実証',
+          story: '研究所で生まれた知見を、人が暮らせる区画へ。都市の研究者が最初の一歩を支えます。',
+          title: GameContent.tasks['life_support']!.name,
           timeHint: '0〜5分',
-          lesson: '生命維持研究を予約。待つ間に街を建てられます。研究は画面を離れても進みます。',
+          lesson: '研究者を配置した施設で共通RPを蓄え、必要量を使って技術を解放します。解放後は、施設や機体の建設・製造へ進めます。',
           completed: state.research.contains('life_support'),
           destination: OnboardingDestination.research,
           target: 'life_support',
@@ -148,13 +155,17 @@ class OnboardingGuide {
         step(
           id: 'urban_planning',
           story: '街が育てば、計画も育つ。限られた土地で、次に何を増やすかを決めましょう。',
-          title: '都市基盤の計画',
+          title: '次の技術を選ぶ',
           timeHint: '10〜20分',
-          lesson: '都市基盤研究で住宅の増強を解放。空き地へ建てるか、今の住宅を育てるかを比較します。',
-          completed: state.research.contains('urban_planning'),
+          lesson:
+              '見つかった技術の解放先と必要RPを比較します。RPは全分野で共通です。研究を進めると、その先の候補が少しずつ見つかります。',
+          completed: secondResearchComplete,
           destination: OnboardingDestination.research,
-          target: 'urban_planning',
-          plan: active('urban_planning'),
+          target: nextResearch ?? 'life_support',
+          plan: nextResearch == null ? null : active(nextResearch),
+          prerequisite: !secondResearchComplete && nextResearch == null
+              ? '研究を進めて次の候補を見つけましょう'
+              : '',
         ),
         step(
           id: 'first_kit',
@@ -168,7 +179,7 @@ class OnboardingGuide {
           plan: active('habitat_kit') ?? active('batch_habitat_kit'),
           prerequisite: state.research.contains('life_support')
               ? ''
-              : '生命維持研究の完成が必要',
+              : '最初の居住技術の解放が必要',
         ),
         step(
           id: 'first_landing',
