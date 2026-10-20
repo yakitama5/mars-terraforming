@@ -155,7 +155,7 @@ void main() {
     },
   );
 
-  test('a normal funded route reaches all branches through construction and superior contracts', () {
+  test('a selected habitation route is funded by real construction and superior contracts', () {
     final result = runProgressionVerification();
     expect(
       result.state.research,

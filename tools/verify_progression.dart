@@ -530,8 +530,9 @@ class _FirstHourRoute {
     district('First coastal housing', 'earth_delta', 0, 'housing');
     var iterations = 0;
     while (game.state.simulatedMs < horizon.inMilliseconds) {
-      if (++iterations > 5000)
+      if (++iterations > 5000) {
         throw StateError('The first-hour policy did not converge');
+      }
       collectCompletions();
       if (done('Solar research') && !booked('Urban planning')) {
         task('Urban planning', 'urban_planning');
@@ -884,7 +885,7 @@ Map<String, Object> runEarlyInvestmentVerification() {
       'housingFirstPopulationAt60Minutes': housingFirst.state.population,
       'explanation':
           'Earlier housing produces revenue and research adjacency sooner; '
-          'earlier industry produces factory efficiency and its research demonstration sooner. '
+          'earlier industry produces factory efficiency sooner. '
           'No route is declared globally optimal.',
     },
   };
