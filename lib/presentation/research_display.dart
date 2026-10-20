@@ -16,3 +16,7 @@ String researchUnlockSummary(GameState game, TaskDefinition task) =>
       _cityNamePattern,
       (match) => game.cityName(_cityIdsByName[match.group(0)!]!),
     );
+
+String formatResearchPoints(num value) => value == value.roundToDouble()
+    ? value.toInt().toString()
+    : value.toStringAsFixed(1);
