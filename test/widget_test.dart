@@ -60,6 +60,9 @@ void main() {
         );
         await tester.tap(find.byKey(const Key('navigation-2')));
         await tester.pumpAndSettle();
+        expect(find.byKey(const Key('research-detail')), findsNothing);
+        await tester.tap(find.byKey(const Key('research-node-life_support')));
+        await tester.pumpAndSettle();
         await tester.scrollUntilVisible(
           find.byKey(const Key('queue-life_support')),
           150,
@@ -142,6 +145,9 @@ void main() {
           );
         }
         if (tab == 2) {
+          expect(find.byKey(const Key('research-detail')), findsNothing);
+          await tester.tap(find.byKey(const Key('research-node-life_support')));
+          await tester.pumpAndSettle();
           expect(
             find.byKey(const Key('queue-life_support')).hitTestable(),
             findsOneWidget,
@@ -432,7 +438,7 @@ void main() {
       expect(target.hitTestable(), findsOneWidget);
       await tester.tap(target);
       await tester.pumpAndSettle();
-      expect(find.text('必要な研究ポイント'), findsOneWidget);
+      expect(find.text('必要RP'), findsOneWidget);
       expect(find.byKey(const Key('research-unlocks')), findsOneWidget);
       final moneyBefore = controller.state.moneyUnits;
       await tester.ensureVisible(

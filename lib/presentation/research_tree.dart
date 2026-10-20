@@ -19,11 +19,13 @@ class ResearchTree extends StatefulWidget {
     required this.onSelected,
     required this.requirementReasons,
     this.controlsVisible = true,
+    this.onSelectionCleared,
   });
 
   final GameState game;
   final bool controlsVisible;
-  final String selectedId;
+  final String? selectedId;
+  final VoidCallback? onSelectionCleared;
   final ValueChanged<String> onSelected;
   final List<String> Function(String) requirementReasons;
 
@@ -57,7 +59,7 @@ class _ResearchTreeState extends State<ResearchTree>
   Map<String, Offset> _positions = const {};
 
   GameState get game => widget.game;
-  ResearchTechnology? _technology(String id) =>
+  ResearchTechnology? _technology(String? id) =>
       ResearchCatalog.technologies[id];
 
   @override
@@ -67,7 +69,9 @@ class _ResearchTreeState extends State<ResearchTree>
     _field = _technology(widget.selectedId)?.field ?? ResearchField.mechanics;
     _camera.addListener(_moveCamera);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusSelection(animate: false);
+      if (mounted) {
+        _focusSelection(animate: false);
+      }
     });
   }
 
@@ -163,7 +167,7 @@ class _ResearchTreeState extends State<ResearchTree>
     if (_positions.isEmpty) return;
     _focusNode(
       _positions.containsKey(widget.selectedId)
-          ? widget.selectedId
+          ? widget.selectedId!
           : _positions.keys.first,
       animate: animate,
     );
@@ -177,7 +181,7 @@ class _ResearchTreeState extends State<ResearchTree>
           (_viewportSize.width - 36) / _nodeSize.width,
           (_viewportSize.height - 28) / _nodeSize.height,
         )
-        .clamp(.45, 1.0);
+        .clamp(.85, 1.0);
     _setCamera(
       Matrix4.diagonal3Values(scale, scale, 1)..setTranslationRaw(
         (_viewportSize.width - _nodeSize.width * scale) / 2 -
@@ -212,7 +216,7 @@ class _ResearchTreeState extends State<ResearchTree>
     final targets = _newNodes.where(_positions.containsKey).toList();
     if (sources.isEmpty || targets.isEmpty || _viewportSize.isEmpty) return;
     final source = sources.contains(widget.selectedId)
-        ? widget.selectedId
+        ? widget.selectedId!
         : sources.first;
     final target = targets.firstWhere(
       (id) =>
@@ -264,20 +268,11 @@ class _ResearchTreeState extends State<ResearchTree>
   void _selectField(ResearchField field) {
     final candidates = _visibleTechnologies(field);
     if (candidates.isEmpty) return;
-    final current = _technology(widget.selectedId);
-    final target =
-        current?.field == field && game.isResearchDiscovered(widget.selectedId)
-        ? widget.selectedId
-        : candidates
-              .firstWhere(
-                (technology) => !game.research.contains(technology.id),
-                orElse: () => candidates.first,
-              )
-              .id;
+    final changed = _field != field;
     setState(() => _field = field);
-    widget.onSelected(target);
+    if (changed) widget.onSelectionCleared?.call();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode(target);
+      if (mounted) _focusNode(candidates.first.id);
     });
   }
 
@@ -287,7 +282,8 @@ class _ResearchTreeState extends State<ResearchTree>
     final visibleIds = technologies.map((technology) => technology.id).toSet();
     final textScale = MediaQuery.textScalerOf(context).scale(13) / 13;
     final nodeWidth = 212.0 * math.max(1.0, textScale);
-    final nodeHeight = 164.0 * math.max(1.0, textScale);
+    final compact = MediaQuery.sizeOf(context).height < 450;
+    final nodeHeight = (compact ? 144.0 : 164.0) * math.max(1.0, textScale);
     const horizontalGap = 78.0, verticalGap = 30.0;
     final depths = <String, int>{};
     final visiting = <String>{};
@@ -359,7 +355,9 @@ class _ResearchTreeState extends State<ResearchTree>
                       _viewportSize = constraints.biggest;
                       if (previousSize != _viewportSize) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) _focusSelection(animate: false);
+                          if (mounted) {
+                            _focusSelection(animate: false);
+                          }
                         });
                       }
                       return ClipRect(
@@ -419,7 +417,12 @@ class _ResearchTreeState extends State<ResearchTree>
             ),
             if (widget.controlsVisible)
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  compact ? 3 : 6,
+                  12,
+                  compact ? 3 : 8,
+                ),
                 child: Text(
                   '発見した道筋だけを表示 · ドラッグで移動',
                   maxLines: 1,
@@ -437,7 +440,11 @@ class _ResearchTreeState extends State<ResearchTree>
   }
 
   Widget _header() => SizedBox(
-    height: 69,
+    height: MediaQuery.sizeOf(context).height < 450
+        ? MediaQuery.textScalerOf(context).scale(14) > 18
+              ? 64
+              : 48
+        : 69,
     child: Stack(
       fit: StackFit.expand,
       children: [
@@ -509,7 +516,7 @@ class _ResearchTreeState extends State<ResearchTree>
               ),
               IconButton(
                 key: const Key('research-reset-zoom'),
-                tooltip: '選択した研究へ戻る',
+                tooltip: widget.selectedId == null ? '入口の研究へ寄る' : '選択した研究へ戻る',
                 visualDensity: VisualDensity.compact,
                 onPressed: _focusSelection,
                 icon: const Icon(Icons.center_focus_strong, size: 19),
@@ -1035,19 +1042,11 @@ class _ResearchFuturesDialog extends StatelessWidget {
                         color: strategyBenefit,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      frontier.scientificBoundary,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: strategyMuted,
-                      ),
-                    ),
                   ],
                 ),
               const SizedBox(height: 14),
               const Text(
-                '物語は技術の応用を描く未来像です。閉鎖居住や温暖化だけでは、全球の屋外居住が成立したことにはなりません。',
+                '物語は、ひとつの技術から想像する未来の風景です。',
                 style: TextStyle(fontSize: 11, color: strategyMuted),
               ),
             ],

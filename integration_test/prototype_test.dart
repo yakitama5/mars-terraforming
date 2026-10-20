@@ -34,6 +34,12 @@ void main() {
       await tester.pumpWidget(MarsApp(controller: controller));
 
       Future<void> capture(String name) async {
+        const capturePrefix = String.fromEnvironment(
+          'MARS_INTEGRATION_CAPTURE_PREFIX',
+        );
+        if (capturePrefix.isNotEmpty && !name.startsWith(capturePrefix)) {
+          return;
+        }
         // The native screenshot service observes the last rasterized frame.
         // Let it present after controller commands instead of only advancing
         // the test clock, which can otherwise capture the preceding state.
@@ -126,7 +132,33 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       await tapKey('navigation-2');
-      await tapKey('research-fit');
+      await tapKey('research-reset-zoom');
+      expect(find.byKey(const Key('research-detail')), findsNothing);
+      await capture('research-mobile-ios-overview');
+      await tapKey('research-node-life_support');
+      final researchScroll = find
+          .descendant(
+            of: find.byKey(const Key('research-detail')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      await tester.scrollUntilVisible(
+        find.text('RP生産'),
+        100,
+        scrollable: researchScroll,
+      );
+      expect(find.text('必要RP'), findsOneWidget);
+      expect(find.text('保有RP'), findsOneWidget);
+      expect(find.text('RP生産'), findsOneWidget);
+      expect(find.text('科学メモ・出典'), findsNothing);
+      await capture('research-mobile-ios-detail');
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('close-research-detail')),
+        -150,
+        scrollable: researchScroll,
+      );
+      await tapKey('close-research-detail');
+      expect(find.byKey(const Key('research-detail')), findsNothing);
       await capture('strategy-ios-research');
       expect(
         controller.state.plans.where((plan) => plan.taskId == 'life_support'),
@@ -283,7 +315,14 @@ void main() {
       await capture('terrain-ios-completed');
 
       // A completed neighboring campus changes both tax and research speed.
-      await controller.command((engine) => engine.enqueue('urban_planning'));
+      // The next energy branch is discovered from its entry technology.
+      // Spend the RP already produced by the real lab during this route.
+      await controller.command((engine) {
+        expect(engine.unlockResearch('deployable_solar_arrays'), isNull);
+        expect(engine.enqueue('urban_planning'), isNull);
+        return null;
+      });
+      expect(controller.state.research, contains('deployable_solar_arrays'));
       await controller.advanceForDevelopment(
         duration: const Duration(minutes: 10),
       );

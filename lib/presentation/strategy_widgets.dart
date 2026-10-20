@@ -123,14 +123,22 @@ class StrategyFact extends StatelessWidget {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 76,
-          child: Text(
-            label,
-            style: const TextStyle(color: strategyMuted, fontSize: 12),
+        Flexible(
+          flex: 2,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(color: strategyMuted, fontSize: 12),
+            ),
           ),
         ),
+        const SizedBox(width: 12),
         Expanded(
+          flex: 3,
           child: Text(value, style: TextStyle(color: color, fontSize: 13)),
         ),
       ],
@@ -145,7 +153,7 @@ class StrategySplit extends StatelessWidget {
     required this.detail,
   });
   final Widget overview;
-  final Widget detail;
+  final Widget? detail;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -155,7 +163,7 @@ class StrategySplit extends StatelessWidget {
         return Column(
           children: [
             Expanded(child: overview),
-            Expanded(child: detail),
+            if (detail != null) Expanded(child: detail!),
           ],
         );
       }
@@ -163,15 +171,17 @@ class StrategySplit extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(child: overview),
-          const VerticalDivider(width: 1, color: strategyLine),
-          SizedBox(
-            width: constraints.maxWidth > 1100
-                ? 360
-                : constraints.maxWidth < 650
-                ? constraints.maxWidth * .48
-                : 310,
-            child: Material(color: strategySurface, child: detail),
-          ),
+          if (detail != null)
+            const VerticalDivider(width: 1, color: strategyLine),
+          if (detail != null)
+            SizedBox(
+              width: constraints.maxWidth > 1100
+                  ? 360
+                  : constraints.maxWidth < 650
+                  ? constraints.maxWidth * .48
+                  : 310,
+              child: Material(color: strategySurface, child: detail!),
+            ),
         ],
       );
     },

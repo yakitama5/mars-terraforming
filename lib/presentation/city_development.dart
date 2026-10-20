@@ -473,20 +473,10 @@ class _CityDevelopmentState extends State<CityDevelopment> {
             key: const Key('district-inspector'),
             padding: const EdgeInsets.all(12),
             children: [
-              Row(
-                children: [
-                  Icon(districtIcon(id), color: strategyBlue, size: 24),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${definition.name}${existing == null ? '' : ' Lv.${existing.level}'}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
+              DistrictSelectionHeading(
+                districtId: id,
+                title:
+                    '${definition.name}${existing == null ? '' : ' Lv.${existing.level}'}',
               ),
               const SizedBox(height: 6),
               Text(
@@ -494,8 +484,8 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                     ? '区画 ${selectedPlot + 1}  ·  $terrain'
                     : '2  地図で建設する区画を選択',
                 key: const Key('placement-step'),
-                style: const TextStyle(
-                  color: strategyMint,
+                style: TextStyle(
+                  color: districtAccent(id),
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
@@ -509,12 +499,17 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 Row(
                   children: [
                     Expanded(
-                      child: StrategyStat('投資費用', dollars(preview.cost)),
+                      child: StrategyStat(
+                        '投資費用',
+                        dollars(preview.cost),
+                        color: districtAccent(id),
+                      ),
                     ),
                     Expanded(
                       child: StrategyStat(
                         '工期',
                         gameDuration(preview.durationMs),
+                        color: districtAccent(id),
                       ),
                     ),
                   ],
@@ -615,8 +610,11 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         ),
         Container(
           padding: const EdgeInsets.fromLTRB(10, 5, 10, 8),
-          decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: strategyLine)),
+          decoration: BoxDecoration(
+            color: districtPanelTint(id),
+            border: Border(
+              top: BorderSide(color: districtAccent(id).withValues(alpha: .4)),
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1133,16 +1131,15 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   ),
                 const SizedBox(height: 12),
               ],
-              Text(
-                '${definition.name}${existing == null
-                    ? ''
-                    : existing.level >= definition.maxLevel
-                    ? ' Lv.${existing.level}（最大）'
-                    : ' Lv.${existing.level} → ${existing.level + 1}'}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
+              DistrictSelectionHeading(
+                districtId: selected,
+                title:
+                    '${definition.name}${existing == null
+                        ? ''
+                        : existing.level >= definition.maxLevel
+                        ? ' Lv.${existing.level}（最大）'
+                        : ' Lv.${existing.level} → ${existing.level + 1}'}',
+                fontSize: 18,
               ),
               const SizedBox(height: 8),
               Text(
@@ -1160,11 +1157,11 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         '建設前の見積もり',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: strategyMint,
+                          color: districtAccent(selected),
                         ),
                       ),
                       StrategyFact('現在の資金', dollars(game.money)),
