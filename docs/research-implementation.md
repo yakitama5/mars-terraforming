@@ -60,7 +60,7 @@ RP項目を保存した後、通常世界、研究済み、支払済み工程に
 
 - 採用Flutter 3.47.7 / Dart 3.13.5と固定された依存を維持。オフラインのlockfile付き依存解決に成功。
 - 静的解析成功、依存方向の検査成功、モバイルCDのPython回帰6件成功。
-- Web releaseビルド成功。iOS/Androidのビルド・署名は既存の固定構成を引き継ぎ、CIで確認する。
+- Web releaseビルド成功。iOS/Androidの依存・署名構成は既存の固定構成を維持。
 - tools/verify_research.dart が98研究の解放・全設備の対応都市への導入・保存再読込、
   100seedの一括／分割進行、RP待ち、資金休止、人員制約、旧工程・途中案内移行を検証して成功。
 - 初期資金と公開コマンドだけの一経路で、受注・研究・建設・輸送・初居住・保存再読込まで
@@ -82,11 +82,31 @@ RP項目を保存した後、通常世界、研究済み、支払済み工程に
 正式なFlutter runnerによる全体検証とは分けて扱う。
 
 ローカルのFlutter Widgetテストはテスト用localhostソケットをOSに拒否され、ロード前に停止した。
-製品のテスト失敗と区別し、GitHub CIで全テスト・実画面PNG・モバイルビルドを実行して確認する。
-bash tools/check.shは実行済み。依存方向・98研究の直接検証・Python6件・全134ファイルの整形確認が成功。
-統合作業中に検出したlintを修正し、既存テストの新方式への適応後にCIで全工程を再検証する。
+bash tools/check.shの依存方向・98研究の直接検証・Python6件・全134ファイルの整形確認・静的解析は成功。
+Flutter runnerによる正式な全体検証はGitHub CIで行った。
 
-CI・実画面レビュー・main反映・内部配信の最終結果は作業完了時に本節へ追記する。
+| 検証 | 確認した結果 |
+| --- | --- |
+| [Prototype checks 39358242203](https://github.com/yakitama5/mars-terraforming/actions/runs/39358242203) | tools/check.sh全工程成功。Flutter全499テスト、Python6件、静的解析、直接進行検証、Web release成功 |
+| 実画面キャプチャ | 初期4分類・成長途中/完了・研究詳細/設備導入/稼働・大きい文字の15枚をCIで生成。全フレームの描画・レイアウト例外なし |
+| [Mobile build checks 39358242158](https://github.com/yakitama5/mars-terraforming/actions/runs/39358242158) | Android debug APK、署名なしreleaseの拒否、一時鍵のrelease AAB 91.7MB、テスト用plugin除外確認に成功。iOS Simulator、privacy manifest、識別子検査も成功 |
+
+上記の検証対象はlocal 7cd7eb8 / GitHub fb764fd3e298c81e1419cfc3296e2b7379b38d42。
+続く記録の更新は文書のみで、同じ製品コードを保つ。
+画面PNGの取得はダウンロード承認の不備で停止したため、取得制限を迂回せず、
+developの公開プレビューで直接目視する手順へ切り替えた。
+
+## 反映と配信の記録
+
+最新main 483ae05を基準に、企画・画像・カタログ・進行・保存・画面・回帰修正を分けてコミット。
+元の作業場所のコードと画像も検証済みの版へ同期し、別作業の未コミット文書と生成画像を保持した。
+元のGit管理領域への書込みは環境の制限で許可されないため、元の作業ブランチを切り替えたとは扱わず、
+コミットとGitHubへの反映は独立した作業コピーから行った。
+
+developの実画面レビュー、mainへの反映、Android内部トラックとTestFlightの最終結果・ビルド番号は、
+[PR #34の反映・配信結果](https://github.com/yakitama5/mars-terraforming/pull/34)へ記録する。
+これにより、実配信後の記録更新だけでmainを再pushして別の配信を発火させず、文書から完了記録を辿れる。
+ストア側の配信成功と端末での実操作確認を分け、端末の確認はユーザーが行う。
 
 ## 制約と次の判断
 

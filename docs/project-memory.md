@@ -444,6 +444,11 @@
   保存はschema2/content district-7、旧19IDと支払済み工程を維持する。
 - 通常の旧世界へ遡及RPは付けず、旧版の初回案内で未着手の最初の研究だけ一度予算を引き継ぐ。
   月専用技術は地上実証として扱い、月面補給網・全球環境が完成した表示は行わない。
-- 純Dartで98研究・導入・保存再読込と100seed時間分割の検証に成功。静的解析・Web releaseビルド成功。
-  ローカルFlutterテストはOSのlocalhost bind制約でロード前に停止し、全テストと画面・モバイル検証はCIで進める。
-  詳細・仮値・実施/未実施検証・最終配信結果は[実装記録](research-implementation.md)へ追記する。
+- 純Dartで98研究・導入・保存再読込と100seed時間分割の検証に成功。
+  GitHub CIで全499テスト・静的解析・Web release・15枚の実画面生成が成功。
+  Android APK/一時鍵release AAB、iOS Simulator/privacy/識別子の検証も成功。
+  ローカルFlutter runnerはOSのlocalhost bind制約でロード前に停止し、正式な全体検証はCIで行った。
+- 元の作業場所のコード・画像を同期し、別作業の未コミット文書と生成画像を保持する。
+  Git管理領域は書込制限のため元ブランチを保全し、独立した作業コピーでコミット・GitHub反映を行う。
+  詳細・仮値・実施/未実施検証は[実装記録](research-implementation.md)、
+  developの目視・main反映・最終の実配信結果は[PR #34の完了記録](https://github.com/yakitama5/mars-terraforming/pull/34)を参照。
