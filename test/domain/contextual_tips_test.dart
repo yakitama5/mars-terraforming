@@ -135,6 +135,14 @@ void main() {
         dismissedIds: {'paused:launch:plan-2'},
         limit: 1,
       ).first.id,
+      'requirements:plan-1',
+    );
+    expect(
+      evaluateContextualTips(
+        engine.state,
+        dismissedIds: {'paused:launch:plan-2', 'requirements:plan-1'},
+        limit: 1,
+      ).first.id,
       'parallel-city',
     );
   });
