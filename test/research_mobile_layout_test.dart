@@ -109,7 +109,7 @@ void main() {
         expect(whole.width, closeTo(safeWidth, .1));
         final viewer = tester.widget<InteractiveViewer>(getCanvas());
         expect(
-          viewer.transformationController!.value.getMaxScaleOnAxis(),
+          viewer.transformationController!.value.storage[0],
           greaterThanOrEqualTo(.85),
         );
 

@@ -129,6 +129,17 @@ void main() {
     expect(find.text('水耕栽培を解放'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(tester.widget<Opacity>(entrance).opacity, 1);
+    expect(
+      tester
+          .widget<InteractiveViewer>(
+            find.byKey(const Key('research-tree-canvas')),
+          )
+          .transformationController!
+          .value
+          .storage[0],
+      greaterThanOrEqualTo(.85),
+      reason: 'new sibling branches must not shrink the cards automatically',
+    );
     expect(find.text('水耕栽培を解放'), findsNothing);
     expect(tester.binding.hasScheduledFrame, isFalse);
     expect(tester.takeException(), isNull);
@@ -139,6 +150,60 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('narrow tree pans right into a child without fitting everything', (
+    tester,
+  ) async {
+    final engine = initial();
+    engine.state.research.add('orbital_gardens');
+    await tester.pumpWidget(
+      tree(engine, selected: 'orbital_gardens', size: const Size(320, 310)),
+    );
+    await tester.pumpAndSettle();
+    final canvas = find.byKey(const Key('research-tree-canvas'));
+    final child = find.byKey(const Key('research-node-regolith_substrate'));
+    final parent = find.byKey(const Key('research-node-orbital_gardens'));
+    expect(parent.hitTestable(), findsOneWidget);
+    expect(child.hitTestable(), findsNothing);
+    expect(
+      tester.getCenter(child).dx,
+      greaterThan(tester.getRect(canvas).right),
+    );
+    final gesture = await tester.startGesture(tester.getCenter(canvas));
+    await gesture.moveBy(const Offset(-20, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    await gesture.moveBy(const Offset(-280, 95));
+    await tester.pump(const Duration(milliseconds: 300));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(
+      child.hitTestable(),
+      findsOneWidget,
+      reason:
+          'canvas=${tester.getRect(canvas)}, child=${tester.getRect(child)}, parent=${tester.getRect(parent)}',
+    );
+    expect(
+      tester
+          .widget<InteractiveViewer>(canvas)
+          .transformationController!
+          .value
+          .storage[0],
+      greaterThanOrEqualTo(.85),
+    );
+    await tester.tap(find.byKey(const Key('research-fit')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<InteractiveViewer>(canvas)
+          .transformationController!
+          .value
+          .storage[0],
+      lessThan(.85),
+      reason:
+          'only the explicit overview operation may shrink the whole forest',
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -206,4 +271,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'field changes focus the entrance even when restored research starts midway',
+    (tester) async {
+      final original = initial();
+      original.state.research.addAll(['oxygen_pilot', 'life_support']);
+      final restored = GameEngine(GameState.fromJson(original.state.toJson()));
+      expect(restored.state.research.first, 'oxygen_pilot');
+      expect(restored.state.discoveredResearchIds.first, 'oxygen_pilot');
+      await tester.pumpWidget(tree(restored));
+      await tester.pumpAndSettle();
+
+      final materials = find.byKey(const Key('research-filter-materials'));
+      await tester.ensureVisible(materials);
+      await tester.tap(materials);
+      await tester.pumpAndSettle();
+      final entranceId = ResearchCatalog.idForCatalog('R01');
+      final entrance = find.byKey(Key('research-node-$entranceId'));
+      final canvas = find.byKey(const Key('research-tree-canvas'));
+      expect(entrance.hitTestable(), findsOneWidget);
+      final entranceCenter = tester.getRect(entrance).center;
+      final viewportCenter = tester.getRect(canvas).center;
+      expect(entranceCenter.dx, closeTo(viewportCenter.dx, 1));
+      expect(entranceCenter.dy, closeTo(viewportCenter.dy, 1));
+      expect(
+        (tester
+                    .getRect(
+                      find.byKey(const Key('research-node-oxygen_pilot')),
+                    )
+                    .center -
+                viewportCenter)
+            .distance,
+        greaterThan(50),
+        reason: 'the saved insertion order must not choose the camera target',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
