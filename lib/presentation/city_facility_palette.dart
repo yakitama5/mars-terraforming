@@ -1,7 +1,85 @@
 import 'package:flutter/material.dart';
 
 import '../domain/game_content.dart';
+import 'research_theme.dart';
 import 'strategy_widgets.dart';
+
+// Visual association with the research fields only. A district's RP, effects,
+// and unlock rules still come from GameContent and the domain state.
+ResearchField? districtResearchField(String id) => switch (id) {
+  'campus' || 'mars_lab' || 'greenhouse' => ResearchField.bio,
+  'industry' || 'spaceport' || 'mars_habitat' => ResearchField.mechanics,
+  'extractor' => ResearchField.materials,
+  'solar' => ResearchField.energy,
+  _ => null,
+};
+
+Color districtAccent(String id) =>
+    districtResearchField(id)?.color ?? const Color(0xffb7c9db);
+
+Color districtPanelTint(String id) =>
+    Color.alphaBlend(districtAccent(id).withValues(alpha: .09), strategyPanel);
+
+String districtCategoryLabel(String id) =>
+    districtResearchField(id)?.label ?? '都市基盤';
+
+class DistrictSelectionHeading extends StatelessWidget {
+  const DistrictSelectionHeading({
+    super.key,
+    required this.districtId,
+    required this.title,
+    this.fontSize = 16,
+  });
+
+  final String districtId, title;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: Key('district-selection-$districtId'),
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: districtPanelTint(districtId),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(
+        color: districtAccent(districtId).withValues(alpha: .45),
+      ),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          districtIcon(districtId),
+          color: districtAccent(districtId),
+          size: 24,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                districtCategoryLabel(districtId),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: districtAccent(districtId),
+                ),
+              ),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
 IconData districtIcon(String id) => switch (id) {
   'housing' => Icons.apartment,
@@ -66,7 +144,7 @@ class CityFacilityPalette extends StatelessWidget {
         Semantics(
           selected: district.id == selectedId,
           hint:
-              '${districtPurpose(district.id)}。基準費用${dollars(district.cost)}${lockReason(district) == null ? '' : '。${lockReason(district)}'}',
+              '${districtCategoryLabel(district.id)}。${districtPurpose(district.id)}。基準費用${dollars(district.cost)}${lockReason(district) == null ? '' : '。${lockReason(district)}'}',
           child: TextButton(
             key: Key('district-option-${district.id}'),
             onPressed: () => onSelected(district.id),
@@ -77,16 +155,25 @@ class CityFacilityPalette extends StatelessWidget {
               ),
               foregroundColor: strategyText,
               backgroundColor: district.id == selectedId
-                  ? strategySelected
-                  : strategyPanel,
+                  ? Color.alphaBlend(
+                      districtAccent(district.id).withValues(alpha: .14),
+                      districtPanelTint(district.id),
+                    )
+                  : districtPanelTint(district.id),
               side: BorderSide(
-                color: district.id == selectedId ? strategyBlue : strategyLine,
+                color: districtAccent(district.id)
+                    .withValues(alpha: district.id == selectedId ? 1 : .32),
+                width: district.id == selectedId ? 1.5 : 1,
               ),
               alignment: Alignment.centerLeft,
             ),
             child: Row(
               children: [
-                Icon(districtIcon(district.id), size: 25, color: strategyBlue),
+                Icon(
+                  districtIcon(district.id),
+                  size: 25,
+                  color: districtAccent(district.id),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -95,25 +182,56 @@ class CityFacilityPalette extends StatelessWidget {
                       Text(
                         district.name,
                         semanticsLabel: '${district.name}を選ぶ',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       ExcludeSemantics(
-                        child: Text(
-                          '${districtPurpose(district.id)} · ${dollars(district.cost)}〜',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: strategyMuted,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              districtCategoryLabel(district.id),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: districtAccent(district.id),
+                              ),
+                            ),
+                            Text(
+                              districtPurpose(district.id),
+                              maxLines: compact ? 1 : 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: strategyMuted,
+                              ),
+                            ),
+                            Text(
+                              '${dollars(district.cost)}〜',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: strategyMuted,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
                 if (district.id == selectedId)
-                  const Icon(Icons.check_circle, size: 18, color: strategyBlue)
+                  Icon(
+                    Icons.check_circle,
+                    size: 18,
+                    color: districtAccent(district.id),
+                  )
                 else if (lockReason(district) != null)
                   const Icon(
                     Icons.lock_outline,
