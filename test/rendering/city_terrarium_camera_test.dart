@@ -9,6 +9,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 CityTerrain _terrainFor(CityDefinition city) => CityTerrain(
   earth: city.planet == 'earth',
+  moon: city.planet == 'moon',
   columns: city.width,
   rows: city.height,
   plots: [

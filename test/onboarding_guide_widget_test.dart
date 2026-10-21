@@ -108,6 +108,9 @@ void main() {
         'first_district',
         'urban_planning',
         'first_kit',
+        'first_launch',
+        'moon_base',
+        'mars_probe',
         'first_landing',
         'first_habitat',
       ]) {
@@ -136,21 +139,21 @@ void main() {
     });
   }
 
-  testWidgets('wide guide names the six-step instructions beside progress', (
+  testWidgets('wide guide names the nine-step instructions beside progress', (
     tester,
   ) async {
     final controller = GameController(_GuideSave(), now: () => epoch);
     await controller.initialize(startTimer: false);
     addTearDown(controller.dispose);
     await _mount(tester, controller, [], const Size(844, 390), cardWidth: 560);
-    expect(find.text('6工程の手引き'), findsOneWidget);
+    expect(find.text('9工程の手引き'), findsOneWidget);
     expect(
-      tester.getCenter(find.text('6工程の手引き')).dy,
-      closeTo(tester.getCenter(find.text('最初の1時間 · 0/6達成')).dy, 1),
+      tester.getCenter(find.text('9工程の手引き')).dy,
+      closeTo(tester.getCenter(find.text('最初の1時間 · 0/9達成')).dy, 1),
     );
     await tester.tap(find.byKey(const Key('guide-roadmap')));
     await tester.pumpAndSettle();
-    expect(find.text('最初の1時間の手引き · 0/6達成'), findsOneWidget);
+    expect(find.text('宇宙開発の手引き · 0/9達成'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -268,7 +271,11 @@ void main() {
         controller.state
           ..money = 100000
           ..earthLevel = 2
-          ..research.addAll(['life_support', 'urban_planning']);
+          ..research.addAll(['life_support', 'urban_planning'])
+          ..achievements.add('first_launch');
+        if (taskId != 'habitat_kit') {
+          controller.state.achievements.add('mars_route_open');
+        }
         if (taskId == 'mars_delivery') controller.state.earthKits = 1;
         if (taskId == 'district_mars_habitat') {
           controller.state
@@ -326,6 +333,7 @@ void main() {
     addTearDown(controller.dispose);
     controller.state.money = 100;
     controller.state.research.add('life_support');
+    controller.state.achievements.addAll(['first_launch', 'mars_route_open']);
     final opened = <String>[];
     await _mount(tester, controller, opened, const Size(844, 390));
     expect(find.textContaining('の資金を準備'), findsOneWidget);
@@ -351,11 +359,11 @@ void main() {
         find.byKey(const Key('onboarding-progress')),
       );
       expect(bar.value, 1);
-      expect(bar.semanticsLabel, contains('6/6達成'));
+      expect(bar.semanticsLabel, contains('9/9達成'));
       for (var visit = 0; visit < 2; visit++) {
         await tester.tap(find.byKey(const Key('guide-roadmap')));
         await tester.pumpAndSettle();
-        expect(find.text('最初の1時間の手引き · 6/6達成'), findsOneWidget);
+        expect(find.text('宇宙開発の手引き · 9/9達成'), findsOneWidget);
         expect(
           tester.widget<MissionDialogue>(find.byType(MissionDialogue)).text,
           contains('ここからは、あなたの計画です。'),

@@ -18,7 +18,7 @@ void main() {
   }
 
   test(
-    'five finite cities use symmetric six-neighbor hexes without wrapping',
+    'six finite cities use symmetric six-neighbor hexes without wrapping',
     () {
       expect(
         GameContent.cities.values.where((c) => c.planet == 'earth'),
@@ -27,6 +27,10 @@ void main() {
       expect(
         GameContent.cities.values.where((c) => c.planet == 'mars'),
         hasLength(3),
+      );
+      expect(
+        GameContent.cities.values.where((c) => c.planet == 'moon'),
+        hasLength(1),
       );
       for (final city in GameContent.cities.values) {
         expect(city.terrain, hasLength(city.plotCount));
@@ -90,7 +94,7 @@ void main() {
       expect(game.enqueueDistrict('earth_delta', 0, 'mars_habitat'), isNotNull);
       expect(
         game.enqueueDistrict('mars_arcadia', 0, 'extractor'),
-        contains('初回'),
+        contains('火星探査機'),
       );
       game.state.achievements.add('first_landing');
       game.state.research.add('local_resources');
@@ -342,13 +346,17 @@ void main() {
     );
     expect(one.state.marsHabitats, 2);
     expect(one.state.marsResidents, 48);
-    expect(one.state.claimedRewards, hasLength(1));
+    final expectedClaims = {
+      '${one.state.worldId}:achievement:first_launch',
+      '${one.state.worldId}:achievement:underground_habitat',
+    };
+    expect(one.state.claimedRewards, expectedClaims);
     final beforeBackwards = split.state.simulatedMs;
     split.advanceTo(epoch.subtract(const Duration(days: 1)));
     expect(split.state.simulatedMs, beforeBackwards);
     split.advanceTo(epoch);
     expect(split.state.marsHabitats, 2);
-    expect(split.state.claimedRewards, hasLength(1));
+    expect(split.state.claimedRewards, expectedClaims);
   });
 
   test('district upkeep suspends with its facility and allows financial rebuilding', () {

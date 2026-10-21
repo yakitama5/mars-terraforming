@@ -70,6 +70,7 @@ class PlanForecast {
     required this.marsResidents,
     required this.marsResidentsDelta,
     required this.earthKits,
+    required this.moonKits,
     required this.marsKits,
     required this.completedResearch,
     required this.newAchievements,
@@ -83,7 +84,7 @@ class PlanForecast {
       totalDistrictLevels,
       districtLevelDelta;
   final int population, populationDelta, marsResidents, marsResidentsDelta;
-  final int earthKits, marsKits;
+  final int earthKits, moonKits, marsKits;
   final Set<String> completedResearch, newAchievements;
   final List<ForecastCompletion> completions;
   final List<ForecastFacility> facilities;
@@ -138,6 +139,7 @@ PlanForecast forecastPlans(GameState state, Duration horizon) {
     marsResidents: copy.marsResidents,
     marsResidentsDelta: copy.marsResidents - state.marsResidents,
     earthKits: copy.earthKits,
+    moonKits: copy.moonKits,
     marsKits: copy.marsKits,
     completedResearch: Set.unmodifiable(
       copy.research.difference(state.research),

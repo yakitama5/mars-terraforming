@@ -37,6 +37,7 @@ void main() {
         engine.state.researchPointUnits = 0;
         engine.enqueue('life_support');
         engine.enqueue('factory_contract', repeats: 3);
+        engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
         return engine.enqueue('mars_delivery');
       });
       final before = jsonEncode(controller.state.toJson());

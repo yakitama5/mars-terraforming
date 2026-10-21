@@ -150,7 +150,7 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
                   : branch
                   ? game.awaitingHabitatChoice
                         ? '輸送・居住で方針を決めると、条件がそろった建設が始まります。'
-                        : '先に居住キットを製造し、地球から火星への輸送を完了してください。'
+                        : '月面基地から火星航路を開き、居住キットの火星輸送を完了してください。'
                   : 'この設備が稼働中なら、条件がそろうと自動で始まります。同じ設備の後続は待ち、他の設備は独立して進みます。'}',
           actionLabel: staff
               ? '人員を配分'
@@ -216,6 +216,28 @@ List<ContextualTip> _contextualTipCandidates(GameState game) {
         operationsSection: ContextualTipOperationsSection.transport,
         priority: 85,
         facilityId: 'mars',
+      ),
+    );
+  }
+  if (game.planetUnlocked('moon') && !game.planetUnlocked('mars')) {
+    final baseComplete =
+        game.districtCount('moon_outpost') > 0 &&
+        game.districtCount('moon_spaceport') > 0;
+    tips.add(
+      ContextualTip(
+        id: baseComplete ? 'moon-mars-probe' : 'moon-development',
+        title: baseComplete ? '月面基地から火星を探査できます' : '月面開発を始められます',
+        detail: baseComplete
+            ? '輸送・居住で火星探査機を予約します。打ち上げが完了すると、惑星マップに火星が現れます。'
+            : 'キットを月へ輸送し、月面拠点と打ち上げ基地を建設しましょう。月の発電・資源採取は輸送費の削減にもつながります。',
+        actionLabel: baseComplete ? '火星探査を開く' : '月面を開く',
+        destination: baseComplete
+            ? ContextualTipDestination.operations
+            : ContextualTipDestination.city,
+        operationsSection: ContextualTipOperationsSection.transport,
+        cityId: baseComplete ? null : 'moon_south_pole',
+        taskId: baseComplete ? 'mars_probe' : null,
+        priority: 30,
       ),
     );
   }

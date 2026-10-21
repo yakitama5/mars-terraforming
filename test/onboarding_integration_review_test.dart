@@ -109,7 +109,7 @@ void main() {
       await tester.tap(find.byKey(const Key('open-guidance')));
       await tester.pumpAndSettle();
       await _tapVisible(tester, find.byKey(const Key('guide-roadmap')));
-      expect(find.textContaining('最初の1時間の手引き'), findsOneWidget);
+      expect(find.textContaining('宇宙開発の手引き'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

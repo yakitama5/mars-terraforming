@@ -156,6 +156,7 @@ void main() {
     final engine = controller.engine!;
     engine.state.money = 50000;
     engine.state.research.add('cargo_packaging');
+    engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
     expect(
       engine.enqueueDevelopment('cargo_packaging', cityId: 'earth_delta'),
       isNull,

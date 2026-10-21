@@ -207,7 +207,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                     icon: const Icon(Icons.public, size: 19),
                   ),
                 Text(
-                  city.planet == 'earth' ? '地球 / ' : '火星 / ',
+                  '${planetLabel(city.planet)} / ',
                   style: const TextStyle(color: strategyMuted, fontSize: 12),
                 ),
                 Expanded(
@@ -217,7 +217,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                       value: city.id,
                       isExpanded: true,
                       items: [
-                        for (final item in GameContent.cities.values)
+                        for (final item in GameContent.cities.values.where(
+                          (item) => game.planetUnlocked(item.planet),
+                        ))
                           DropdownMenuItem(
                             value: item.id,
                             child: Text(
@@ -259,6 +261,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 cityId: city.id,
                 cityName: game.cityName(city.id),
                 earth: city.planet == 'earth',
+                moon: city.planet == 'moon',
                 columns: city.width,
                 rows: city.height,
                 plots: scenePlotsForCity(game, city),
@@ -322,8 +325,11 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         city.requiredResearch,
       );
     }
-    final research = definition.requiredResearch;
-    if (research != null && !game.research.contains(research)) {
+    final research = [
+      ?definition.requiredResearch,
+      ...definition.prerequisites,
+    ].where((id) => !game.research.contains(id)).firstOrNull;
+    if (research != null) {
       return _discoverySafeReason(
         '前提研究：${GameContent.tasks[research]!.name}',
         research,
@@ -359,6 +365,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     final candidates = [
       ?city.requiredResearch,
       ?definition.requiredResearch,
+      ...definition.prerequisites,
       if (existing != null && existing.level < definition.maxLevel)
         definition.researchForUpgrade(existing.level + 1),
     ];
@@ -1325,8 +1332,8 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   ),
                 ),
               if (preview.isValid &&
-                  city.planet == 'mars' &&
-                  game.marsKits == 0)
+                  ((city.planet == 'mars' && game.marsKits == 0) ||
+                      (city.planet == 'moon' && game.moonKits == 0)))
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Text(

@@ -117,7 +117,7 @@ void main() {
         expect(state.plans.single.taskId, isNot(technology('B09')));
         expect(state.researchPointsPerMinute, 0);
         final migrated = state.toJson();
-        expect(migrated['contentVersion'], 'district-8');
+        expect(migrated['contentVersion'], GameContent.version);
         expect(migrated['discoveredResearch'], containsAll(historicalRoots));
         expect((await repository().load()).data, migrated);
 

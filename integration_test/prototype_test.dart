@@ -164,6 +164,88 @@ void main() {
         controller.state.plans.where((plan) => plan.taskId == 'life_support'),
         hasLength(1),
       );
+      // Open each destination through actual public commands. The moon is a
+      // developed staging base before a probe opens the Mars route.
+      await controller.command((engine) {
+        void command(String? reason) {
+          if (reason != null) throw StateError(reason);
+        }
+
+        void until(bool Function() condition) {
+          for (var event = 0; !condition(); event++) {
+            if (event > 500) throw StateError('月面開発の検証が進みません');
+            final running = engine.state.plans.where(
+              (plan) =>
+                  plan.status == 'running' &&
+                  engine.state.facilities[plan.definition.facilityId] == true,
+            );
+            if (running.isEmpty) throw StateError('月面開発が停止しました');
+            final next = running
+                .map((plan) => plan.remainingMs)
+                .reduce((a, b) => a < b ? a : b);
+            engine.advanceBy(Duration(milliseconds: next));
+          }
+        }
+
+        void job(String id) {
+          command(engine.enqueue(id));
+          final plan = engine.state.plans.last;
+          final ahead = engine.state
+              .upcomingPlansFor(plan.definition.facilityId)
+              .where((other) => other.id != plan.id)
+              .firstOrNull;
+          if (ahead != null) {
+            command(
+              engine.reorderPlan(
+                plan.id,
+                relativeToPlanId: ahead.id,
+                before: true,
+              ),
+            );
+          }
+          until(() => plan.isFinished);
+        }
+
+        command(engine.enqueue('factory_contract', repeats: null));
+        job('launch_contract');
+        expect(engine.state.planetUnlocked('moon'), isTrue);
+        expect(engine.state.planetUnlocked('mars'), isFalse);
+        for (var supply = 0; supply < 2; supply++) {
+          job('habitat_kit');
+          job('moon_delivery');
+        }
+        for (final (plot, district) in [
+          (2, 'moon_outpost'),
+          (3, 'moon_spaceport'),
+        ]) {
+          command(engine.enqueueDistrict('moon_south_pole', plot, district));
+          final plan = engine.state.plans.last;
+          until(() => plan.isFinished);
+        }
+        return null;
+      });
+      await tapKey('navigation-0');
+      await tapKey('select-planet-moon');
+      await sceneReady();
+      await capture('space-ios-moon');
+      await tapKey('open-city');
+      await sceneReady();
+      await capture('space-ios-moon-base');
+      await controller.command((engine) {
+        final reason = engine.enqueue('mars_probe');
+        if (reason != null) return reason;
+        final probe = engine.state.plans.last;
+        engine.advanceBy(const Duration(minutes: 15));
+        expect(probe.isFinished, isTrue);
+        final contract = engine.state.currentPlanFor('factory')!;
+        final cancel = engine.cancelQueued(contract.id);
+        if (cancel != null) return cancel;
+        engine.advanceBy(Duration(milliseconds: contract.remainingMs));
+        return null;
+      });
+      expect(controller.state.planetUnlocked('mars'), isTrue);
+      await tapKey('navigation-0');
+      await tapKey('select-planet-earth');
       await tapKey('navigation-3');
       await controller.command((engine) {
         engine.enqueue('factory_contract', repeats: null);
@@ -174,7 +256,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       final factoryRun = controller.state.currentPlanFor('factory')!;
       final kit = controller.state.plans.firstWhere(
-        (p) => p.taskId == 'habitat_kit',
+        (p) => p.taskId == 'habitat_kit' && !p.isFinished,
       );
       final move = find.byKey(Key('queue-up-${kit.id}'));
       await tester.scrollUntilVisible(
@@ -512,6 +594,49 @@ void main() {
       expect(controller.state.researchers, 5);
       await tapKey('navigation-4');
       await capture('agency-ios-staff');
+      // A separate late-game visual fixture supplies only knowledge and budget;
+      // construction, its queue occupation and the operating discount are real.
+      await controller.command((engine) {
+        engine.state.research.addAll([
+          'orbital_assembly',
+          'composite_shielding',
+        ]);
+        engine.state.money = 500000;
+        final plot = List.generate(25, (index) => index).firstWhere(
+          (index) =>
+              engine.state.districtAt('earth_delta', index) == null &&
+              engine.state.districtPlanAt('earth_delta', index) == null,
+        );
+        final reason = engine.enqueueDistrict(
+          'earth_delta',
+          plot,
+          'space_elevator',
+        );
+        if (reason != null) return reason;
+        final elevator = engine.state.plans.last;
+        final ahead = engine.state
+            .upcomingPlansFor('factory')
+            .where((plan) => plan.id != elevator.id)
+            .firstOrNull;
+        if (ahead != null) {
+          final move = engine.reorderPlan(
+            elevator.id,
+            relativeToPlanId: ahead.id,
+            before: true,
+          );
+          if (move != null) return move;
+        }
+        engine.advanceBy(const Duration(hours: 36));
+        expect(elevator.isFinished, isTrue);
+        expect(engine.state.districtCount('space_elevator'), 1);
+        expect(engine.state.launchCostReductionPercent, 50);
+        return null;
+      });
+      await tapKey('navigation-0');
+      await tapKey('select-planet-earth');
+      await tapKey('navigation-1');
+      await sceneReady();
+      await capture('space-ios-elevator');
       await controller.save();
       final resumed = GameController(FileSaveStore(directory));
       addTearDown(resumed.dispose);
@@ -534,6 +659,8 @@ void main() {
       expect(resumed.state.researchers, 5);
       expect(resumed.state.partnershipChoices['research_exchange'], 'funding');
       expect(resumed.state.claimedRewards, controller.state.claimedRewards);
+      expect(resumed.state.districtCount('space_elevator'), 1);
+      expect(resumed.state.launchCostReductionPercent, 50);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

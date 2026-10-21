@@ -253,6 +253,7 @@ void _verifyPersonnelAndBudget() {
   // The new precise-landing vehicle must open the same settlement gate as the
   // basic cargo route when it is used for the first actual delivered kit.
   final freight = _fresh();
+  freight.state.achievements.add('mars_route_open');
   final landing = _id('M09');
   freight.state.research.add(landing);
   _build(freight, landing);

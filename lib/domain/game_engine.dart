@@ -93,6 +93,14 @@ class GameEngine {
       return 'まだ研究の手掛かりが見つかっていません';
     }
     if (repeats != null && repeats < 1) return '反復回数は1回以上を指定してください';
+    if (task.id == 'mars_probe' &&
+        (repeats != 1 ||
+            state.achievements.contains('mars_route_open') ||
+            state.plans.any(
+              (plan) => plan.taskId == task.id && !plan.isFinished,
+            ))) {
+      return '火星航路の探査は1回だけ予約・実施できます';
+    }
     if (state.activePlanCount >= GameContent.maxActivePlans) {
       return '予約は最大${GameContent.maxActivePlans}件です';
     }
@@ -608,6 +616,8 @@ class GameEngine {
     bool includeResearchPoints = true,
   }) {
     final task = plan.definition;
+    final spaceReason = state.spaceTaskLockReason(task);
+    if (spaceReason != null) return spaceReason;
     if (task.facilityId == 'lab' && !task.unique && state.labResearchers == 0) {
       return '人員待ち：研究者1名以上が必要';
     }
@@ -750,9 +760,15 @@ class GameEngine {
         task.inputResource == 'earthKits') {
       _achievement('first_landing', reward: 0);
     }
+    if (task.usesLaunchCost) _achievement('first_launch', reward: 0);
+    if (task.outputResource == 'moonKits') {
+      _achievement('moon_landing', reward: 0);
+    }
     switch (task.id) {
       case 'train_specialists':
         state.specialistCount += GameContent.specialistTrainingCount;
+      case 'mars_probe':
+        _achievement('mars_route_open', reward: 0);
       case 'earth_expansion':
         state.earthLevel++;
         state.population += GameContent.residentsPerDistrict;
@@ -796,7 +812,7 @@ class GameEngine {
       }
     }
     // Provisional priority. Tax collection never stops and there is no debt.
-    for (final id in ['launch', 'factory', 'lab', 'mars']) {
+    for (final id in ['launch', 'factory', 'lab', 'mars', 'moon']) {
       if (state.netPerMinute >= 0) break;
       if (state.facilities[id]!) {
         state.facilities[id] = false;
@@ -813,6 +829,7 @@ class GameEngine {
 
   int _resource(String id) => switch (id) {
     'earthKits' => state.earthKits,
+    'moonKits' => state.moonKits,
     'marsKits' => state.marsKits,
     _ => throw ArgumentError.value(id, 'resource'),
   };
@@ -820,6 +837,8 @@ class GameEngine {
     switch (id) {
       case 'earthKits':
         state.earthKits += amount;
+      case 'moonKits':
+        state.moonKits += amount;
       case 'marsKits':
         state.marsKits += amount;
       default:

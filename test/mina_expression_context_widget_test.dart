@@ -131,6 +131,7 @@ void main() {
       final lowFunds = fresh();
       lowFunds.state.money = 0;
       lowFunds.state.research.add('life_support');
+      lowFunds.state.achievements.addAll(['first_launch', 'mars_route_open']);
       final paused = fresh();
       paused.state.researchPointUnits = 0;
       paused.enqueue('life_support');
@@ -138,6 +139,7 @@ void main() {
       final delivery = fresh();
       delivery.state.research.addAll({'life_support', 'urban_planning'});
       delivery.state.earthKits = 1;
+      delivery.state.achievements.addAll(['first_launch', 'mars_route_open']);
       final landed = fresh();
       landed.state.research.addAll({'life_support', 'urban_planning'});
       landed.state.achievements.add('first_landing');
