@@ -68,7 +68,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('district-option-moon_outpost')),
-        findsOneWidget,
+        findsNothing,
       );
       await tester.scrollUntilVisible(
         find.byKey(const Key('district-option-moon_spaceport')),
@@ -82,8 +82,20 @@ void main() {
         find.byKey(const Key('district-option-moon_spaceport')),
         findsOneWidget,
       );
+      await controller.command(
+        (engine) => engine.unlockResearch('life_support'),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(const Key('city-facility-palette')),
+        const Offset(0, 600),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('district-option-moon_outpost')),
+        findsOneWidget,
+      );
       await controller.command((engine) {
-        engine.unlockResearch('life_support');
         engine.state.earthKits = 2;
         engine.enqueue('moon_delivery', repeats: 2);
         engine.advanceBy(const Duration(minutes: 5));

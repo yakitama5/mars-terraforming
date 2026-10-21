@@ -63,7 +63,13 @@ class _CityDevelopmentState extends State<CityDevelopment> {
   };
   List<DistrictDefinition> get available => GameContent.districts.values
       .where((district) => district.planet == city.planet)
+      .where((district) => game.districtResearchUnlocked(district.id))
       .toList();
+
+  String? get _newDistrict => available
+      .where((district) => district.id == selectedDistrict)
+      .firstOrNull
+      ?.id;
 
   @override
   void initState() {
@@ -165,15 +171,21 @@ class _CityDevelopmentState extends State<CityDevelopment> {
       }
       return _tutorialPlacementInspector();
     }
-    return choosingFacility
-        ? CityFacilityPalette(
-            districts: available,
-            selectedId: selectedDistrict,
-            onSelected: _chooseFacility,
-            lockReason: _facilityLockReason,
-          )
+    final inspectingWork =
+        hasPlotSelection &&
+        (game.districtAt(city.id, selectedPlot) != null ||
+            game.districtPlanAt(city.id, selectedPlot) != null);
+    return choosingFacility || (!inspectingWork && _newDistrict == null)
+        ? _facilityPalette()
         : _inspector();
   }
+
+  Widget _facilityPalette() => CityFacilityPalette(
+    districts: available,
+    selectedId: _newDistrict,
+    onSelected: _chooseFacility,
+    lockReason: _facilityLockReason,
+  );
 
   Widget _overview() {
     final development = game.cityDevelopment(city.id);
@@ -325,10 +337,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         city.requiredResearch,
       );
     }
-    final research = [
-      ?definition.requiredResearch,
-      ...definition.prerequisites,
-    ].where((id) => !game.research.contains(id)).firstOrNull;
+    final research = definition.requiredResearchIds
+        .where((id) => !game.research.contains(id))
+        .firstOrNull;
     if (research != null) {
       return _discoverySafeReason(
         '前提研究：${GameContent.tasks[research]!.name}',
@@ -364,15 +375,14 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     if (_needsFirstDelivery) return null;
     final candidates = [
       ?city.requiredResearch,
-      ?definition.requiredResearch,
-      ...definition.prerequisites,
+      ...definition.requiredResearchIds,
       if (existing != null && existing.level < definition.maxLevel)
         definition.researchForUpgrade(existing.level + 1),
     ];
     return candidates.where((id) => !game.research.contains(id)).firstOrNull;
   }
 
-  Set<int> get _buildablePlots => !placementMode || selectedDistrict == null
+  Set<int> get _buildablePlots => !placementMode || _newDistrict == null
       ? const {}
       : {
           for (var index = 0; index < city.plotCount; index++)
@@ -387,6 +397,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
 
   void _chooseFacility(String id) => setState(() {
     if (widget.guidedFirstBuild && id != 'housing') return;
+    if (!available.any((district) => district.id == id)) return;
     selectedDistrict = id;
     choosingFacility = false;
     placementMode = true;
@@ -436,8 +447,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     final id =
         existing?.districtId ??
         plan?.definition.districtId ??
-        selectedDistrict ??
-        available.first.id;
+        _newDistrict ??
+        available.firstOrNull?.id;
+    if (id == null) return _facilityPalette();
     final definition = GameContent.districts[id]!;
     final maxLevel = existing != null && existing.level >= definition.maxLevel;
     final requiredResearch = _requiredResearch(definition, existing);
@@ -1029,9 +1041,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     final selected =
         existing?.districtId ??
         reserved?.definition.districtId ??
-        (districts.any((item) => item.id == selectedDistrict)
-            ? selectedDistrict!
-            : districts.first.id);
+        _newDistrict ??
+        districts.firstOrNull?.id;
+    if (selected == null) return _facilityPalette();
     final definition = GameContent.districts[selected]!;
     final maxLevel = existing != null && existing.level >= definition.maxLevel;
     final requiredResearch = _requiredResearch(definition, existing);

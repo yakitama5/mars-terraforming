@@ -1511,6 +1511,10 @@ class DistrictDefinition {
       maxLevel,
       residents;
   final List<String> allowedTerrain;
+  Iterable<String> get requiredResearchIds => [
+    ?requiredResearch,
+    ...prerequisites,
+  ];
   String get operatingFacilityId => switch (id) {
     'campus' || 'mars_lab' => 'lab',
     'spaceport' || 'space_elevator' => 'launch',

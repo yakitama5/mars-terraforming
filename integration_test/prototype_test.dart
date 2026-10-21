@@ -10,6 +10,7 @@ import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/infrastructure/file_save_store.dart';
 import 'package:mars_terraforming/main.dart';
+import 'package:mars_terraforming/presentation/city_facility_palette.dart';
 import 'package:mars_terraforming/rendering/city_scene.dart';
 
 void main() {
@@ -321,6 +322,14 @@ void main() {
       // Choose a district, then compare real tiles before confirming placement.
       await tapKey('navigation-1');
       await sceneReady();
+      expect(
+        tester
+            .widget<CityFacilityPalette>(find.byType(CityFacilityPalette))
+            .districts
+            .map((district) => district.id),
+        ['housing', 'solar'],
+      );
+      await capture('facility-unlocks-ios-initial');
       await tapKey('district-option-housing');
       // Tap actual projected ground coordinates, not an accessibility label.
       await tester.tap(find.byTooltip('都市全体を表示'));
@@ -438,6 +447,18 @@ void main() {
       );
       await capture('terrain-ios-upgraded');
       await tapKey('city-change-facility');
+      expect(
+        tester
+            .widget<CityFacilityPalette>(find.byType(CityFacilityPalette))
+            .districts
+            .map((district) => district.id),
+        containsAll(['campus', 'industry']),
+      );
+      expect(
+        find.byKey(const Key('district-option-space_elevator')),
+        findsNothing,
+      );
+      await capture('facility-unlocks-ios-urban');
       await tapKey('district-option-campus');
       await tapKey('plot-earth_delta-7');
       final estimate = controller.state.districtPreview(
