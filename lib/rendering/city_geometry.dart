@@ -86,6 +86,34 @@ class CityTerrain {
     return vm.Vector3(point.x, height(point.x, point.z), point.z);
   }
 
+  /// Shared physical pads for meshes, hit targets and construction previews.
+  vm.Vector3 buildingCenter(
+    int index,
+    int slotIndex, {
+    bool occupiesWholePlot = false,
+  }) {
+    final c = center(index);
+    final x =
+        c.x +
+        (occupiesWholePlot
+            ? 0
+            : slotIndex == 0
+            ? -.40
+            : .40);
+    return surfacePoint(x, c.z, offset: .035);
+  }
+
+  vm.Vector3 legacyBuildingCenter(int index, {bool baseLab = false}) {
+    if (baseLab) return surfacePoint(1.05, 5.72, offset: .04);
+    final angle = -.94 + (index % 12) * .171;
+    final radius = landRadius - .70 - (index ~/ 12) * .85;
+    return surfacePoint(
+      math.sin(angle) * radius,
+      -math.cos(angle) * radius,
+      offset: .04,
+    );
+  }
+
   List<vm.Vector3> boundary(int index) {
     final point = center(index);
     return [

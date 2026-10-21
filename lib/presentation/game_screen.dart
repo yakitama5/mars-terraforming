@@ -52,6 +52,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   int agencySection = 0;
   String cityId = 'earth_delta';
   String? researchId;
+  String? mapBuildingId;
+  int mapBuildingRequest = 0;
   final researchScroll = ScrollController(keepScrollOffset: false);
   InvestmentCandidate? savedInvestment;
   final facilityKeys = {
@@ -148,6 +150,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                           detail: _planetDetails(),
                         ),
                         1 => CityDevelopment(
+                          key: ValueKey('city-development-$mapBuildingRequest'),
                           controller: controller,
                           renderScene:
                               widget.renderScene && widget.sceneBuilder == null,
@@ -157,6 +160,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                             tab = 3;
                           }),
                           cityId: cityId,
+                          initialMapBuildingId: mapBuildingId,
                           onCityChanged: _selectCity,
                           savedInvestment: savedInvestment,
                           onSaveInvestment: (candidate) => setState(() {
@@ -273,6 +277,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     key: Key('navigation-$index'),
                     onPressed: () => setState(() {
                       if (index == 2 && tab != 2) researchId = null;
+                      if (index != 1) mapBuildingId = null;
                       tab = index;
                     }),
                     style: TextButton.styleFrom(
@@ -307,21 +312,43 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     if (!game.planetUnlocked(GameContent.cities[id]!.planet)) return;
     cityId = id;
     planet = GameContent.cities[id]!.planet;
+    mapBuildingId = null;
+  });
+
+  void _openMapBuilding(String technologyId, String targetCity) => setState(() {
+    cityId = targetCity;
+    planet = GameContent.cities[targetCity]!.planet;
+    mapBuildingId = technologyId;
+    mapBuildingRequest++;
+    tab = 1;
   });
 
   int _cityDevelopment(CityDefinition city) {
     final placed = game.districts.values
         .where((district) => district.cityId == city.id)
         .fold(0, (sum, district) => sum + district.level);
-    if (city.id == 'earth_delta') return placed + game.earthLevel;
+    final buildings = game
+        .cityBuildings(city.id)
+        .where(
+          (building) =>
+              building.technologyId != 'base_lab' &&
+              !building.legacySite &&
+              building.plotIndex >= 0 &&
+              !building.underConstruction,
+        )
+        .map((building) => building.id)
+        .toSet()
+        .length;
+    final developed = placed + buildings;
+    if (city.id == 'earth_delta') return developed + game.earthLevel;
     if (city.id == 'mars_arcadia') {
       final locatedHabitats = game.districts.values
           .where((district) => district.districtId == 'mars_habitat')
           .length;
-      return placed +
+      return developed +
           (game.marsHabitats - locatedHabitats).clamp(0, game.marsHabitats);
     }
-    return placed;
+    return developed;
   }
 
   Widget _world() => Stack(
@@ -843,11 +870,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   icon: const Icon(Icons.view_timeline_outlined, size: 17),
                   label: const Text('研究の予約を確認'),
                 ),
+              if (researched &&
+                  GameContent.mapBuildingDefinitions.containsKey(id))
+                FilledButton.tonalIcon(
+                  key: Key('research-map-building-$id'),
+                  onPressed: () {
+                    final definition = GameContent.mapBuildingDefinitions[id]!;
+                    final city = GameContent.cities.values
+                        .where(
+                          (city) =>
+                              definition.allowedPlanets.contains(city.planet) &&
+                              game.cityUnlocked(city.id),
+                        )
+                        .firstOrNull;
+                    if (city != null) {
+                      _openMapBuilding(id, city.id);
+                    } else {
+                      setState(() {
+                        tab = 3;
+                        facilityTab = 4;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.place_outlined, size: 17),
+                  label: const Text('解放した施設を地図で建設'),
+                ),
               TextButton.icon(
                 key: const Key('research-parallel-city'),
                 onPressed: () => setState(() {
                   cityId = 'earth_delta';
                   planet = 'earth';
+                  mapBuildingId = null;
                   tab = 1;
                 }),
                 icon: const Icon(Icons.location_city_outlined, size: 17),
@@ -1012,6 +1065,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ResearchDevelopments(
                 controller: controller,
                 onReserveOperation: _reserve,
+                onOpenMap: _openMapBuilding,
               ),
             ],
             _ => _journal(),
@@ -1527,7 +1581,18 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     builder: (_) => CompletionCenter(
       controller: controller,
       onOpen: (notice) => setState(() {
-        if (notice.cityId != null) {
+        final plan = game.plans
+            .where((plan) => plan.id == notice.planId)
+            .firstOrNull;
+        final instanceId = plan?.buildingInstanceId;
+        if (instanceId != null) {
+          cityId =
+              game.developmentCityIds[instanceId] ?? plan!.developmentCityId!;
+          planet = GameContent.cities[cityId]!.planet;
+          mapBuildingId = game.developmentTechnologyId(instanceId);
+          mapBuildingRequest++;
+          tab = 1;
+        } else if (notice.cityId != null) {
           cityId = notice.cityId!;
           planet = GameContent.cities[cityId]!.planet;
           tab = 1;

@@ -63,11 +63,11 @@ void main() {
     tester,
   ) async {
     final controller = await initialize(_DevelopmentSave());
-    controller.state.research.add('orbital_gardens');
+    controller.state.research.add('algal_cultivation');
     await tester.pumpWidget(panel(controller, []));
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const Key('development-orbital_gardens')),
+      find.byKey(const Key('development-algal_cultivation')),
       findsOneWidget,
     );
     final hidden = ResearchCatalog.byCatalogId('M12')!;
@@ -82,16 +82,16 @@ void main() {
     (tester) async {
       final repository = _DevelopmentSave();
       final controller = await initialize(repository);
-      controller.state.research.add('orbital_gardens');
+      controller.state.research.add('algal_cultivation');
       final operations = <String>[];
       await tester.pumpWidget(panel(controller, operations));
       await tester.pumpAndSettle();
       await tap(
         tester,
-        find.byKey(const Key('build-development-orbital_gardens')),
+        find.byKey(const Key('build-development-algal_cultivation')),
       );
       final plan = controller.state.plans.singleWhere(
-        (plan) => plan.definition.developmentId == 'orbital_gardens',
+        (plan) => plan.definition.developmentId == 'algal_cultivation',
       );
       expect(plan.developmentCityId, 'earth_delta');
       expect(controller.state.developments, isEmpty);
@@ -99,43 +99,79 @@ void main() {
         duration: Duration(milliseconds: plan.remainingMs),
       );
       await tester.pumpAndSettle();
-      expect(controller.state.developments, contains('orbital_gardens'));
-      expect(controller.state.developmentEnabled['orbital_gardens'], isFalse);
+      expect(controller.state.developments, contains('algal_cultivation'));
+      expect(controller.state.developmentEnabled['algal_cultivation'], isFalse);
       expect(controller.state.developmentWorkers, 0);
       expect(
-        controller.state.developmentCityIds['orbital_gardens'],
+        controller.state.developmentCityIds['algal_cultivation'],
         'earth_delta',
       );
       await tap(
         tester,
-        find.byKey(const Key('enable-development-orbital_gardens')),
+        find.byKey(const Key('enable-development-algal_cultivation')),
       );
       expect(
-        controller.state.isDevelopmentOperational('orbital_gardens'),
+        controller.state.isDevelopmentOperational('algal_cultivation'),
         isTrue,
       );
       expect(controller.state.developmentWorkers, 1);
       final researchers = controller.state.researchers;
       await tap(
         tester,
-        find.byKey(const Key('development-research-plus-orbital_gardens')),
+        find.byKey(const Key('development-research-plus-algal_cultivation')),
       );
-      expect(controller.state.developmentResearchers['orbital_gardens'], 1);
+      expect(controller.state.developmentResearchers['algal_cultivation'], 1);
       expect(controller.state.researchers, researchers);
       expect(controller.state.labResearchers, researchers - 1);
       final saved = GameState.fromJson(repository.snapshot!);
-      expect(saved.developmentCityIds['orbital_gardens'], 'earth_delta');
-      expect(saved.developmentResearchers['orbital_gardens'], 1);
+      expect(saved.developmentCityIds['algal_cultivation'], 'earth_delta');
+      expect(saved.developmentResearchers['algal_cultivation'], 1);
       await tap(
         tester,
-        find.byKey(const Key('operate-development-orbital_gardens')),
+        find.byKey(const Key('operate-development-algal_cultivation')),
       );
       expect(operations, [
-        GameContent.developmentOperationTaskId('orbital_gardens'),
+        GameContent.developmentOperationTaskId('algal_cultivation'),
       ]);
       // The development shortcut shows an eight-second command notice even
       // when this focused panel omits the product's notice banner.
       await tester.pump(const Duration(seconds: 8));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'mapped research routes to placement without purchasing from the list',
+    (tester) async {
+      final controller = await initialize(_DevelopmentSave());
+      controller.state.research.add('orbital_gardens');
+      final routes = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ResearchDevelopments(
+                controller: controller,
+                onReserveOperation: (_) {},
+                onOpenMap: (technologyId, cityId) =>
+                    routes.add('$technologyId@$cityId'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('build-development-orbital_gardens')),
+        findsNothing,
+      );
+      await tap(
+        tester,
+        find.byKey(const Key('open-building-map-orbital_gardens')),
+      );
+      expect(routes, ['orbital_gardens@earth_delta']);
+      expect(controller.state.plans, isEmpty);
+      expect(controller.state.developments, isEmpty);
       expect(tester.takeException(), isNull);
     },
   );
@@ -145,23 +181,23 @@ void main() {
   ) async {
     final controller = await initialize(_DevelopmentSave());
     controller.state
-      ..research.add('orbital_gardens')
-      ..developments.add('orbital_gardens')
-      ..developmentCityIds['orbital_gardens'] = 'earth_delta'
-      ..developmentEnabled['orbital_gardens'] = true
-      ..developmentResearchers['orbital_gardens'] = 2;
+      ..research.add('algal_cultivation')
+      ..developments.add('algal_cultivation')
+      ..developmentCityIds['algal_cultivation'] = 'earth_delta'
+      ..developmentEnabled['algal_cultivation'] = true
+      ..developmentResearchers['algal_cultivation'] = 2;
     await tester.pumpWidget(panel(controller, []));
     await tester.pumpAndSettle();
     await tap(
       tester,
-      find.byKey(const Key('enable-development-orbital_gardens')),
+      find.byKey(const Key('enable-development-algal_cultivation')),
     );
     expect(controller.state.developmentWorkers, 0);
-    expect(controller.state.developmentResearchers['orbital_gardens'], 0);
+    expect(controller.state.developmentResearchers['algal_cultivation'], 0);
     expect(
       tester
           .widget<OutlinedButton>(
-            find.byKey(const Key('operate-development-orbital_gardens')),
+            find.byKey(const Key('operate-development-algal_cultivation')),
           )
           .onPressed,
       isNull,

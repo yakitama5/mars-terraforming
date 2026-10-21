@@ -10,7 +10,7 @@ import 'city_models.dart';
 import 'city_snapshot.dart';
 
 export 'city_geometry.dart' show CityTerrain, CityMapProjection;
-export 'city_snapshot.dart' show ScenePlot, SceneWorkState;
+export 'city_snapshot.dart' show ScenePlot, SceneBuilding, SceneWorkState;
 
 /// A regional map, with terrain, developments and plot input sharing one frame.
 /// No progress, cost, adjacency rules or persistence are calculated here.
@@ -29,6 +29,14 @@ class CityScene extends StatefulWidget {
     this.moon = false,
     this.constructionMode = false,
     this.buildablePlots = const {},
+    this.legacyBuildings = const [],
+    this.selectedBuildingId,
+    this.onBuildingSelected,
+    this.selectedBuildingSlot,
+    this.onBuildingSlotSelected,
+    this.buildingPlacementMode = false,
+    this.buildingOccupiesWholePlot = false,
+    this.availableBuildingSlots = const {0, 1},
     super.key,
   });
 
@@ -39,6 +47,13 @@ class CityScene extends StatefulWidget {
   final List<ScenePlot> plots;
   final Set<int> adjacentPlots;
   final ValueChanged<int> onPlotSelected;
+  final List<SceneBuilding> legacyBuildings;
+  final String? selectedBuildingId;
+  final ValueChanged<String>? onBuildingSelected;
+  final int? selectedBuildingSlot;
+  final ValueChanged<int>? onBuildingSlotSelected;
+  final bool buildingPlacementMode, buildingOccupiesWholePlot;
+  final Set<int> availableBuildingSlots;
 
   @override
   State<CityScene> createState() => _CitySceneState();
@@ -63,6 +78,12 @@ class _CitySceneState extends State<CityScene> {
   void initState() {
     super.initState();
     _terrain = _makeTerrain();
+    if (widget.buildingPlacementMode && widget.selectedPlot >= 0) {
+      _showNeighborhood();
+    }
+    if (widget.selectedBuildingId != null) {
+      _focusBuilding(widget.selectedBuildingId!);
+    }
     if (widget.renderScene) _initialize();
   }
 
@@ -139,7 +160,11 @@ class _CitySceneState extends State<CityScene> {
       scene.add(_landscape!);
     }
     if (_developments != null) scene.remove(_developments!);
-    _developments = models.developments(_terrain, widget.plots);
+    _developments = models.developments(
+      _terrain,
+      widget.plots,
+      legacyBuildings: widget.legacyBuildings,
+    );
     scene.add(_developments!);
   }
 
@@ -212,12 +237,60 @@ class _CitySceneState extends State<CityScene> {
         _error = null;
       }
     } else if (changedTerrain ||
+        !_sameBuildings(oldWidget.legacyBuildings, widget.legacyBuildings) ||
         List.generate(
           widget.plots.length,
           (i) => i,
         ).any((i) => !widget.plots[i].hasSameModel(oldWidget.plots[i]))) {
       _updateModels(landscape: changedTerrain);
     }
+    if (widget.buildingPlacementMode &&
+        widget.selectedPlot >= 0 &&
+        (!oldWidget.buildingPlacementMode ||
+            oldWidget.selectedPlot != widget.selectedPlot)) {
+      _showNeighborhood();
+    } else if (widget.selectedBuildingId != null &&
+        oldWidget.selectedBuildingId != widget.selectedBuildingId) {
+      _focusBuilding(widget.selectedBuildingId!);
+    }
+  }
+
+  bool _sameBuildings(List<SceneBuilding> a, List<SceneBuilding> b) =>
+      a.length == b.length &&
+      List.generate(
+        a.length,
+        (i) => a[i].hasSameModel(b[i]),
+      ).every((value) => value);
+
+  void _focusBuilding(String id) {
+    vm.Vector3? center;
+    var reservationFound = false;
+    for (final plot in widget.plots) {
+      for (final building in plot.buildings) {
+        if (building.id == id && (!reservationFound || !building.isBuilt)) {
+          center = _terrain.buildingCenter(
+            plot.index,
+            building.slotIndex,
+            occupiesWholePlot: building.occupiesWholePlot,
+          );
+          reservationFound = !building.isBuilt;
+        }
+      }
+    }
+    for (var index = 0; index < widget.legacyBuildings.length; index++) {
+      final building = widget.legacyBuildings[index];
+      if (building.id == id && !reservationFound) {
+        center = _terrain.legacyBuildingCenter(
+          index,
+          baseLab: id == 'base_lab',
+        );
+      }
+    }
+    if (center == null) return;
+    _showNeighborhood();
+    _panX = center.x;
+    _panZ = center.z;
+    _clampPan();
   }
 
   void _disposeScene() {
@@ -314,7 +387,11 @@ class _CitySceneState extends State<CityScene> {
                     )
                   else
                     CustomPaint(
-                      painter: _MapFallbackPainter(view, widget.plots),
+                      painter: _MapFallbackPainter(
+                        view,
+                        widget.plots,
+                        widget.legacyBuildings,
+                      ),
                     ),
                   IgnorePointer(
                     child: CustomPaint(
@@ -330,10 +407,13 @@ class _CitySceneState extends State<CityScene> {
                   ),
                   for (final plot in widget.plots)
                     _plotTarget(plot, view, size),
+                  ..._buildingTargets(view, size),
                   Positioned(
                     left: 10,
                     bottom: size.width >= 700 ? 10 : null,
-                    top: size.width < 700 ? 10 : null,
+                    top: size.width < 700
+                        ? (widget.legacyBuildings.isNotEmpty ? 52 : 10)
+                        : null,
                     child: IgnorePointer(
                       child: DecoratedBox(
                         decoration: const BoxDecoration(
@@ -437,6 +517,182 @@ class _CitySceneState extends State<CityScene> {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildingTargets(CityMapProjection view, Size size) {
+    if (_zoom < 1.15) return const [];
+    final targets = <Widget>[];
+    // A queued relocation keeps the completed origin and reserves its new
+    // position. Both models remain visible, with one target at the destination.
+    final reservedBuildingIds = {
+      for (final plot in widget.plots)
+        for (final building in plot.buildings)
+          if (!building.isBuilt) building.id,
+    };
+    final plot = widget.plots
+        .where((plot) => plot.index == widget.selectedPlot)
+        .firstOrNull;
+    if (plot != null &&
+        widget.buildingPlacementMode &&
+        widget.onBuildingSlotSelected != null) {
+      for (final slot in widget.availableBuildingSlots) {
+        final center = _terrain.buildingCenter(
+          plot.index,
+          slot,
+          occupiesWholePlot: widget.buildingOccupiesWholePlot,
+        );
+        final screen = view.camera.worldToScreen(
+          center + vm.Vector3(0, .18, 0),
+          size,
+        );
+        if (screen == null) continue;
+        final selected = widget.selectedBuildingSlot == slot;
+        targets.add(
+          Positioned(
+            left: screen.dx - 24,
+            top: screen.dy - 24,
+            child: Semantics(
+              button: true,
+              selected: selected,
+              label: '建設位置${slot == 0 ? 'A' : 'B'}を選ぶ',
+              child: Tooltip(
+                message: '建設位置 ${slot == 0 ? 'A' : 'B'}',
+                child: GestureDetector(
+                  key: Key(
+                    'building-slot-${widget.cityId}-${plot.index}-$slot',
+                  ),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => widget.onBuildingSlotSelected!(slot),
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xe61e5869)
+                          : const Color(0xd00b1d26),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xffffd97e)
+                            : const Color(0xff8ac3cf),
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      slot == 0 ? 'A' : 'B',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+    } else if (plot != null) {
+      for (final building in plot.buildings) {
+        if (building.isBuilt && reservedBuildingIds.contains(building.id)) {
+          continue;
+        }
+        targets.addAll(
+          _buildingTarget(
+            building,
+            _terrain.buildingCenter(
+              plot.index,
+              building.slotIndex,
+              occupiesWholePlot: building.occupiesWholePlot,
+            ),
+            view,
+            size,
+          ),
+        );
+      }
+    }
+    if (!widget.buildingPlacementMode) {
+      for (var index = 0; index < widget.legacyBuildings.length; index++) {
+        final building = widget.legacyBuildings[index];
+        if (reservedBuildingIds.contains(building.id)) continue;
+        targets.addAll(
+          _buildingTarget(
+            building,
+            _terrain.legacyBuildingCenter(
+              index,
+              baseLab: building.id == 'base_lab',
+            ),
+            view,
+            size,
+          ),
+        );
+      }
+    }
+    return targets;
+  }
+
+  List<Widget> _buildingTarget(
+    SceneBuilding building,
+    vm.Vector3 center,
+    CityMapProjection view,
+    Size size,
+  ) {
+    if (widget.onBuildingSelected == null) return const [];
+    final screen = view.camera.worldToScreen(
+      center + vm.Vector3(0, .25, 0),
+      size,
+    );
+    if (screen == null ||
+        screen.dx < 24 ||
+        screen.dx > size.width - 24 ||
+        screen.dy < 24 ||
+        screen.dy > size.height - 24) {
+      return const [];
+    }
+    final selected = widget.selectedBuildingId == building.id;
+    final color = selected
+        ? const Color(0xffffd97e)
+        : building.operational
+        ? const Color(0xff8cddd0)
+        : const Color(0xffb8c3ca);
+    return [
+      Positioned(
+        left: screen.dx - 24,
+        top: screen.dy - 24,
+        child: Semantics(
+          button: true,
+          selected: selected,
+          label: '${building.name}を選択',
+          child: Tooltip(
+            message: building.name,
+            child: GestureDetector(
+              key: Key('scene-building-${building.id}'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => widget.onBuildingSelected!(building.id),
+              child: Container(
+                width: 48,
+                height: 48,
+                alignment: Alignment.topCenter,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: color.withValues(alpha: selected ? 1 : .35),
+                    width: selected ? 2 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Icon(
+                  building.workState == SceneWorkState.building
+                      ? Icons.construction
+                      : building.operational
+                      ? Icons.factory_outlined
+                      : Icons.pause_circle_outline,
+                  color: color,
+                  size: 16,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   Widget _controls(double targetSize) => DecoratedBox(
@@ -610,7 +866,11 @@ class _PlotBoundaryPainter extends CustomPainter {
       canvas.drawPath(polygon, border);
       final bounds = polygon.getBounds();
       final center = view.center(plot.index, size);
-      if (!isSelected && plot.workState == SceneWorkState.none) {
+      if (!isSelected &&
+          plot.workState == SceneWorkState.none &&
+          !plot.buildings.any(
+            (building) => building.workState != SceneWorkState.none,
+          )) {
         continue;
       }
       final use = switch (plot.districtId) {
@@ -625,13 +885,18 @@ class _PlotBoundaryPainter extends CustomPainter {
         'mars_habitat' => '居住',
         'greenhouse' => '温室',
         'extractor' => '採取',
-        _ => plot.districtName ?? '',
+        _ =>
+          plot.buildings.isNotEmpty
+              ? '${plot.buildings.length}施設'
+              : plot.districtName ?? '',
       };
       final label = switch (plot.workState) {
         SceneWorkState.queued => '予 · $use',
         SceneWorkState.building => '工 · $use',
         SceneWorkState.none =>
-          plot.isDeveloped
+          plot.buildings.isNotEmpty
+              ? (plot.isDeveloped ? '$use＋${plot.buildings.length}施設' : use)
+              : plot.isDeveloped
               ? '$use Lv.${plot.level}'
               : '${plot.index + 1} · ${plot.terrainName}',
       };
@@ -684,9 +949,10 @@ class _PlotBoundaryPainter extends CustomPainter {
 /// The same map remains selectable while the GPU initializes or is unavailable.
 /// Widget tests use this path without allocating any FlutterScene resources.
 class _MapFallbackPainter extends CustomPainter {
-  const _MapFallbackPainter(this.view, this.plots);
+  const _MapFallbackPainter(this.view, this.plots, this.legacyBuildings);
   final CityMapProjection view;
   final List<ScenePlot> plots;
+  final List<SceneBuilding> legacyBuildings;
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint();
@@ -777,18 +1043,203 @@ class _MapFallbackPainter extends CustomPainter {
       paint.color = view.terrain.colorAt(center.x, center.z);
       canvas.drawPath(view.polygon(plot.index, size), paint);
       if (plot.isDeveloped) {
-        final screen = view.center(plot.index, size);
+        final screen = plot.buildings.isEmpty
+            ? view.center(plot.index, size)
+            : camera.worldToScreen(
+                terrain.buildingCenter(plot.index, 0),
+                size,
+              )!;
         paint.color = const Color(0xffa8beb6);
         canvas.drawRect(
           Rect.fromCenter(
             center: screen,
-            width: 8 + plot.level * 3,
-            height: 7 + plot.level * 3,
+            width: (8 + plot.level * 3) * (plot.buildings.isEmpty ? 1 : .55),
+            height: (7 + plot.level * 3) * (plot.buildings.isEmpty ? 1 : .75),
           ),
           paint,
         );
       }
+      for (final building in plot.buildings) {
+        _paintBuilding(
+          canvas,
+          size,
+          building,
+          terrain.buildingCenter(
+            plot.index,
+            building.slotIndex,
+            occupiesWholePlot: building.occupiesWholePlot,
+          ),
+        );
+      }
     }
+    for (var index = 0; index < legacyBuildings.length; index++) {
+      final building = legacyBuildings[index];
+      _paintBuilding(
+        canvas,
+        size,
+        building,
+        terrain.legacyBuildingCenter(index, baseLab: building.id == 'base_lab'),
+        legacy: true,
+      );
+    }
+  }
+
+  void _paintBuilding(
+    Canvas canvas,
+    Size size,
+    SceneBuilding building,
+    vm.Vector3 center, {
+    bool legacy = false,
+  }) {
+    final scale = legacy
+        ? .48
+        : building.occupiesWholePlot
+        ? .90
+        : .48;
+    final paint = Paint();
+    Offset point(double x, double y, double z) => view.camera.worldToScreen(
+      center + vm.Vector3(x * scale, y * scale, z * scale),
+      size,
+    )!;
+    void face(List<Offset> points, Color color) {
+      canvas.drawPath(Path()..addPolygon(points, true), paint..color = color);
+    }
+
+    void box(
+      double x,
+      double z,
+      double width,
+      double depth,
+      double height,
+      Color color,
+    ) {
+      final l = x - width / 2,
+          r = x + width / 2,
+          a = z - depth / 2,
+          b = z + depth / 2;
+      face([
+        point(l, 0, b),
+        point(r, 0, b),
+        point(r, height, b),
+        point(l, height, b),
+      ], Color.lerp(color, const Color(0xff253540), .30)!);
+      face([
+        point(r, 0, a),
+        point(r, 0, b),
+        point(r, height, b),
+        point(r, height, a),
+      ], Color.lerp(color, const Color(0xff253540), .45)!);
+      face([
+        point(l, height, a),
+        point(r, height, a),
+        point(r, height, b),
+        point(l, height, b),
+      ], color);
+    }
+
+    final active = building.operational;
+    final accent = active ? const Color(0xff68c7b7) : const Color(0xff8d999d);
+    if (building.workState == SceneWorkState.queued) {
+      final outline = Path()
+        ..addPolygon([
+          point(-.6, .04, -.6),
+          point(.6, .04, -.6),
+          point(.6, .04, .6),
+          point(-.6, .04, .6),
+        ], true);
+      canvas.drawPath(
+        outline,
+        paint
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..color = const Color(0xffdda65c),
+      );
+      return;
+    }
+    if (building.workState == SceneWorkState.building) {
+      box(0, 0, 1.15, 1.05, .07, const Color(0xff9ba6a6));
+      box(
+        0,
+        0,
+        .82,
+        .75,
+        .22 + building.constructionStage * .18,
+        const Color(0xffbd9671),
+      );
+      for (final x in [-.52, .52]) {
+        final a = point(x, 0, -.42), b = point(x, .7, -.42);
+        canvas.drawLine(
+          a,
+          b,
+          paint
+            ..strokeWidth = 2
+            ..color = const Color(0xffe2a55b),
+        );
+      }
+      return;
+    }
+    box(0, 0, 1.3, 1.24, .04, const Color(0xffa8a694));
+    switch (building.catalogId) {
+      case 'B01':
+        for (final x in [-.27, .27]) {
+          box(x, 0, .42, 1.0, .30, const Color(0xff6daba0));
+        }
+        box(-.51, 0, .18, .85, .22, accent);
+      case 'B13':
+        box(-.15, -.10, .86, .73, .47, const Color(0xffd3e2e4));
+        box(.42, -.12, .23, .56, .30, accent);
+        for (final x in [-.43, -.19, .05]) {
+          box(x, .36, .16, .14, .17, const Color(0xff4c7181));
+        }
+      case 'R01':
+        box(-.19, .04, .70, .68, .36, const Color(0xff8faeab));
+        box(.43, -.29, .10, .10, .88, accent);
+        box(.43, -.29, .36, .22, .91, const Color(0xffdce2dd));
+      case 'R05':
+        box(-.29, .23, .46, .32, .25, accent);
+        box(.24, -.21, .10, .10, 1.03, const Color(0xffd5aa67));
+        box(-.08, -.40, .69, .18, .19, const Color(0xff8f999d));
+      case 'R07':
+        box(-.40, -.12, .32, .64, .37, accent);
+        for (final z in [-.24, .24]) {
+          box(.18, z, .44, .40, .36, const Color(0xffb1c2c9));
+        }
+      case 'R15':
+        box(-.08, -.09, .98, .80, .41, const Color(0xff9faab1));
+        for (var i = 0; i < 3; i++) {
+          box(-.37 + i * .28, -.11, .22, .69, .49 + i * .03, accent);
+        }
+      case 'E09':
+        for (final x in [-.38, 0.0, .38]) {
+          box(x, -.10, .28, .86, .33, accent);
+        }
+      case 'E10':
+        box(-.37, 0, .38, .83, .42, accent);
+        box(.14, -.25, .28, .28, .72, const Color(0xffc4d4d6));
+        box(.45, .22, .31, .31, .48, const Color(0xffb6b1a4));
+      case 'E13':
+        box(-.42, -.14, .27, .65, .37, accent);
+        for (final z in [-.26, .25]) {
+          box(.17, z, .58, .25, .29, const Color(0xff7f969e));
+        }
+      case 'M08':
+        box(0, -.07, 1.03, .76, .61, accent);
+        box(.11, .30, .43, .23, .18, const Color(0xffcf9151));
+      case 'M25':
+        box(-.13, -.19, .96, .80, .60, const Color(0xff9dabb1));
+        if (building.vehiclePresent) box(.12, .41, .75, .19, .21, accent);
+      case 'M13':
+        box(-.15, -.19, .95, .80, .60, const Color(0xffa5b0b8));
+        if (building.vehiclePresent) box(.29, .40, .28, .28, .37, accent);
+      default:
+        box(0, 0, .70, .65, .43, accent);
+    }
+    final lamp = point(.56, .36, .53);
+    canvas.drawCircle(
+      lamp,
+      1.8,
+      paint..color = active ? const Color(0xffc8fff0) : const Color(0xff59636a),
+    );
   }
 
   @override

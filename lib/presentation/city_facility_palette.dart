@@ -124,11 +124,13 @@ class CityFacilityPalette extends StatelessWidget {
     required this.selectedId,
     required this.onSelected,
     required this.lockReason,
+    this.additionalChoices = const [],
   });
   final List<DistrictDefinition> districts;
   final String? selectedId;
   final ValueChanged<String> onSelected;
   final String? Function(DistrictDefinition) lockReason;
+  final List<Widget> additionalChoices;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -152,7 +154,7 @@ class CityFacilityPalette extends StatelessWidget {
         ),
       ],
       const SizedBox(height: 10),
-      if (districts.isEmpty)
+      if (districts.isEmpty && additionalChoices.isEmpty)
         const Text(
           '研究ツリーで技術を解放すると、建設できる施設がここに現れます。',
           key: Key('city-facility-empty'),
@@ -262,7 +264,8 @@ class CityFacilityPalette extends StatelessWidget {
         ),
         const SizedBox(height: 6),
       ],
-      if (!compact && districts.isNotEmpty)
+      ...additionalChoices,
+      if (!compact && (districts.isNotEmpty || additionalChoices.isNotEmpty))
         const Text(
           '研究で技術を解放すると、新しい施設が増えます。',
           style: TextStyle(fontSize: 11, color: strategyMuted),
