@@ -171,6 +171,8 @@ class CityModels {
       final ice = plot.terrain == 'ice';
       final color = ice
           ? const Color(0xffbfdbda)
+          : terrain.moon
+          ? const Color(0xff888b94)
           : plot.terrain == 'mineral'
           ? (i.isEven ? const Color(0xff887655) : const Color(0xffaca27c))
           : terrain.earth
@@ -247,7 +249,11 @@ class CityModels {
           mesh.rock(
             vm.Vector3(x, y + .055, z),
             vm.Vector3(size, .12, size * .80),
-            terrain.earth ? const Color(0xff7f836a) : const Color(0xffa37250),
+            terrain.moon
+                ? const Color(0xff878a94)
+                : terrain.earth
+                ? const Color(0xff7f836a)
+                : const Color(0xffa37250),
           );
           rocks++;
         }
@@ -851,10 +857,18 @@ class CityModels {
         _industry(root, mesh, terrain, c, level);
         break;
       case 'solar':
+      case 'moon_solar':
         _solar(mesh, terrain, c, level);
         break;
       case 'spaceport':
+      case 'moon_spaceport':
         _spaceport(root, mesh, terrain, c, level);
+        break;
+      case 'moon_outpost':
+        _moonOutpost(root, mesh, terrain, c, level);
+        break;
+      case 'space_elevator':
+        _spaceElevator(root, mesh, terrain, c, level);
         break;
       case 'mars_habitat':
         if (plot.habitatStyle == 'underground') {
@@ -867,9 +881,132 @@ class CityModels {
         _greenhouse(root, mesh, terrain, c, level);
         break;
       case 'extractor':
+      case 'moon_extractor':
         _extractor(root, mesh, terrain, c, level);
         break;
     }
+  }
+
+  void _moonOutpost(
+    fs.Node root,
+    _CityMesh mesh,
+    CityTerrain terrain,
+    vm.Vector3 c,
+    int level,
+  ) {
+    // Sealed horizontal modules, stores and a dish read as a lunar station,
+    // rather than the large glazed habitat domes used for Martian settlements.
+    final station = fs.Node(name: '月面基地の気密モジュール');
+    root.add(station);
+    for (var i = 0; i < level + 1; i++) {
+      final x = c.x - .32 + (i % 2) * .60;
+      final z = c.z - .25 + (i ~/ 2) * .48;
+      final y = terrain.height(x, z);
+      p.part(
+        station,
+        p.cylinder,
+        p.white,
+        vm.Vector3(x, y + .24, z),
+        vm.Vector3(.30, .53, .30),
+        rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), math.pi / 2),
+      );
+      mesh.box(vm.Vector3(x, y + .105, z), vm.Vector3(.32, .17, .40), steel);
+      mesh.box(
+        vm.Vector3(x, y + .24, z + .27),
+        vm.Vector3(.11, .09, .014),
+        windows,
+      );
+      if (i > 0) {
+        _pipe(
+          station,
+          terrain.surfacePoint(c.x - .32, c.z, offset: .18),
+          vm.Vector3(x, y + .18, z),
+          .09,
+        );
+      }
+    }
+    final mast = terrain.surfacePoint(c.x + .48, c.z + .40);
+    p.part(
+      station,
+      p.cylinder,
+      p.white,
+      mast + vm.Vector3(0, .35, 0),
+      vm.Vector3(.035, .7, .035),
+    );
+    p.part(
+      station,
+      p.sphere,
+      p.white,
+      mast + vm.Vector3(0, .72, 0),
+      vm.Vector3(.29, .05, .29),
+      rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), .6),
+    );
+    _road(
+      mesh,
+      terrain,
+      c.x - .65,
+      c.z + .55,
+      c.x + .65,
+      c.z + .55,
+      width: .08,
+      color: steel,
+    );
+  }
+
+  void _spaceElevator(
+    fs.Node root,
+    _CityMesh mesh,
+    CityTerrain terrain,
+    vm.Vector3 c,
+    int level,
+  ) {
+    final terminal = fs.Node(name: '宇宙エレベーターの地上港とテザー');
+    root.add(terminal);
+    _building(
+      mesh,
+      terrain,
+      c.x,
+      c.z + .27,
+      width: .70,
+      depth: .46,
+      height: .24 + level * .06,
+      roofColor: windows,
+    );
+    final y = terrain.height(c.x, c.z);
+    const tower = 1.15;
+    for (final dx in [-.25, .25]) {
+      mesh.beam(
+        vm.Vector3(c.x + dx, y, c.z - .20),
+        vm.Vector3(c.x, y + tower, c.z - .20),
+        .055,
+        steel,
+      );
+    }
+    // The tether continues upward schematically. It deliberately has a fixed
+    // visual height, without implying a physical scale or a gameplay effect.
+    p.part(
+      terminal,
+      p.cylinder,
+      p.white,
+      vm.Vector3(c.x, y + 2.2, c.z - .20),
+      vm.Vector3(.019, 4.4, .019),
+    );
+    p.part(
+      terminal,
+      p.box,
+      p.cyan,
+      vm.Vector3(c.x, y + 1.8, c.z - .20),
+      vm.Vector3(.15, .25, .13),
+    );
+    _road(
+      mesh,
+      terrain,
+      c.x - .65,
+      c.z + .57,
+      c.x + .65,
+      c.z + .57,
+      width: .14,
+    );
   }
 
   void _housing(_CityMesh mesh, CityTerrain terrain, vm.Vector3 c, int level) {

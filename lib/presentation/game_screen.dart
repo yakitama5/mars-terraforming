@@ -45,7 +45,8 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
-  bool earth = true;
+  String planet = 'earth';
+  bool get earth => planet == 'earth';
   int tab = 0;
   int facilityTab = 0;
   int agencySection = 0;
@@ -135,7 +136,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                           if (!mounted) return;
                           setState(() {
                             cityId = 'earth_delta';
-                            earth = true;
+                            planet = 'earth';
                             tab = 1;
                           });
                           _showGuidance();
@@ -303,8 +304,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   );
 
   void _selectCity(String id) => setState(() {
+    if (!game.planetUnlocked(GameContent.cities[id]!.planet)) return;
     cityId = id;
-    earth = GameContent.cities[id]!.planet == 'earth';
+    planet = GameContent.cities[id]!.planet;
   });
 
   int _cityDevelopment(CityDefinition city) {
@@ -336,12 +338,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             (widget.renderScene
                 ? BaseScene(
                     earth: earth,
+                    moon: planet == 'moon',
                     earthLevel: game.earthLevel,
                     marsHabitats: game.marsHabitats,
-                    hasCargo: game.marsKits > 0,
+                    hasCargo: planet == 'moon'
+                        ? game.moonKits > 0
+                        : game.marsKits > 0,
                     cities: [
                       for (final city in GameContent.cities.values.where(
-                        (city) => city.planet == (earth ? 'earth' : 'mars'),
+                        (city) => city.planet == planet,
                       ))
                         SceneCity(
                           id: city.id,
@@ -370,7 +375,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      earth ? '地球圏' : '火星圏',
+                      '${planetLabel(planet)}圏',
                       style: TextStyle(
                         fontSize: _compactLandscape ? 19 : 28,
                         fontWeight: FontWeight.w700,
@@ -391,7 +396,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
-            for (final item in [('地球', true), ('火星', false)])
+            for (final item in [
+              'earth',
+              'moon',
+              'mars',
+            ].where(game.planetUnlocked))
               Padding(
                 padding: const EdgeInsets.only(left: 6),
                 child: ConstrainedBox(
@@ -400,22 +409,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     minHeight: 44,
                   ),
                   child: ChoiceChip(
+                    key: Key('select-planet-$item'),
                     label: SizedBox(
                       width: 32,
                       child: Text(
-                        item.$1,
+                        planetLabel(item),
                         textAlign: TextAlign.center,
                         maxLines: 1,
                       ),
                     ),
-                    selected: earth == item.$2,
+                    selected: planet == item,
                     showCheckmark: false,
                     onSelected: (_) => setState(() {
-                      earth = item.$2;
+                      planet = item;
                       cityId = GameContent.cities.values
-                          .firstWhere(
-                            (city) => city.planet == (earth ? 'earth' : 'mars'),
-                          )
+                          .firstWhere((city) => city.planet == planet)
                           .id;
                     }),
                   ),
@@ -434,15 +442,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             runSpacing: 6,
             children: [
               _tag(
-                earth
+                planet == 'moon'
+                    ? '月面施設 ${game.cityDevelopment(cityId).completedPlots}'
+                    : earth
                     ? '人口 ${formatInteger(game.population)} 人'
                     : '居住者 ${formatInteger(game.marsResidents)} 人',
               ),
               _tag(
-                earth ? '輸送待ちキット ${game.earthKits}' : '到着キット ${game.marsKits}',
+                earth
+                    ? '輸送待ちキット ${game.earthKits}'
+                    : '到着キット ${planet == 'moon' ? game.moonKits : game.marsKits}',
               ),
               _tag(
-                earth
+                planet == 'moon'
+                    ? '打上げ費用 −${game.launchCostReductionPercent}%'
+                    : earth
                     ? '税収 ${dollars(game.taxPerMinute)}/分'
                     : '居住施設 ${game.marsHabitats}',
               ),
@@ -468,7 +482,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   Widget _planetDetails() {
     final city = GameContent.cities[cityId]!;
     final cities = GameContent.cities.values.where(
-      (candidate) => candidate.planet == (earth ? 'earth' : 'mars'),
+      (candidate) => candidate.planet == planet,
     );
     return ListView(
       key: const Key('planet-detail'),
@@ -539,7 +553,26 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             label: const Text('都市を開く・区画を計画'),
           ),
         ],
-        if (!earth)
+        if (!game.planetUnlocked('mars')) ...[
+          const SizedBox(height: 12),
+          Text(
+            game.planetUnlocked('moon')
+                ? '次の目標：月面拠点と月面打ち上げ基地を整え、火星探査機を打ち上げる。'
+                : '次の目標：共用宇宙港で衛星を打ち上げ、月への航路を開く。',
+            key: const Key('next-destination-goal'),
+            style: const TextStyle(fontSize: 12, color: strategyMint),
+          ),
+          TextButton.icon(
+            key: const Key('open-space-progression'),
+            onPressed: () => setState(() {
+              tab = 3;
+              facilityTab = 2;
+            }),
+            icon: const Icon(Icons.rocket_launch_outlined, size: 18),
+            label: const Text('打ち上げ・月面計画を開く'),
+          ),
+        ],
+        if (planet == 'mars')
           const Padding(
             padding: EdgeInsets.only(top: 16),
             child: Text(
@@ -627,7 +660,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }),
     onCity: (id) => _guideNavigation(closeDialog, () {
       cityId = id;
-      earth = GameContent.cities[id]!.planet == 'earth';
+      planet = GameContent.cities[id]!.planet;
       tab = 1;
     }),
     onOperations: (section, {String? facilityId}) =>
@@ -814,7 +847,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 key: const Key('research-parallel-city'),
                 onPressed: () => setState(() {
                   cityId = 'earth_delta';
-                  earth = true;
+                  planet = 'earth';
                   tab = 1;
                 }),
                 icon: const Icon(Icons.location_city_outlined, size: 17),
@@ -944,7 +977,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             1 => [
               const StrategyHeading(
                 '地球の産業計画',
-                '受注で運転資金を得ながら、火星向けの製造に共用工場を配分します。',
+                '受注で運転資金を得ながら、月・火星向けの製造に共用工場を配分します。',
               ),
               _taskCard('factory_contract'),
               _taskCard('habitat_kit'),
@@ -953,14 +986,27 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ],
             2 => [
               const StrategyHeading(
-                '地球から火星へ',
-                '設備を輸送し、火星の都市に居住区を配置します。住民は建設完成時に入居します。',
+                '地球から月、そして火星へ',
+                '初打ち上げで月へ。月面の拠点と打ち上げ基地を整え、火星への航路を開きます。',
               ),
-              _taskCard('mars_delivery'),
-              if (game.habitatChoice == null) _branch(),
-              _cityShortcut('火星の居住区を配置する', 'mars_arcadia'),
               _taskCard('launch_contract'),
-              ..._advancedTasks(['orbital_contract', 'cargo_delivery']),
+              if (game.planetUnlocked('moon')) ...[
+                _taskCard('moon_delivery'),
+                _cityShortcut('月面の拠点・打ち上げ基地を建設', 'moon_south_pole'),
+                if (!game.planetUnlocked('mars')) _taskCard('mars_probe'),
+              ],
+              if (game.planetUnlocked('mars')) ...[
+                _taskCard('mars_delivery'),
+                if (game.habitatChoice == null) _branch(),
+                _cityShortcut('火星の居住区を配置する', 'mars_arcadia'),
+                ..._advancedTasks(['cargo_delivery']),
+              ],
+              ..._advancedTasks(['orbital_contract']),
+              StrategyFact('打ち上げ費用の削減', '−${game.launchCostReductionPercent}%'),
+              const Text(
+                '稼働中の月面設備や地球の宇宙エレベーターで、次に出発する輸送の費用を抑えます。建設費と維持費も見比べましょう。',
+                style: TextStyle(fontSize: 12, color: strategyMuted),
+              ),
             ],
             4 => [
               ResearchDevelopments(
@@ -986,7 +1032,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     child: OutlinedButton.icon(
       onPressed: () => setState(() {
         cityId = id;
-        earth = GameContent.cities[id]!.planet == 'earth';
+        planet = GameContent.cities[id]!.planet;
         tab = 1;
       }),
       icon: const Icon(Icons.location_city_outlined),
@@ -1042,7 +1088,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           spacing: 14,
           runSpacing: 14,
           children: [
-            for (final id in GameContent.facilities.keys)
+            for (final id in GameContent.facilities.keys.where(
+              (id) => !['moon', 'mars'].contains(id) || game.planetUnlocked(id),
+            ))
               SizedBox(
                 width: width,
                 child: FacilityQueueCard(
@@ -1064,6 +1112,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   Widget _taskCard(String id) {
     final task = GameContent.tasks[id]!;
+    final spaceReason = game.spaceTaskLockReason(task);
     final needs = <String>[
       for (final requirement in task.prerequisiteIds)
         '${GameContent.tasks[requirement]!.name}${game.research.contains(requirement) ? ' ✓' : '（未完了）'}',
@@ -1112,7 +1161,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               spacing: 22,
               runSpacing: 10,
               children: [
-                StrategyStat('開始費用', dollars(task.cost)),
+                StrategyStat('開始費用', dollars(game.taskCost(task))),
+                if (game.taskCost(task) < task.cost)
+                  StrategyStat(
+                    '基準からの削減',
+                    '${dollars(task.cost - game.taskCost(task))} / 回',
+                  ),
                 StrategyStat(
                   '1回の所要時間',
                   gameDuration(game.currentTaskDurationMs(id)),
@@ -1138,6 +1192,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   style: const TextStyle(fontSize: 12, color: strategyMuted),
                 ),
               ),
+            if (spaceReason != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  spaceReason,
+                  key: Key('space-condition-$id'),
+                  style: const TextStyle(fontSize: 12, color: strategyCopper),
+                ),
+              ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -1158,7 +1221,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   Future<void> _reserve(String id) async {
     int? repeats = 1;
     final task = GameContent.tasks[id]!;
-    if (!task.unique) {
+    if (!task.unique && id != 'mars_probe') {
       final result = await showDialog<int>(
         context: context,
         builder: (context) => SimpleDialog(
@@ -1167,7 +1230,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: Text(
-                '${task.name}\n1回 ${dollars(task.cost)} · ${gameDuration(game.currentTaskDurationMs(id))}',
+                '${task.name}\n1回 ${dollars(game.taskCost(task))} · ${gameDuration(game.currentTaskDurationMs(id))}',
                 style: const TextStyle(color: strategyMuted, fontSize: 13),
               ),
             ),
@@ -1305,7 +1368,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           tab = 2;
         case ContextualTipDestination.city:
           cityId = tip.cityId ?? 'earth_delta';
-          earth = GameContent.cities[cityId]!.planet == 'earth';
+          planet = GameContent.cities[cityId]!.planet;
           tab = 1;
         case ContextualTipDestination.agency:
           agencySection = tip.agencySection.index;
@@ -1466,7 +1529,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       onOpen: (notice) => setState(() {
         if (notice.cityId != null) {
           cityId = notice.cityId!;
-          earth = GameContent.cities[cityId]!.planet == 'earth';
+          planet = GameContent.cities[cityId]!.planet;
           tab = 1;
         } else if (notice.definition.unique) {
           researchId = notice.taskId;

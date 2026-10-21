@@ -29,6 +29,31 @@ void main() {
     },
   );
 
+  test(
+    'the guide opens each destination through launch and lunar milestones',
+    () {
+      final state = GameState.initial(epoch);
+      expect(step(state, 'first_launch').isCompleted, isFalse);
+      expect(step(state, 'moon_base').status, OnboardingStatus.locked);
+      expect(step(state, 'mars_probe').status, OnboardingStatus.locked);
+      expect(step(state, 'first_landing').reason, contains('月面基地'));
+      state.achievements.add('first_launch');
+      expect(step(state, 'first_launch').isCompleted, isTrue);
+      expect(
+        step(state, 'moon_base').destination,
+        OnboardingDestination.operations,
+      );
+      expect(step(state, 'moon_base').target, '2');
+      state.moonKits = 1;
+      expect(step(state, 'moon_base').destination, OnboardingDestination.city);
+      expect(step(state, 'moon_base').target, 'moon_south_pole');
+      state.achievements.addAll(['first_launch', 'mars_route_open']);
+      expect(step(state, 'moon_base').isCompleted, isTrue);
+      expect(step(state, 'mars_probe').isCompleted, isTrue);
+      expect(step(state, 'first_landing').isCompleted, isFalse);
+    },
+  );
+
   test('RP reservations and already-paid research retain their real state', () {
     final engine = GameEngine(
       GameState.initial(epoch)
@@ -105,6 +130,7 @@ void main() {
       engine.enqueue('habitat_kit');
       engine.advanceBy(const Duration(minutes: 3));
       expect(step(engine.state, 'first_kit').isCompleted, isTrue);
+      engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
       engine.enqueue('mars_delivery');
       expect(engine.state.earthKits, 0);
       expect(step(engine.state, 'first_kit').isCompleted, isTrue);
@@ -145,7 +171,7 @@ void main() {
         ..marsHabitats = 1;
       expect(state.plans, isEmpty);
       final guide = OnboardingGuide.fromState(state);
-      expect(guide.completedCount, 6);
+      expect(guide.completedCount, 9);
       expect(guide.progress, 1);
       expect(guide.isComplete, isTrue);
     },
@@ -179,6 +205,7 @@ void main() {
       expect(step(engine.state, 'first_kit').facilityId, 'factory');
       engine.advanceBy(const Duration(minutes: 10));
       expect(step(engine.state, 'first_kit').isCompleted, isTrue);
+      engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
       engine.enqueue('cargo_delivery');
       expect(engine.state.earthKits, 0);
       expect(step(engine.state, 'first_kit').isCompleted, isTrue);
@@ -299,6 +326,22 @@ void main() {
     until(() => house.isFinished);
     final kit = prioritize(engine.enqueue('habitat_kit'));
     until(() => kit.isFinished);
+    final moonDelivery = prioritize(engine.enqueue('moon_delivery'));
+    until(() => moonDelivery.isFinished);
+    final outpost = prioritize(
+      engine.enqueueDistrict('moon_south_pole', 2, 'moon_outpost'),
+    );
+    final secondKit = prioritize(engine.enqueue('habitat_kit'));
+    until(() => secondKit.isFinished);
+    final secondMoonDelivery = prioritize(engine.enqueue('moon_delivery'));
+    until(() => outpost.isFinished && secondMoonDelivery.isFinished);
+    final moonPort = prioritize(
+      engine.enqueueDistrict('moon_south_pole', 3, 'moon_spaceport'),
+    );
+    until(() => moonPort.isFinished);
+    final probe = prioritize(engine.enqueue('mars_probe'));
+    final marsKit = prioritize(engine.enqueue('habitat_kit'));
+    until(() => probe.isFinished && marsKit.isFinished);
     final delivery = prioritize(engine.enqueue('mars_delivery'));
     until(() => delivery.isFinished);
     expect(engine.chooseHabitat('dome'), isNull);
@@ -318,7 +361,7 @@ void main() {
     final reloaded = GameState.fromJson(
       jsonDecode(jsonEncode(engine.state.toJson())) as Map<String, dynamic>,
     );
-    expect(OnboardingGuide.fromState(reloaded).completedCount, 6);
+    expect(OnboardingGuide.fromState(reloaded).completedCount, 9);
     expect(reloaded.moneyUnits, engine.state.moneyUnits);
     expect(reloaded.claimedRewards, engine.state.claimedRewards);
   });

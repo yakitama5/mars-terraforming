@@ -6,7 +6,11 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 /// Fixed, local geometry: stylized geography, not scientific terrain data.
 /// Each face owns its vertices to retain the small low-poly lighting facets.
-fs.MeshGeometry makePlanetGeometry({required bool earth, double radius = 3.1}) {
+fs.MeshGeometry makePlanetGeometry({
+  required bool earth,
+  bool moon = false,
+  double radius = 3.1,
+}) {
   final positions = <double>[];
   final colors = <double>[];
   const rows = 36;
@@ -30,7 +34,9 @@ fs.MeshGeometry makePlanetGeometry({required bool earth, double radius = 3.1}) {
         final lat = triangle.fold(0.0, (v, i) => v + corners[i].$1) / 3;
         final lon = triangle.fold(0.0, (v, i) => v + corners[i].$2) / 3;
         final seed = ((row * 31 + column * 17 + triangle[1]) % 11) / 10;
-        final color = earth
+        final color = moon
+            ? _moonColor(lat, lon, seed)
+            : earth
             ? _earthColor(lat, lon, seed)
             : _marsColor(lat, lon, seed);
         for (final index in triangle) {
@@ -89,6 +95,16 @@ List<double> _marsColor(double lat, double lon, double seed) {
     return [0.38 + seed * 0.04, 0.14 + seed * 0.022, 0.075 + seed * 0.012];
   }
   return [0.64 + seed * 0.045, 0.30 + seed * 0.03, 0.16 + seed * 0.02];
+}
+
+List<double> _moonColor(double lat, double lon, double seed) {
+  // Broad basalt plains and pale highlands, authored for recognition at game
+  // scale. This is neither an observed albedo map nor surveyed lunar geology.
+  final maria =
+      math.sin(lon * .038 - lat * .023) +
+      .65 * math.cos(lat * .071 + lon * .014);
+  final light = (maria > .30 ? .34 : .58) + seed * .055;
+  return [light, light * .99, light * 1.015];
 }
 
 bool _contains(List<(double, double)> polygon, double lat, double lon) {

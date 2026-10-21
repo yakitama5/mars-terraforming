@@ -97,6 +97,15 @@ class FacilityQueueCard extends StatelessWidget {
                 style: const TextStyle(color: _mint, fontSize: 11),
               ),
             ),
+          if (facilityId == 'launch' && game.launchCostReductionPercent > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '打ち上げ費用 −${game.launchCostReductionPercent}% · 次の着手から適用',
+                key: const Key('queue-launch-cost-reduction'),
+                style: const TextStyle(color: _mint, fontSize: 11),
+              ),
+            ),
           const Divider(color: strategyLine),
           if (current != null)
             _current(current, enabled)

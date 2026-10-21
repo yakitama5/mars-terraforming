@@ -89,6 +89,7 @@ void main() {
     () {
       final engine = fresh();
       engine.state.earthKits = 3;
+      engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
       engine.enqueue('mars_delivery', repeats: 3);
       engine.enqueue('launch_contract');
       engine.advanceBy(const Duration(seconds: 30));
@@ -237,6 +238,7 @@ void main() {
       one.state.research.add('life_support');
       one.enqueue('factory_contract', repeats: repeats);
       one.enqueue('habitat_kit', repeats: 2);
+      one.state.achievements.addAll(['first_launch', 'mars_route_open']);
       one.enqueue('mars_delivery', repeats: 2);
       one.enqueue('launch_contract', repeats: repeats);
       one.advanceBy(const Duration(seconds: 17));
@@ -308,6 +310,7 @@ void main() {
         (engine) => engine.enqueue('factory_contract', repeats: null),
       );
       await controller.command((engine) => engine.enqueue('habitat_kit'));
+      controller.state.achievements.addAll(['first_launch', 'mars_route_open']);
       await controller.command((engine) => engine.enqueue('mars_delivery'));
       await controller.command((engine) => engine.enqueue('build_habitat'));
       final current = controller.state.plans[0];

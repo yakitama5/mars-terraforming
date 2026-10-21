@@ -62,6 +62,8 @@ class PlanetModels {
   final ice = material(0.71, 0.83, 0.83);
   final dust = material(0.47, 0.20, 0.105);
   final darkDust = material(0.28, 0.105, 0.055);
+  final moonDust = material(.47, .47, .49);
+  final moonShadow = material(.23, .24, .26);
 
   static fs.PhysicallyBasedMaterial material(
     double r,
@@ -99,14 +101,23 @@ class PlanetModels {
       );
   }
 
-  fs.Node globe(bool earth) {
-    final root = fs.Node(name: earth ? '地球' : '火星');
+  fs.Node globe(bool earth, {bool moon = false}) {
+    final root = fs.Node(
+      name: moon
+          ? '月'
+          : earth
+          ? '地球'
+          : '火星',
+    );
     root.add(
       fs.Node(
-        mesh: fs.Mesh(makePlanetGeometry(earth: earth), material(1, 1, 1)),
+        mesh: fs.Mesh(
+          makePlanetGeometry(earth: earth, moon: moon),
+          material(1, 1, 1),
+        ),
       ),
     );
-    if (earth) {
+    if (earth && !moon) {
       // Small broken cloud bands leave the continental silhouettes readable.
       for (final band in const [
         (51.0, -32.0),
@@ -145,14 +156,14 @@ class PlanetModels {
         part(
           bowl,
           sphere,
-          darkDust,
+          moon ? moonShadow : darkDust,
           vm.Vector3.zero(),
           vm.Vector3(crater.$3 * 1.8, 0.08, crater.$3 * 1.8),
         );
         part(
           bowl,
           ring,
-          dust,
+          moon ? moonDust : dust,
           vm.Vector3(0, 0.037, 0),
           vm.Vector3.all(crater.$3 * 1.8),
         );
@@ -166,6 +177,7 @@ class PlanetModels {
     SceneCity city, {
     required bool earth,
     required bool selected,
+    bool moon = false,
     bool cargo = false,
   }) {
     final root = surface(city.latitude, city.longitude, radius: 3.11)
@@ -185,7 +197,11 @@ class PlanetModels {
       _ => 0,
     };
     final footprint = 0.85 + maturity * 0.52;
-    final base = city.isActive ? concrete : darkDust;
+    final base = city.isActive
+        ? concrete
+        : moon
+        ? moonShadow
+        : darkDust;
     part(
       root,
       cylinder,

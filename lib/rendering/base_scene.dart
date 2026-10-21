@@ -18,13 +18,14 @@ class BaseScene extends StatefulWidget {
     required this.earthLevel,
     required this.marsHabitats,
     required this.hasCargo,
+    this.moon = false,
     this.cities = const [],
     this.selectedCityId,
     this.onCitySelected,
     super.key,
   });
 
-  final bool earth;
+  final bool earth, moon;
   final int earthLevel;
   final int marsHabitats;
   final bool hasCargo;
@@ -41,11 +42,13 @@ class _BaseSceneState extends State<BaseScene> {
   PlanetModels? _models;
   fs.Node? _earthRoot;
   fs.Node? _marsRoot;
+  fs.Node? _moonRoot;
   fs.Node? _citiesRoot;
   fs.Node? _rocket;
   List<SceneCity> _shownCities = const [];
   String? _shownSelected;
   bool? _shownEarth;
+  bool? _shownMoon;
   bool? _shownCargo;
   Object? _error;
   bool _loading = true;
@@ -63,6 +66,15 @@ class _BaseSceneState extends State<BaseScene> {
 
   List<SceneCity> get _cities => widget.cities.isNotEmpty
       ? widget.cities
+      : widget.moon
+      ? const [
+          SceneCity(
+            id: 'moon_south_pole',
+            name: '月南極基地',
+            latitude: -80,
+            longitude: 20,
+          ),
+        ]
       : widget.earth
       ? [
           SceneCity(
@@ -119,10 +131,12 @@ class _BaseSceneState extends State<BaseScene> {
       _models = models;
       _earthRoot = models.globe(true);
       _marsRoot = models.globe(false);
+      _moonRoot = models.globe(false, moon: true);
       _rocket = models.rocket()..scale = vm.Vector3.all(0.62);
       pending
         ..add(_earthRoot!)
         ..add(_marsRoot!)
+        ..add(_moonRoot!)
         ..add(models.orbit())
         ..add(_rocket!);
       _scene = pending;
@@ -148,8 +162,9 @@ class _BaseSceneState extends State<BaseScene> {
     final scene = _scene;
     final models = _models;
     if (scene == null || models == null) return;
-    _earthRoot?.visible = widget.earth;
-    _marsRoot?.visible = !widget.earth;
+    _earthRoot?.visible = widget.earth && !widget.moon;
+    _marsRoot?.visible = !widget.earth && !widget.moon;
+    _moonRoot?.visible = widget.moon;
     final cities = _cities;
     final unchanged =
         _shownCities.length == cities.length &&
@@ -161,6 +176,7 @@ class _BaseSceneState extends State<BaseScene> {
         unchanged &&
         _shownSelected == widget.selectedCityId &&
         _shownEarth == widget.earth &&
+        _shownMoon == widget.moon &&
         _shownCargo == widget.hasCargo) {
       return;
     }
@@ -171,6 +187,7 @@ class _BaseSceneState extends State<BaseScene> {
         models.city(
           cities[i],
           earth: widget.earth,
+          moon: widget.moon,
           selected: cities[i].id == widget.selectedCityId,
           cargo: widget.hasCargo && i == 0,
         ),
@@ -181,13 +198,22 @@ class _BaseSceneState extends State<BaseScene> {
     _shownCities = List.of(cities);
     _shownSelected = widget.selectedCityId;
     _shownEarth = widget.earth;
+    _shownMoon = widget.moon;
     _shownCargo = widget.hasCargo;
   }
 
   void _resetView() {
     _zoom = 1;
-    _elevation = widget.earth ? 0.38 : 0.32;
-    _azimuth = widget.earth ? -0.58 : -1.52;
+    _elevation = widget.moon
+        ? -1.05
+        : widget.earth
+        ? 0.38
+        : 0.32;
+    _azimuth = widget.moon
+        ? .55
+        : widget.earth
+        ? -0.58
+        : -1.52;
   }
 
   void _focusCity(String? id) {
@@ -202,7 +228,7 @@ class _BaseSceneState extends State<BaseScene> {
   @override
   void didUpdateWidget(covariant BaseScene oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.earth != widget.earth) {
+    if (oldWidget.earth != widget.earth || oldWidget.moon != widget.moon) {
       _resetView();
     } else if (oldWidget.selectedCityId != widget.selectedCityId) {
       _focusCity(widget.selectedCityId);
@@ -253,7 +279,9 @@ class _BaseSceneState extends State<BaseScene> {
       gradient: RadialGradient(
         center: const Alignment(-0.15, -0.05),
         radius: 0.85,
-        colors: widget.earth
+        colors: widget.moon
+            ? const [Color(0xff282d39), Color(0xff070c15)]
+            : widget.earth
             ? const [Color(0xff122e42), Color(0xff06101c)]
             : const [Color(0xff39251f), Color(0xff0b101b)],
       ),
@@ -275,7 +303,9 @@ class _BaseSceneState extends State<BaseScene> {
                 fit: StackFit.expand,
                 children: [
                   Semantics(
-                    label: widget.earth
+                    label: widget.moon
+                        ? '月の球体と月面基地。ドラッグで回転、ピンチで拡大。'
+                        : widget.earth
                         ? '地球の球体と複数の都市。ドラッグで回転、ピンチで拡大。'
                         : '火星の球体と開発・調査地点。ドラッグで回転、ピンチで拡大。',
                     child: Listener(

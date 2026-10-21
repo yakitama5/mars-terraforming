@@ -24,6 +24,7 @@ void main() {
 
   test('one catch-up equals irregular partitions across rewards, queues and branch', () {
     final one = fresh(money: 10000);
+    one.state.achievements.addAll(['first_launch', 'mars_route_open']);
     for (final task in ['factory_contract', 'launch_contract']) {
       expect(one.enqueue(task, repeats: 3), isNull);
     }
@@ -171,6 +172,7 @@ void main() {
     () {
       final engine = fresh(money: 1000);
       engine.state.earthKits = 1;
+      engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
       engine.enqueue('mars_delivery');
       engine.advanceTo(epoch.add(const Duration(seconds: 30)));
       expect(engine.state.earthKits, 0);
@@ -293,6 +295,7 @@ void main() {
       one.enqueue('factory_contract', repeats: 1 + random.nextInt(3));
       one.enqueue('habitat_kit', repeats: null);
       one.enqueue('launch_contract', repeats: 1 + random.nextInt(3));
+      one.state.achievements.addAll(['first_launch', 'mars_route_open']);
       one.enqueue('mars_delivery', repeats: null);
       one.enqueue('build_habitat', repeats: null);
       final split = GameEngine(roundTrip(state));

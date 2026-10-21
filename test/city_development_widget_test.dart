@@ -175,6 +175,7 @@ void main() {
       tester,
     ) async {
       final controller = await createController();
+      controller.state.achievements.add('mars_route_open');
       String? openedResearch;
       var operationsOpened = false;
       await showCity(

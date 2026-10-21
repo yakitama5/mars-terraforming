@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/domain/game_engine.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
+import 'package:mars_terraforming/domain/onboarding_guide.dart';
 
 /// Reproducible balance check using public player commands and event time only.
 /// Run with `dart tools/verify_progression.dart`; failure returns nonzero even
@@ -181,6 +182,13 @@ ProgressionVerification runProgressionVerification({
   district('earth_highland', 0, 'campus');
   district('earth_highland', 1, 'solar');
   district('earth_highland', 3, 'industry');
+  for (var supply = 0; supply < 2; supply++) {
+    job('habitat_kit');
+    job('moon_delivery');
+  }
+  district('moon_south_pole', 2, 'moon_outpost');
+  district('moon_south_pole', 3, 'moon_spaceport');
+  job('mars_probe');
   job('habitat_kit');
   job('mars_delivery');
   command(game.chooseHabitat('dome'));
@@ -325,8 +333,8 @@ void _studyPublicResearch(
 
 enum EarlyInvestmentOrder { industryOnly, industryFirst, housingFirst }
 
-/// A public-command route through the first real-time hour. It reports when
-/// choices and completions become possible, not how long a person thinks.
+/// A public-command route through the first hour or an explicitly extended
+/// investment comparison. It reports opportunities, not a person's play time.
 class OnboardingVerification {
   const OnboardingVerification(this.state, this.events);
   final GameState state;
@@ -337,6 +345,7 @@ class OnboardingVerification {
 
   double get maxDecisionGapMinutes =>
       _maxGapUntil(state.simulatedMs / Duration.millisecondsPerMinute);
+  double get maxDecisionGapInFirstHourMinutes => _maxGapUntil(60);
 
   double get maxDecisionGapBeforeSettlementMinutes => _maxGapUntil(
     events.singleWhere(
@@ -363,7 +372,7 @@ class OnboardingVerification {
   Map<String, Object> toJson() => {
     'status': 'passed',
     'measurement':
-        'Scripted decision opportunities in 60 simulated minutes; '
+        'Scripted decision opportunities in ${state.simulatedMs ~/ Duration.millisecondsPerMinute} simulated minutes; '
         'not measured active play time or an optimal route.',
     'startingMoney': GameContent.initialMoney,
     'elapsedMinutes': state.simulatedMs / Duration.millisecondsPerMinute,
@@ -374,6 +383,7 @@ class OnboardingVerification {
         .toSet()
         .length,
     'maxDecisionGapMinutes': maxDecisionGapMinutes,
+    'maxDecisionGapInFirstHourMinutes': maxDecisionGapInFirstHourMinutes,
     'maxDecisionGapBeforeSettlementMinutes':
         maxDecisionGapBeforeSettlementMinutes,
     'completedDistricts': state.districts.length,
@@ -393,6 +403,7 @@ class OnboardingVerification {
 OnboardingVerification runOnboardingVerification({
   bool parallelCargo = true,
   EarlyInvestmentOrder investmentOrder = EarlyInvestmentOrder.industryOnly,
+  Duration? horizon,
 }) {
   if (!parallelCargo && investmentOrder != EarlyInvestmentOrder.industryOnly) {
     throw ArgumentError(
@@ -402,6 +413,11 @@ OnboardingVerification runOnboardingVerification({
   return _FirstHourRoute(
     parallelCargo: parallelCargo,
     investmentOrder: investmentOrder,
+    horizon:
+        horizon ??
+        (parallelCargo
+            ? const Duration(hours: 1)
+            : const Duration(minutes: 90)),
   ).run();
 }
 
@@ -414,6 +430,7 @@ class _FirstHourRoute {
     this.parallelCargo = true,
     this.investmentOrder = EarlyInvestmentOrder.industryOnly,
     this.partnershipChoice,
+    this.horizon = const Duration(hours: 1),
   });
   final bool parallelCargo;
   final EarlyInvestmentOrder investmentOrder;
@@ -422,11 +439,12 @@ class _FirstHourRoute {
   final events = <Map<String, Object>>[];
   final projects = <String, PlannedTask>{};
   final reported = <String>{};
-  static const horizon = Duration(hours: 1);
+  final Duration horizon;
   bool firstCohortAllocated = false;
   bool secondCohortAllocated = false;
   bool stoppedContractForStaff = false;
   bool thirdCohortAllocated = false;
+  bool fourthCohortAllocated = false;
 
   bool booked(String label) => projects.containsKey(label);
   bool done(String label) => projects[label]?.status == 'completed';
@@ -513,6 +531,39 @@ class _FirstHourRoute {
       if (done(project.key) && reported.add(project.key)) {
         record('completion', project.key);
       }
+    }
+  }
+
+  // Do not let a queued investment cut off the contracts that fund it. Move
+  // earnings ahead while cash is short, then put the selected project back
+  // ahead of the next unpaid repetition once its budget is available.
+  void fundQueuedProjects() {
+    for (final facility in ['factory', 'launch']) {
+      final queue = game.state.upcomingPlansFor(facility);
+      final contract = queue
+          .where(
+            (plan) =>
+                plan.taskId.endsWith('_contract') &&
+                plan.remainingRepeats == null,
+          )
+          .firstOrNull;
+      final project = queue
+          .where((plan) => !plan.taskId.endsWith('_contract'))
+          .firstOrNull;
+      if (contract == null || project == null) continue;
+      final affordable = game.state.money >= game.state.plannedCost(project);
+      final first = affordable ? project : contract;
+      if (queue.first.id == first.id) continue;
+      command(
+        game.reorderPlan(
+          first.id,
+          relativeToPlanId: queue.first.id,
+          before: true,
+        ),
+        affordable
+            ? 'Resume funded project ${project.taskId}'
+            : 'Earn the budget for ${project.taskId}',
+      );
     }
   }
 
@@ -624,6 +675,11 @@ class _FirstHourRoute {
               GameContent.researchPointCost('autonomous_rovers') / 2) {
         task('Third specialist cohort', 'train_specialists', first: true);
       }
+      if (partnershipChoice == null &&
+          done('First Mars settlement') &&
+          !booked('Third specialist cohort')) {
+        task('Third specialist cohort', 'train_specialists', first: true);
+      }
       if (done('Third specialist cohort') &&
           !thirdCohortAllocated &&
           game.state.staffAllocationReason(10) == null) {
@@ -633,6 +689,25 @@ class _FirstHourRoute {
         );
         thirdCohortAllocated = true;
       }
+      if (partnershipChoice != null &&
+          thirdCohortAllocated &&
+          done(
+            partnershipChoice == 'funding'
+                ? 'Next robotics knowledge'
+                : 'First Mars settlement',
+          ) &&
+          !booked('Fourth specialist cohort')) {
+        task('Fourth specialist cohort', 'train_specialists', first: true);
+      }
+      if (done('Fourth specialist cohort') &&
+          !fourthCohortAllocated &&
+          game.state.staffAllocationReason(12) == null) {
+        command(
+          game.assignResearchers(12),
+          'Assign the fourth cohort to future common research',
+        );
+        fourthCohortAllocated = true;
+      }
       if (done('Next robotics knowledge') && !booked('Next research project')) {
         task('Next research project', 'automated_fabrication');
       }
@@ -641,7 +716,28 @@ class _FirstHourRoute {
           !booked('First habitat kit')) {
         task('First habitat kit', 'habitat_kit');
       }
-      if (done('First habitat kit') && !booked('First Mars delivery')) {
+      if (done('First habitat kit') && !booked('First Moon delivery')) {
+        task('First Moon delivery', 'moon_delivery');
+      }
+      if (done('First Moon delivery') && !booked('Moon outpost')) {
+        district('Moon outpost', 'moon_south_pole', 2, 'moon_outpost');
+        task('Second Moon kit', 'habitat_kit', first: true);
+      }
+      if (done('Second Moon kit') && !booked('Second Moon delivery')) {
+        task('Second Moon delivery', 'moon_delivery');
+      }
+      if (done('Moon outpost') &&
+          done('Second Moon delivery') &&
+          !booked('Moon launch base')) {
+        district('Moon launch base', 'moon_south_pole', 3, 'moon_spaceport');
+      }
+      if (done('Moon launch base') && !booked('Mars exploration')) {
+        task('Mars exploration', 'mars_probe');
+        task('First Mars kit', 'habitat_kit', first: true);
+      }
+      if (done('Mars exploration') &&
+          done('First Mars kit') &&
+          !booked('First Mars delivery')) {
         task('First Mars delivery', 'mars_delivery');
       }
       if (done('First Mars delivery') && !booked('First Mars settlement')) {
@@ -698,8 +794,10 @@ class _FirstHourRoute {
       if (done('Second habitat kit') && !booked('Second Mars delivery')) {
         task('Second Mars delivery', 'mars_delivery');
       }
+      fundQueuedProjects();
       final waits = <int>[
         horizon.inMilliseconds - game.state.simulatedMs,
+        const Duration(minutes: 1).inMilliseconds,
         if (partnershipChoice != null &&
             booked('Next robotics knowledge') &&
             !done('Next robotics knowledge') &&
@@ -734,13 +832,25 @@ class _FirstHourRoute {
       'checkpoint',
       '${horizon.inMinutes}-minute handoff to reserved offline work',
     );
-    if (game.state.marsHabitats != 1 ||
+    if (!OnboardingGuide.fromState(game.state).isComplete ||
+        game.state.districtCount('moon_outpost') != 1 ||
+        game.state.districtCount('moon_spaceport') != 1 ||
+        game.state.districts.values
+                .where(
+                  (district) =>
+                      GameContent.cities[district.cityId]?.planet == 'earth',
+                )
+                .length <
+            3 ||
+        game.state.marsHabitats != 1 ||
         game.state.marsResidents != 24 ||
         game.state.districts.length < 5 ||
-        !done('Mineral industry demonstration') ||
+        (horizon > const Duration(hours: 1) &&
+            !done('Mineral industry demonstration')) ||
         !secondCohortAllocated ||
-        game.state.specialistCount != (partnershipChoice == null ? 16 : 18) ||
-        (partnershipChoice != null && !thirdCohortAllocated) ||
+        game.state.specialistCount != (partnershipChoice == null ? 18 : 20) ||
+        !thirdCohortAllocated ||
+        (partnershipChoice != null && !fourthCohortAllocated) ||
         !game.state.research.containsAll([
           'life_support',
           'deployable_solar_arrays',
@@ -749,7 +859,7 @@ class _FirstHourRoute {
           'urban_planning',
         ])) {
       throw StateError(
-        'First-hour goals were not reached: ${jsonEncode(events)}',
+        '${horizon.inMinutes}-minute route goals were not reached: ${jsonEncode(events)}',
       );
     }
     final snapshot = jsonEncode(game.state.toJson());
@@ -771,7 +881,10 @@ class _FirstHourRoute {
 Map<String, Object> runEarlyInvestmentVerification() {
   final routes = {
     for (final order in EarlyInvestmentOrder.values)
-      order.name: runOnboardingVerification(investmentOrder: order),
+      order.name: runOnboardingVerification(
+        investmentOrder: order,
+        horizon: const Duration(minutes: 90),
+      ),
   };
   double completion(OnboardingVerification route, String step) =>
       route.events.singleWhere(
@@ -787,19 +900,19 @@ Map<String, Object> runEarlyInvestmentVerification() {
   final housingFirst = routes['housingFirst']!;
   for (final route in routes.values) {
     require(
-      route.state.simulatedMs == const Duration(hours: 1).inMilliseconds,
-      'Early investments must be measured at the same 60-minute horizon',
+      route.state.simulatedMs == const Duration(minutes: 90).inMilliseconds,
+      'Early investments must be measured at the same 90-minute horizon',
     );
     require(
       route.state.districtAt('earth_delta', 8)?.districtId == 'industry',
-      'Each first-hour investment route must finish the industrial district',
+      'Each extended investment route must finish the industrial district',
     );
     require(
       route.state.marsHabitats == 1 && route.state.marsResidents == 24,
       'Investment changes must preserve the first Mars settlement',
     );
     require(
-      route.maxDecisionGapMinutes < 21.46,
+      route.maxDecisionGapInFirstHourMinutes < 21.46,
       'The observed first-hour gap did not improve on district-3',
     );
   }
@@ -879,10 +992,10 @@ Map<String, Object> runEarlyInvestmentVerification() {
         housingFirst,
         'Original coastal housing upgraded',
       ),
-      'industryFirstCashAt60Minutes': industryFirst.state.money,
-      'housingFirstCashAt60Minutes': housingFirst.state.money,
-      'industryFirstPopulationAt60Minutes': industryFirst.state.population,
-      'housingFirstPopulationAt60Minutes': housingFirst.state.population,
+      'industryFirstCashAt90Minutes': industryFirst.state.money,
+      'housingFirstCashAt90Minutes': housingFirst.state.money,
+      'industryFirstPopulationAt90Minutes': industryFirst.state.population,
+      'housingFirstPopulationAt90Minutes': housingFirst.state.population,
       'explanation':
           'Earlier housing produces revenue and research adjacency sooner; '
           'earlier industry produces factory efficiency sooner. '
@@ -946,11 +1059,11 @@ Map<String, Object> runParallelStrategyComparison() {
         route.key: {
           ...route.value.toJson(),
           'investmentPolicy': route.key == 'funding'
-              ? 'Reserve industry before upgrading housing; train three staff '
+              ? 'Reserve industry before upgrading housing; train four staff '
                     'cohorts while common research points accrue.'
               : 'Upgrade housing before reserving industry; train three staff '
-                    'cohorts and preserve paid factory work before reallocating '
-                    'new researchers.',
+                    'cohorts, then invest in a fourth after habitation. Preserve '
+                    'paid factory work before reallocating new researchers.',
           'unfinishedDevelopment': route.value.state.plans
               .where(
                 (plan) =>

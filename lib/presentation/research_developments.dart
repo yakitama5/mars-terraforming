@@ -305,7 +305,7 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                StrategyFact('1回の開始費用', dollars(operation.cost)),
+                StrategyFact('1回の開始費用', dollars(game.taskCost(operation))),
                 StrategyFact(
                   '共用設備を使う時間',
                   gameDuration(game.currentTaskDurationMs(operationId)),

@@ -337,7 +337,7 @@ class _PlanForecastDialogState extends State<PlanForecastDialog> {
       ),
       StrategyFact(
         'キット在庫',
-        '地球 ${forecast.earthKits}基 · 火星 ${forecast.marsKits}基',
+        '地球 ${forecast.earthKits}基 · 月 ${forecast.moonKits}基 · 火星 ${forecast.marsKits}基',
       ),
     ],
   );

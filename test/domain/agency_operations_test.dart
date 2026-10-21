@@ -212,14 +212,21 @@ void main() {
       final game = ready();
       game.enqueue('factory_contract', repeats: null);
       game.enqueue('launch_contract', repeats: null);
+      game.advanceBy(const Duration(seconds: 120));
+      // The first actual launch earns one milestone; repeating the same
+      // contract must not continue increasing reputation or support access.
+      expect(game.state.agencyStatus.fame, 8);
+      expect(game.state.agencyStatus.spaceContribution, 8);
       game.advanceBy(const Duration(hours: 8));
       expect(game.state.contractRevenue, greaterThan(0));
-      expect(game.state.agencyStatus.fame, 0);
+      expect(game.state.agencyStatus.fame, 8);
       expect(game.state.agencyStatus.technology, 0);
       expect(game.state.agencyStatus.friendship, 10);
-      expect(game.state.agencyStatus.spaceContribution, 0);
+      expect(game.state.agencyStatus.spaceContribution, 8);
       expect(game.state.availablePartnerships, isEmpty);
-      expect(game.state.claimedRewards, isEmpty);
+      expect(game.state.claimedRewards, {
+        '${game.state.worldId}:achievement:first_launch',
+      });
     },
   );
 

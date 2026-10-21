@@ -26,13 +26,14 @@ class CityScene extends StatefulWidget {
     required this.adjacentPlots,
     required this.onPlotSelected,
     this.renderScene = true,
+    this.moon = false,
     this.constructionMode = false,
     this.buildablePlots = const {},
     super.key,
   });
 
   final String cityId, cityName;
-  final bool earth, renderScene, constructionMode;
+  final bool earth, moon, renderScene, constructionMode;
   final Set<int> buildablePlots;
   final int columns, rows, selectedPlot;
   final List<ScenePlot> plots;
@@ -67,6 +68,7 @@ class _CitySceneState extends State<CityScene> {
 
   CityTerrain _makeTerrain() => CityTerrain(
     earth: widget.earth,
+    moon: widget.moon,
     columns: widget.columns,
     rows: widget.rows,
     plots: widget.plots,
@@ -188,6 +190,7 @@ class _CitySceneState extends State<CityScene> {
     final changedTerrain =
         oldWidget.cityId != widget.cityId ||
         oldWidget.earth != widget.earth ||
+        oldWidget.moon != widget.moon ||
         oldWidget.columns != widget.columns ||
         oldWidget.rows != widget.rows ||
         oldWidget.plots.length != widget.plots.length ||
@@ -240,7 +243,9 @@ class _CitySceneState extends State<CityScene> {
         gradient: RadialGradient(
           center: const Alignment(0, -.2),
           radius: .85,
-          colors: widget.earth
+          colors: widget.moon
+              ? const [Color(0xff292e3a), Color(0xff080c14)]
+              : widget.earth
               ? const [Color(0xff385654), Color(0xff122528)]
               : const [Color(0xff645047), Color(0xff241f24)],
         ),
@@ -612,8 +617,11 @@ class _PlotBoundaryPainter extends CustomPainter {
         'housing' => '住宅',
         'campus' || 'mars_lab' => '研究',
         'industry' => '工業',
-        'solar' => '発電',
-        'spaceport' => '宇宙港',
+        'solar' || 'moon_solar' => '発電',
+        'spaceport' || 'moon_spaceport' => '宇宙港',
+        'moon_outpost' => '月面基地',
+        'moon_extractor' => '採取',
+        'space_elevator' => '軌道昇降',
         'mars_habitat' => '居住',
         'greenhouse' => '温室',
         'extractor' => '採取',
@@ -718,7 +726,9 @@ class _MapFallbackPainter extends CustomPainter {
       canvas.drawPath(
         side,
         paint
-          ..color = terrain.earth
+          ..color = terrain.moon
+              ? const Color(0xff60636b)
+              : terrain.earth
               ? const Color(0xff80684c)
               : const Color(0xff784c36),
       );
@@ -730,7 +740,9 @@ class _MapFallbackPainter extends CustomPainter {
     canvas.drawPath(
       top,
       paint
-        ..color = terrain.earth
+        ..color = terrain.moon
+            ? const Color(0xff9699a0)
+            : terrain.earth
             ? const Color(0xff7c9654)
             : const Color(0xffa45a3a),
     );
