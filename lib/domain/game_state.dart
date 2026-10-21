@@ -861,6 +861,14 @@ class GameState {
     );
   }
 
+  /// Knowledge unlocks a design independently of funds, land and city access.
+  /// Discovering or reserving a research candidate does not unlock its designs.
+  bool districtResearchUnlocked(String districtId) {
+    final definition = GameContent.districts[districtId];
+    return definition != null &&
+        definition.requiredResearchIds.every(research.contains);
+  }
+
   DistrictPreview districtPreview(
     String cityId,
     int plotIndex,
@@ -894,12 +902,9 @@ class GameState {
         !definition.allowedTerrain.contains(city.terrainAt(plotIndex))) {
       reason =
           '必要な地形：${definition.allowedTerrain.map((t) => GameContent.terrainNames[t]).join('・')}';
-    } else if (definition.requiredResearch != null &&
-        !research.contains(definition.requiredResearch)) {
-      reason = '前提研究：${researchNameForDisplay(definition.requiredResearch!)}';
-    } else if (definition.prerequisites.any((id) => !research.contains(id))) {
+    } else if (!districtResearchUnlocked(districtId)) {
       reason =
-          '前提研究：${researchNameForDisplay(definition.prerequisites.firstWhere((id) => !research.contains(id)))}';
+          '前提研究：${researchNameForDisplay(definition.requiredResearchIds.firstWhere((id) => !research.contains(id)))}';
     } else if (city.planet == 'moon' &&
         districtId != 'moon_outpost' &&
         districtCount('moon_outpost') == 0) {

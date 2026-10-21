@@ -152,6 +152,12 @@ class CityFacilityPalette extends StatelessWidget {
         ),
       ],
       const SizedBox(height: 10),
+      if (districts.isEmpty)
+        const Text(
+          '研究ツリーで技術を解放すると、建設できる施設がここに現れます。',
+          key: Key('city-facility-empty'),
+          style: TextStyle(fontSize: 13, color: strategyMuted),
+        ),
       for (final district in districts) ...[
         Semantics(
           selected: district.id == selectedId,
@@ -256,9 +262,9 @@ class CityFacilityPalette extends StatelessWidget {
         ),
         const SizedBox(height: 6),
       ],
-      if (!compact)
+      if (!compact && districts.isNotEmpty)
         const Text(
-          '鍵のある施設を押すと、解放条件を確認できます。',
+          '研究で技術を解放すると、新しい施設が増えます。',
           style: TextStyle(fontSize: 11, color: strategyMuted),
         ),
     ],
