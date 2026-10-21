@@ -12,6 +12,7 @@ import 'city_snapshot.dart';
 class CityTerrain {
   CityTerrain({
     required this.earth,
+    this.moon = false,
     required this.columns,
     required this.rows,
     required this.plots,
@@ -28,7 +29,7 @@ class CityTerrain {
            ),
        ];
 
-  final bool earth;
+  final bool earth, moon;
   final int columns, rows;
   final List<ScenePlot> plots;
   final List<vm.Vector3> centers;
@@ -197,7 +198,7 @@ class CityTerrain {
       }
     }
     final channelDistance = riverDistance(x, z);
-    if (channelDistance < .38) {
+    if (!moon && channelDistance < .38) {
       final bed = earth ? waterLevel - .24 : -.12;
       final edge = earth ? waterLevel : .07;
       final channelHeight = channelDistance < 0
@@ -234,20 +235,32 @@ class CityTerrain {
       final distance =
           (x - point.x) * (x - point.x) + (z - point.z) * (z - point.z);
       final weight = math.exp(-distance * 1.1);
-      final color = switch (plots[i].terrain) {
-        'coast' => const Color(0xffb1a36a),
-        'ice' => const Color(0xffb6cdd2),
-        'mineral' => earth ? const Color(0xff989270) : const Color(0xff75422f),
-        'ridge' => earth ? const Color(0xff84926e) : const Color(0xff9b553b),
-        'crater' => const Color(0xff714131),
-        _ => earth ? const Color(0xff91a55b) : const Color(0xffb05a32),
-      };
+      final color = moon
+          ? switch (plots[i].terrain) {
+              'ice' => const Color(0xffbac5cf),
+              'mineral' => const Color(0xff87868b),
+              'ridge' => const Color(0xffa7a7ad),
+              'crater' => const Color(0xff72747b),
+              _ => const Color(0xff97989f),
+            }
+          : switch (plots[i].terrain) {
+              'coast' => const Color(0xffb1a36a),
+              'ice' => const Color(0xffb6cdd2),
+              'mineral' =>
+                earth ? const Color(0xff989270) : const Color(0xff75422f),
+              'ridge' =>
+                earth ? const Color(0xff84926e) : const Color(0xff9b553b),
+              'crater' => const Color(0xff714131),
+              _ => earth ? const Color(0xff91a55b) : const Color(0xffb05a32),
+            };
       weights += weight;
       red += color.r * weight;
       green += color.g * weight;
       blue += color.b * weight;
     }
-    final wilderness = earth
+    final wilderness = moon
+        ? const Color(0xff8d8f96)
+        : earth
         ? const Color(0xff829c52)
         : const Color(0xffac5834);
     var base = weights > 1e-10
@@ -268,7 +281,11 @@ class CityTerrain {
         .25 * math.cos(z * .93 - x * .24);
     base = Color.lerp(
       base,
-      earth ? const Color(0xff34582e) : const Color(0xff713925),
+      moon
+          ? const Color(0xff5e6068)
+          : earth
+          ? const Color(0xff34582e)
+          : const Color(0xff713925),
       .12 * patch,
     )!;
     if (hasCoast) {
@@ -289,12 +306,14 @@ class CityTerrain {
     }
     final river = riverDistance(x, z);
     final bank = 1 - _smooth(.03, .40, river.abs());
-    base = Color.lerp(
-      base,
-      earth ? const Color(0xffbcb789) : const Color(0xffce9864),
-      bank * .82,
-    )!;
-    if (river < 0) {
+    if (!moon) {
+      base = Color.lerp(
+        base,
+        earth ? const Color(0xffbcb789) : const Color(0xffce9864),
+        bank * .82,
+      )!;
+    }
+    if (!moon && river < 0) {
       base = Color.lerp(
         base,
         earth ? const Color(0xff348d8b) : const Color(0xff875235),
@@ -304,7 +323,11 @@ class CityTerrain {
     final ridge = _smooth(.8, 1.6, height(x, z));
     base = Color.lerp(
       base,
-      earth ? const Color(0xff9b9b83) : const Color(0xffb67853),
+      moon
+          ? const Color(0xffb8b9bf)
+          : earth
+          ? const Color(0xff9b9b83)
+          : const Color(0xffb67853),
       ridge * .70,
     )!;
     return base;
@@ -396,7 +419,14 @@ class CityTerrain {
     final uvs = <double>[];
     final indices = <int>[];
     const segments = 192;
-    final palette = earth
+    final palette = moon
+        ? const [
+            Color(0xff7d7e84),
+            Color(0xff95969b),
+            Color(0xff666872),
+            Color(0xff41454f),
+          ]
+        : earth
         ? const [
             Color(0xff515a35),
             Color(0xff8d7050),

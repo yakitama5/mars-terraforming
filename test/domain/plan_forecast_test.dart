@@ -60,6 +60,7 @@ void main() {
       game.state.researchPointUnits = 0;
       expect(game.enqueue('life_support'), isNull);
       game.enqueue('habitat_kit');
+      game.state.achievements.addAll(['first_launch', 'mars_route_open']);
       game.enqueue('mars_delivery');
       game.enqueue('build_habitat', repeats: null);
       final result = forecastPlans(game.state, const Duration(hours: 8));
@@ -90,6 +91,7 @@ void main() {
         taskId: 'automated_fabrication',
       ),
     );
+    game.state.achievements.addAll(['first_launch', 'mars_route_open']);
     game.enqueue('mars_delivery');
     game.setFacilityEnabled('factory', false);
     game.enqueueDistrict('earth_delta', 0, 'housing');
@@ -304,6 +306,8 @@ void main() {
     'paused installation keeps a paid transport waiting in the forecast',
     () {
       final game = ready();
+      // This test isolates a paused paid flight after its route was explored.
+      game.state.achievements.add('mars_route_open');
       const technology = 'cargo_packaging';
       game.state.research.add(technology);
       expect(

@@ -7,6 +7,7 @@ import 'package:mars_terraforming/rendering/city_snapshot.dart';
 
 CityTerrain _terrain(CityDefinition city) => CityTerrain(
   earth: city.planet == 'earth',
+  moon: city.planet == 'moon',
   columns: city.width,
   rows: city.height,
   plots: [
@@ -20,6 +21,29 @@ CityTerrain _terrain(CityDefinition city) => CityTerrain(
 );
 
 void main() {
+  test('月面は河川を掘らず、灰色の乾燥したレゴリスで描画する', () {
+    final terrain = CityTerrain(
+      earth: false,
+      moon: true,
+      columns: 1,
+      rows: 1,
+      plots: const [ScenePlot(index: 0, terrain: 'plain', terrainName: '平地')],
+    );
+    expect(terrain.hasRiver, isFalse);
+    expect(terrain.hasCoast, isFalse);
+    final x = 0.0;
+    final z = terrain.riverCenterZ(x);
+    expect(terrain.isWater(x, z), isFalse);
+    expect(terrain.waterDistance(x, z), double.infinity);
+    // The old Martian dry channel must not appear on the Moon either.
+    expect(terrain.height(x, z), greaterThan(.08));
+    for (final point in [(0.0, 0.0), (x, z)]) {
+      final color = terrain.colorAt(point.$1, point.$2);
+      expect((color.r - color.g).abs(), lessThan(.025));
+      expect((color.r - color.b).abs(), lessThan(.06));
+    }
+  });
+
   for (final city in GameContent.cities.values) {
     test(
       '${city.id}: circular slice contains every buildable hex and thick rim',

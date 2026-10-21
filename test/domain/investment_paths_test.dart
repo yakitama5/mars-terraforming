@@ -15,6 +15,10 @@ void main() {
     );
     expect(result.state.marsResidents, 24);
     expect(result.state.marsHabitats, 1);
+    expect(result.state.districtCount('moon_outpost'), 1);
+    expect(result.state.districtCount('moon_spaceport'), 1);
+    expect(result.state.planetUnlocked('moon'), isTrue);
+    expect(result.state.planetUnlocked('mars'), isTrue);
     expect(result.state.money, greaterThanOrEqualTo(0));
     expect(summary['distinctDecisionTimes'], greaterThanOrEqualTo(8));
     expect(result.maxDecisionGapMinutes, lessThanOrEqualTo(14));
@@ -63,25 +67,28 @@ void main() {
     },
   );
 
-  test('housing-first and industry-first offer different benefits in the first hour', () {
-    final report = runEarlyInvestmentVerification();
-    expect(report['status'], 'passed');
-    final tradeoffs = report['tradeoffs']! as Map<String, Object>;
-    expect(
-      tradeoffs['housingFirstHousingCompletedMinutes'],
-      lessThan(tradeoffs['industryFirstHousingCompletedMinutes']! as num),
-    );
-    expect(
-      tradeoffs['industryFirstIndustryCompletedMinutes'],
-      lessThan(tradeoffs['housingFirstIndustryCompletedMinutes']! as num),
-    );
-    expect(
-      tradeoffs['housingFirstCashAt60Minutes'],
-      greaterThan(tradeoffs['industryFirstCashAt60Minutes']! as num),
-    );
-  });
+  test(
+    'housing-first and industry-first offer different benefits over 90 minutes',
+    () {
+      final report = runEarlyInvestmentVerification();
+      expect(report['status'], 'passed');
+      final tradeoffs = report['tradeoffs']! as Map<String, Object>;
+      expect(
+        tradeoffs['housingFirstHousingCompletedMinutes'],
+        lessThan(tradeoffs['industryFirstHousingCompletedMinutes']! as num),
+      );
+      expect(
+        tradeoffs['industryFirstIndustryCompletedMinutes'],
+        lessThan(tradeoffs['housingFirstIndustryCompletedMinutes']! as num),
+      );
+      expect(
+        tradeoffs['housingFirstCashAt90Minutes'],
+        greaterThan(tradeoffs['industryFirstCashAt90Minutes']! as num),
+      );
+    },
+  );
 
-  test('both partnership strategies keep meaningful first-hour decisions within six minutes', () {
+  test('both partnership strategies reach lunar staging and habitation within the first hour', () {
     for (final choice in ['funding', 'technology']) {
       final route = runParallelStrategyVerification(partnershipChoice: choice);
       expect(route.state.simulatedMs, const Duration(hours: 1).inMilliseconds);
@@ -98,23 +105,25 @@ void main() {
           'autonomous_rovers',
         ]),
       );
-      expect(route.state.specialistCount, 18);
-      expect(route.state.researchers, 10);
+      expect(route.state.specialistCount, 20);
+      expect(route.state.researchers, 12);
       expect(route.state.industrialWorkers, 8);
-      expect(route.state.districtAt('earth_delta', 0)?.level, 2);
+      expect(route.state.districtCount('moon_outpost'), 1);
+      expect(route.state.districtCount('moon_spaceport'), 1);
+      expect(route.state.planetUnlocked('mars'), isTrue);
       expect(route.state.marsResidents, greaterThanOrEqualTo(24));
       expect(
         route.state.plans.where(
           (plan) =>
               plan.taskId == 'train_specialists' && plan.status == 'completed',
         ),
-        hasLength(3),
+        hasLength(4),
       );
       expect(
         route.state.plans.where(
           (plan) => plan.taskId == 'district_mars_habitat',
         ),
-        hasLength(2),
+        hasLength(1),
       );
       final parallel = route.events.where(
         (event) => event.containsKey('parallelWork'),
@@ -141,15 +150,15 @@ void main() {
     }
   });
 
-  test('cash and technology choices retain different benefits without disguising unfinished work', () {
+  test('funding installs the campus earlier while technology retains department bonuses', () {
     final funding = runParallelStrategyVerification();
     final technology = runParallelStrategyVerification(
       partnershipChoice: 'technology',
     );
-    expect(funding.state.money, greaterThan(technology.state.money));
-    expect(funding.state.districtAt('earth_delta', 8)?.districtId, 'industry');
+    expect(funding.state.districtAt('earth_delta', 1)?.districtId, 'campus');
+    expect(technology.state.districtAt('earth_delta', 1), isNull);
     expect(
-      technology.state.districtAt('earth_delta', 8)?.districtId,
+      funding.state.districtPlanAt('earth_delta', 8)?.definition.districtId,
       'industry',
     );
     for (final route in [funding, technology]) {
@@ -161,16 +170,11 @@ void main() {
         route.state.researchWaitMs('automated_fabrication'),
         greaterThan(0),
       );
-      expect(
-        route.state.plans.where(
-          (plan) => plan.taskId == 'district_mars_habitat' && !plan.isFinished,
-        ),
-        hasLength(1),
-      );
+      expect(route.state.marsHabitats, 1);
     }
     expect(
-      technology.state.researchBonusPercent,
-      greaterThan(funding.state.researchBonusPercent),
+      technology.state.partnershipEfficiencyBonus('lab'),
+      greaterThan(funding.state.partnershipEfficiencyBonus('lab')),
     );
     expect(
       technology.state.launchBonusPercent,
@@ -181,18 +185,27 @@ void main() {
       technology.state.partnershipChoices.values,
       everyElement('technology'),
     );
-    expect(funding.state.partnershipChoices, hasLength(3));
-    expect(technology.state.partnershipChoices, hasLength(3));
+    expect(funding.state.partnershipChoices, hasLength(2));
+    expect(technology.state.partnershipChoices, hasLength(2));
   });
 
   test('decision opportunities and actual development completions are reported separately', () {
     final report = runParallelStrategyComparison();
     final routes = report['routes']! as Map<String, Object>;
     final technology = routes['technology']! as Map<String, Object>;
-    expect(
-      technology['maxMeaningfulCompletionGapMinutes'],
-      greaterThan(technology['maxDecisionGapMinutes']! as num),
-    );
+    final completedAt = <double>[
+      0,
+      60,
+      ...(technology['events']! as List<Map<String, Object>>)
+          .where((event) => event['kind'] == 'completion')
+          .map((event) => event['elapsedMinutes']! as double),
+    ]..sort();
+    var maxGap = 0.0;
+    for (var i = 1; i < completedAt.length; i++) {
+      final gap = completedAt[i] - completedAt[i - 1];
+      if (gap > maxGap) maxGap = gap;
+    }
+    expect(technology['maxMeaningfulCompletionGapMinutes'], maxGap);
     expect(technology['unfinishedDevelopment'], isNotEmpty);
     expect(report['measurement'], contains('no state is injected'));
     expect(

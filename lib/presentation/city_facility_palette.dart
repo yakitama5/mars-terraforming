@@ -8,9 +8,15 @@ import 'strategy_widgets.dart';
 // and unlock rules still come from GameContent and the domain state.
 ResearchField? districtResearchField(String id) => switch (id) {
   'campus' || 'mars_lab' || 'greenhouse' => ResearchField.bio,
-  'industry' || 'spaceport' || 'mars_habitat' => ResearchField.mechanics,
-  'extractor' => ResearchField.materials,
-  'solar' => ResearchField.energy,
+  'industry' ||
+  'spaceport' ||
+  'mars_habitat' ||
+  'moon_outpost' ||
+  'moon_spaceport' => ResearchField.mechanics,
+  'extractor' ||
+  'moon_extractor' ||
+  'space_elevator' => ResearchField.materials,
+  'solar' || 'moon_solar' => ResearchField.energy,
   _ => null,
 };
 
@@ -85,11 +91,12 @@ IconData districtIcon(String id) => switch (id) {
   'housing' => Icons.apartment,
   'campus' || 'mars_lab' => Icons.science_outlined,
   'industry' => Icons.factory_outlined,
-  'solar' => Icons.solar_power_outlined,
-  'spaceport' => Icons.rocket_launch_outlined,
-  'mars_habitat' => Icons.home_work_outlined,
+  'solar' || 'moon_solar' => Icons.solar_power_outlined,
+  'spaceport' || 'moon_spaceport' => Icons.rocket_launch_outlined,
+  'mars_habitat' || 'moon_outpost' => Icons.home_work_outlined,
+  'space_elevator' => Icons.elevator_outlined,
   'greenhouse' => Icons.eco_outlined,
-  'extractor' => Icons.landscape_outlined,
+  'extractor' || 'moon_extractor' => Icons.landscape_outlined,
   _ => Icons.construction,
 };
 
@@ -102,6 +109,11 @@ String districtPurpose(String id) => switch (id) {
   'mars_habitat' => '火星での居住を広げる',
   'greenhouse' => '居住と現地生産を支える',
   'extractor' => '現地の資源を活用する',
+  'moon_outpost' => '月面開発と火星探査を支える',
+  'moon_spaceport' => '火星への打ち上げを解放する',
+  'moon_solar' => '月面設備と推進剤補給を支える',
+  'moon_extractor' => '月面資源で輸送費を抑える',
+  'space_elevator' => '軌道へ運ぶ費用を抑える',
   _ => '都市の能力を高める',
 };
 

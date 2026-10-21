@@ -306,7 +306,8 @@ class InvestmentComparison extends StatelessWidget {
                 '資金待ち · あと ${dollars(preview.cost - game.money)}',
                 style: const TextStyle(color: strategyCopper, fontSize: 12),
               )
-            else if (city.planet == 'mars' && game.marsKits == 0)
+            else if ((city.planet == 'mars' && game.marsKits == 0) ||
+                (city.planet == 'moon' && game.moonKits == 0))
               const Text(
                 '到着キット待ち',
                 style: TextStyle(color: strategyCopper, fontSize: 12),
@@ -344,7 +345,7 @@ class InvestmentEstimate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final city = GameContent.cities[cityId]!;
-    final facilityId = city.planet == 'earth' ? 'factory' : 'mars';
+    final facilityId = city.planet == 'earth' ? 'factory' : city.planet;
     final details = <Widget>[
       StrategyFact(
         '税収 / 維持費',
@@ -395,6 +396,8 @@ class InvestmentEstimate extends StatelessWidget {
       ),
       if (city.planet == 'mars')
         StrategyFact('必要資材', '到着キット 1基 / 在庫 ${game.marsKits}基'),
+      if (city.planet == 'moon')
+        StrategyFact('必要資材', '月面キット 1基 / 在庫 ${game.moonKits}基'),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

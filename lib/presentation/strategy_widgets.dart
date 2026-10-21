@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 import 'strategy_colors.dart';
 export 'strategy_colors.dart';
 
+String planetLabel(String planet) => switch (planet) {
+  'moon' => '月',
+  'mars' => '火星',
+  _ => '地球',
+};
+
 String gameDuration(int ms) {
   final seconds = (ms / 1000).ceil();
   if (seconds >= 86400) {

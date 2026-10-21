@@ -181,6 +181,7 @@ class GameState {
   int earthLevel = 1;
   int population = GameContent.initialPopulation;
   int earthKits = 0;
+  int moonKits = 0;
   int marsKits = 0;
   int marsHabitats = 0;
   int marsResidents = 0;
@@ -424,6 +425,9 @@ class GameState {
   final Set<String> research = {};
   final Set<String> _knownResearch = {};
   final Set<String> achievements = {};
+  // A v8 reserved Mars operation must remain playable without fabricating lunar
+  // facilities or replaying achievement rewards during migration.
+  final Set<String> legacyUnlockedPlanets = {};
   final Set<String> claimedRewards = {};
   final Map<String, bool> facilities = {
     for (final id in GameContent.facilities.keys) id: true,
@@ -658,10 +662,49 @@ class GameState {
   }
 
   bool cityUnlocked(String cityId) => cityLockReason(cityId) == null;
+  bool planetUnlocked(String planet) => planetLockReason(planet) == null;
+  String? planetLockReason(String planet) => switch (planet) {
+    'earth' => null,
+    'moon' =>
+      achievements.contains('first_launch') ||
+              achievements.contains('mars_route_open') ||
+              achievements.contains('first_landing') ||
+              legacyUnlockedPlanets.contains('moon')
+          ? null
+          : '初めてのロケット打ち上げを完了してください',
+    'mars' =>
+      achievements.contains('mars_route_open') ||
+              achievements.contains('first_landing') ||
+              legacyUnlockedPlanets.contains('mars')
+          ? null
+          : '月面基地と月面打ち上げ基地を整え、火星探査機を打ち上げてください',
+    _ => '対応する天体がありません',
+  };
+  String? spaceTaskLockReason(TaskDefinition task) {
+    if (task.id == 'moon_delivery') return planetLockReason('moon');
+    if (task.id == 'mars_probe') {
+      final moonReason = planetLockReason('moon');
+      if (moonReason != null) return moonReason;
+      if (achievements.contains('mars_route_open')) return '火星航路は開拓済みです';
+      if (districtCount('moon_outpost') == 0) return '月面基地を建設してください';
+      if (districtCount('moon_spaceport') == 0) return '月面打ち上げ基地を建設してください';
+      if (facilities['moon'] != true) return '月面建設班を再開してください';
+    }
+    if (task.outputResource == 'marsKits' &&
+        task.inputResource == 'earthKits') {
+      return planetLockReason('mars');
+    }
+    return null;
+  }
+
   String? cityLockReason(String cityId) {
     final city = GameContent.cities[cityId];
     if (city == null) return '都市が見つかりません';
-    if (city.planet == 'mars' && !achievements.contains('first_landing')) {
+    final planetReason = planetLockReason(city.planet);
+    if (planetReason != null) return planetReason;
+    if (city.planet == 'mars' &&
+        !achievements.contains('first_landing') &&
+        !legacyUnlockedPlanets.contains('mars')) {
       return '初回の火星輸送が必要';
     }
     if (city.requiredResearch != null &&
@@ -744,13 +787,33 @@ class GameState {
   };
   int effectiveDurationMs(TaskDefinition task) =>
       _scaledDuration(task.durationMs, task.facilityId);
+  int get launchCostReductionPercent {
+    var discount = 0;
+    if (facilities['launch'] == true && districtCount('space_elevator') > 0) {
+      discount += GameContent.spaceElevatorLaunchDiscountPercent;
+    }
+    if (facilities['moon'] == true &&
+        districtCount('moon_outpost') > 0 &&
+        districtCount('moon_spaceport') > 0) {
+      discount += GameContent.moonSpaceportLaunchDiscountPercent;
+      if (districtCount('moon_solar') > 0 &&
+          districtCount('moon_extractor') > 0) {
+        discount += GameContent.moonPropellantLaunchDiscountPercent;
+      }
+    }
+    return math.min(GameContent.maxLaunchDiscountPercent, discount);
+  }
+
+  int taskCost(TaskDefinition task) => task.usesLaunchCost
+      ? (task.cost * (100 - launchCostReductionPercent) + 99) ~/ 100
+      : task.cost;
   int currentTaskDurationMs(String taskId) =>
       effectiveDurationMs(GameContent.tasks[taskId]!);
   int _scaledDuration(int duration, String facilityId) =>
       (duration * 100 + 99 + facilityBonusPercent(facilityId)) ~/
       (100 + facilityBonusPercent(facilityId));
   int plannedCost(PlannedTask plan) => plan.definition.districtId == null
-      ? plan.definition.cost
+      ? taskCost(plan.definition)
       : _districtInvestment(
           plan.cityId!,
           GameContent.districts[plan.definition.districtId]!,
@@ -834,6 +897,22 @@ class GameState {
     } else if (definition.requiredResearch != null &&
         !research.contains(definition.requiredResearch)) {
       reason = '前提研究：${researchNameForDisplay(definition.requiredResearch!)}';
+    } else if (definition.prerequisites.any((id) => !research.contains(id))) {
+      reason =
+          '前提研究：${researchNameForDisplay(definition.prerequisites.firstWhere((id) => !research.contains(id)))}';
+    } else if (city.planet == 'moon' &&
+        districtId != 'moon_outpost' &&
+        districtCount('moon_outpost') == 0) {
+      reason = '月面基地を先に建設してください';
+    } else if (districtId == 'space_elevator' &&
+        !upgrade &&
+        (districtCount('space_elevator') > 0 ||
+            plans.any(
+              (plan) =>
+                  !plan.isFinished &&
+                  plan.definition.districtId == 'space_elevator',
+            ))) {
+      reason = '宇宙エレベーターは1基だけ建設できます';
     } else if (districtId == 'mars_habitat' && habitatChoice == null) {
       reason = '居住方式を選択してください';
     } else if (upgrade) {
@@ -929,7 +1008,7 @@ class GameState {
           ? 0
           : _scaledDuration(
               investment.durationMs,
-              definition.planet == 'earth' ? 'factory' : 'mars',
+              definition.planet == 'earth' ? 'factory' : definition.planet,
             ),
       baseCost: investment.baseCost,
       developmentCost: investment.developmentCost,
@@ -1107,6 +1186,7 @@ class GameState {
     'earthLevel': earthLevel,
     'population': population,
     'earthKits': earthKits,
+    'moonKits': moonKits,
     'marsKits': marsKits,
     'marsHabitats': marsHabitats,
     'marsResidents': marsResidents,
@@ -1124,6 +1204,7 @@ class GameState {
     'research': research.toList(),
     'discoveredResearch': discoveredResearchIds.toList()..sort(),
     'achievements': achievements.toList(),
+    'legacyUnlockedPlanets': legacyUnlockedPlanets.toList()..sort(),
     'claimedRewards': claimedRewards.toList(),
     'facilities': Map<String, bool>.of(facilities),
     'plans': plans.map((p) => p.toJson()).toList(),
@@ -1149,6 +1230,7 @@ class GameState {
         json['schemaVersion'] == schemaVersion &&
         [
           GameContent.version,
+          'district-8',
           'district-7',
           'district-6',
           'district-5',
@@ -1179,12 +1261,14 @@ class GameState {
     state.earthLevel = json['earthLevel'] as int;
     state.population = json['population'] as int;
     state.earthKits = json['earthKits'] as int;
+    state.moonKits = json['moonKits'] as int? ?? 0;
     state.marsKits = json['marsKits'] as int;
     state.marsHabitats = json['marsHabitats'] as int;
     state.marsResidents = json['marsResidents'] as int;
     state.habitatChoice = json['habitatChoice'] as String?;
     final currentAgency =
         json['contentVersion'] == GameContent.version ||
+        json['contentVersion'] == 'district-8' ||
         json['contentVersion'] == 'district-7' ||
         json['contentVersion'] == 'district-6' ||
         json['contentVersion'] == 'district-5';
@@ -1228,10 +1312,18 @@ class GameState {
     // A missing optional key in hand-authored current fixtures starts from the
     // v8 discovery rules. It must never reactivate the old root-count rule.
     state.achievements.addAll((json['achievements'] as List).cast<String>());
+    final legacyPlanets = json['legacyUnlockedPlanets'] as List? ?? const [];
+    if (legacyPlanets.any((planet) => !['moon', 'mars'].contains(planet))) {
+      throw const FormatException('保存された天体のアクセス権が不正です');
+    }
+    state.legacyUnlockedPlanets.addAll(legacyPlanets.cast<String>());
     state.claimedRewards.addAll(
       (json['claimedRewards'] as List).cast<String>(),
     );
     final enabled = Map<String, bool>.from(json['facilities'] as Map);
+    if (json['contentVersion'] != GameContent.version) {
+      enabled.putIfAbsent('moon', () => true);
+    }
     if (GameContent.facilities.keys.any((id) => !enabled.containsKey(id))) {
       throw const FormatException('保存に設備がありません');
     }
@@ -1399,6 +1491,7 @@ class GameState {
         state.earthLevel < 1 ||
         state.population < 0 ||
         state.earthKits < 0 ||
+        state.moonKits < 0 ||
         state.marsKits < 0 ||
         state.marsHabitats < 0 ||
         state.marsResidents < 0 ||
@@ -1418,8 +1511,44 @@ class GameState {
         throw const FormatException('同じ設備で複数の作業が実行されています');
       }
     }
-    if (json['contentVersion'] != GameContent.version) {
+    if (![GameContent.version, 'district-8'].contains(json['contentVersion'])) {
       state._knownResearch.addAll(state._legacyDiscoveredResearchIds());
+    }
+    if (json['contentVersion'] != GameContent.version &&
+        (state.plans.any(
+              (plan) =>
+                  plan.definition.usesLaunchCost && plan.completedRuns > 0,
+            ) ||
+            state.completionNotices.any(
+              (notice) =>
+                  GameContent.tasks[notice.taskId]?.usesLaunchCost == true,
+            ))) {
+      state.legacyUnlockedPlanets.add('moon');
+    }
+    if (json['contentVersion'] != GameContent.version &&
+        (state.achievements.contains('first_landing') ||
+            state.marsKits > 0 ||
+            state.marsHabitats > 0 ||
+            state.marsResidents > 0 ||
+            state.districts.values.any(
+              (district) =>
+                  GameContent.cities[district.cityId]!.planet == 'mars',
+            ) ||
+            state.developments.any(
+              (id) => GameContent.developmentPlanet(id) == 'mars',
+            ) ||
+            state.plans.any(
+              (plan) =>
+                  !plan.isFinished &&
+                  (plan.definition.outputResource == 'marsKits' ||
+                      plan.definition.facilityId == 'mars' ||
+                      (plan.definition.developmentId != null &&
+                          GameContent.developmentPlanet(
+                                plan.definition.developmentId!,
+                              ) ==
+                              'mars')),
+            ))) {
+      state.legacyUnlockedPlanets.addAll(['moon', 'mars']);
     }
     return state;
   }

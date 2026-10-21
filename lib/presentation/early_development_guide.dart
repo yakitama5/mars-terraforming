@@ -42,8 +42,9 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       return '必要 ${GameContent.researchPointCost(id)} RP · 保有 ${game.researchPoints.toStringAsFixed(1)} RP'
           ' · ${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分';
     }
-    final missing = (task.cost - game.money).clamp(0, task.cost);
-    return '必要 ${dollars(task.cost)} · ${gameDuration(game.currentTaskDurationMs(id))}'
+    final cost = game.taskCost(task);
+    final missing = (cost - game.money).clamp(0, cost);
+    return '必要 ${dollars(cost)} · ${gameDuration(game.currentTaskDurationMs(id))}'
         '${missing > 0 ? '（あと ${dollars(missing)}）' : ' · 資金あり'}';
   }
 
@@ -230,13 +231,13 @@ class EarlyDevelopmentGuide extends StatelessWidget {
                                 onPressed: () =>
                                     updateSelection(() => viewingList = true),
                                 icon: const Icon(Icons.list_alt, size: 18),
-                                label: const Text('6工程'),
+                                label: Text('${guide.steps.length}工程'),
                               )
                             else
                               const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                '最初の1時間の手引き · ${guide.completedCount}/6達成',
+                                '宇宙開発の手引き · ${guide.completedCount}/${guide.steps.length}達成',
                                 maxLines: 2,
                                 style: const TextStyle(
                                   fontSize: 14,
@@ -374,6 +375,47 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       title = GameContent.tasks['life_support']!.name;
       detail = _taskStatus('life_support');
       open = () => onResearch('life_support');
+    } else if (!game.planetUnlocked('moon')) {
+      focusedTask = 'launch_contract';
+      title = '初打ち上げで月への道を開く';
+      detail = _taskStatus(focusedTask);
+      open = () => onOperations(2);
+      actionLabel = '衛星打上げ受注を開く';
+      actionIcon = Icons.rocket_launch_outlined;
+    } else if (!game.planetUnlocked('mars')) {
+      expression = MinaExpression.delight;
+      final baseComplete =
+          game.districtCount('moon_outpost') > 0 &&
+          game.districtCount('moon_spaceport') > 0;
+      final moonWork = game.plans
+          .where((plan) => !plan.isFinished && plan.cityId == 'moon_south_pole')
+          .firstOrNull;
+      if (baseComplete) {
+        focusedTask = 'mars_probe';
+        title = '月面基地から火星探査へ';
+        detail = _taskStatus(focusedTask);
+        open = () => onOperations(2);
+        actionLabel = '火星探査機を打ち上げる';
+        actionIcon = Icons.rocket_launch_outlined;
+      } else if (moonWork != null || game.moonKits > 0) {
+        focusedTask = moonWork?.taskId;
+        title = '月面拠点と打ち上げ基地を建設';
+        detail = '月の到着キット ${game.moonKits}基 · 月面の区画へ配置';
+        open = () => onCity('moon_south_pole');
+        actionLabel = '月面を開発する';
+        actionIcon = Icons.nightlight_round;
+      } else {
+        final delivery = _plan('moon_delivery');
+        final preparing = game.earthKits > 0 || delivery != null;
+        focusedTask = preparing ? 'moon_delivery' : 'habitat_kit';
+        title = preparing ? '月面開発のキットを輸送' : '月面開発のキットを製造';
+        detail = _taskStatus(focusedTask);
+        open = () => onOperations(preparing ? 2 : 1);
+        actionLabel = preparing ? '月への輸送を開く' : '製造・受注を開く';
+        actionIcon = preparing
+            ? Icons.rocket_launch_outlined
+            : Icons.inventory_2_outlined;
+      }
     } else if (!game.achievements.contains('first_landing')) {
       final delivery = _plan('mars_delivery') ?? _plan('cargo_delivery');
       final preparingDelivery = game.earthKits > 0 || delivery != null;
@@ -460,7 +502,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       actionIcon = Icons.view_timeline_outlined;
     } else if (focusedTask != null &&
         !GameContent.tasks[focusedTask]!.unique &&
-        GameContent.tasks[focusedTask]!.cost > game.money) {
+        game.taskCost(GameContent.tasks[focusedTask]!) > game.money) {
       expression = MinaExpression.sorrow;
       title = '${GameContent.tasks[focusedTask]!.name}の資金を準備';
       detail = '${_taskStatus(focusedTask)} · 受注や提携支援を確認';
@@ -516,7 +558,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.menu_book_outlined, size: 17),
                       label: Text(
-                        fullLabel ? '6工程の手引き' : '手引き',
+                        fullLabel ? '${guide.steps.length}工程の手引き' : '手引き',
                         style: const TextStyle(fontSize: 11),
                       ),
                     ),

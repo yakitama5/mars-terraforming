@@ -8,6 +8,7 @@ import 'package:mars_terraforming/rendering/city_snapshot.dart';
 
 CityTerrain terrainFor(CityDefinition city) => CityTerrain(
   earth: city.planet == 'earth',
+  moon: city.planet == 'moon',
   columns: city.width,
   rows: city.height,
   plots: [

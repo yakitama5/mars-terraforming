@@ -42,6 +42,7 @@ class TaskDefinition {
     this.alternativePrerequisites = const [],
     this.developmentId,
     this.requiredDevelopmentId,
+    this.usesLaunchCost = false,
   });
   final String id;
   final String name;
@@ -72,11 +73,22 @@ class TaskDefinition {
   final List<String> alternativePrerequisites;
   final String? developmentId;
   final String? requiredDevelopmentId;
+  final bool usesLaunchCost;
   int get durationMs => durationSeconds * 1000;
 }
 
 abstract final class GameContent {
-  static const version = 'district-8';
+  static const version = 'district-9';
+  // Provisional progression and transport investment tuning. Discounts are
+  // operational game effects, not estimates of real launch economics.
+  static const moonDeliveryCost = 140;
+  static const moonDeliveryDurationSeconds = 150;
+  static const marsProbeCost = 180;
+  static const marsProbeDurationSeconds = 240;
+  static const moonSpaceportLaunchDiscountPercent = 15;
+  static const moonPropellantLaunchDiscountPercent = 10;
+  static const spaceElevatorLaunchDiscountPercent = 35;
+  static const maxLaunchDiscountPercent = 60;
   // Common RP use integer fixed-point integration in GameState. Values below
   // are provisional game tuning, not scientific performance estimates.
   static const initialResearchPoints = 24;
@@ -338,6 +350,9 @@ abstract final class GameContent {
       reward: cargo ? 0 : [1500, 12500, 65000][technology.stage],
       requiredResearch: technology.id,
       requiredDevelopmentId: technology.id,
+      usesLaunchCost:
+          cargo ||
+          developmentEffect(technology.id) == ResearchUnlockEffect.transport,
       inputResource: cargo ? 'earthKits' : null,
       inputAmount: amount,
       outputResource: cargo ? 'marsKits' : null,
@@ -367,6 +382,8 @@ abstract final class GameContent {
     'factory': FacilityDefinition('factory', '共用工場', 18),
     'launch': FacilityDefinition('launch', '共用宇宙港', 14),
     'mars': FacilityDefinition('mars', '火星建設班', 2),
+    // The districts carry lunar upkeep; unlocking the Moon adds no idle bill.
+    'moon': FacilityDefinition('moon', '月面建設班', 0),
   };
   static const _starterTasks = <String, TaskDefinition>{
     'factory_contract': TaskDefinition(
@@ -385,6 +402,7 @@ abstract final class GameContent {
       durationSeconds: 120,
       cost: 80,
       reward: 360,
+      usesLaunchCost: true,
       description: '共用宇宙港を使い、完了時に360ドルを受領。自前の火星輸送はその間待機。',
     ),
     'life_support': TaskDefinition(
@@ -421,6 +439,7 @@ abstract final class GameContent {
       facilityId: 'launch',
       durationSeconds: 180,
       cost: 220,
+      usesLaunchCost: true,
       inputResource: 'earthKits',
       outputResource: 'marsKits',
       description: '地球の居住キット1基を火星へ運ぶ。貨物と費用は出発時に確保する。',
@@ -450,6 +469,27 @@ abstract final class GameContent {
   /// existing saves; these branches add investment choices over several days.
   static final tasks = <String, TaskDefinition>{
     ..._starterTasks,
+    'moon_delivery': TaskDefinition(
+      id: 'moon_delivery',
+      name: '月へ輸送',
+      facilityId: 'launch',
+      durationSeconds: moonDeliveryDurationSeconds,
+      cost: moonDeliveryCost,
+      usesLaunchCost: true,
+      inputResource: 'earthKits',
+      outputResource: 'moonKits',
+      description: '地球の居住キット1基を月へ運ぶ。月面基地・打ち上げ基地の建設に使います。',
+    ),
+    'mars_probe': TaskDefinition(
+      id: 'mars_probe',
+      name: '月から火星探査機を打ち上げ',
+      facilityId: 'launch',
+      durationSeconds: marsProbeDurationSeconds,
+      cost: marsProbeCost,
+      usesLaunchCost: true,
+      description: '月面基地と月面打ち上げ基地を使って火星航路を調査。完了後に火星マップと貨物輸送を解放します。',
+      science: 'ゲーム上の進行条件として月面拠点を先行整備します。現実の火星探査に月面基地が必須という主張ではありません。',
+    ),
     'train_specialists': TaskDefinition(
       id: 'train_specialists',
       name: '専門職を2名育成',
@@ -476,6 +516,7 @@ abstract final class GameContent {
       durationSeconds: 10800,
       cost: 4200,
       reward: 42000,
+      usesLaunchCost: true,
       requiredResearch: 'orbital_logistics',
       description: '共用宇宙港を使う長期契約。完了収入を都市・研究へ再投資できる。',
     ),
@@ -497,6 +538,7 @@ abstract final class GameContent {
       facilityId: 'launch',
       durationSeconds: 600,
       cost: 950,
+      usesLaunchCost: true,
       inputResource: 'earthKits',
       inputAmount: 6,
       outputResource: 'marsKits',
@@ -509,13 +551,18 @@ abstract final class GameContent {
         district.taskId(upgrade: upgrade): TaskDefinition(
           id: district.taskId(upgrade: upgrade),
           name: '${district.name}${upgrade ? 'を増強' : 'を建設'}',
-          facilityId: district.planet == 'earth' ? 'factory' : 'mars',
+          facilityId: district.planet == 'earth' ? 'factory' : district.planet,
           durationSeconds: district.durationSeconds,
           cost: district.cost,
           requiredResearch: district.requiredResearch,
+          prerequisites: district.prerequisites,
           districtId: district.id,
           isDistrictUpgrade: upgrade,
-          inputResource: district.planet == 'mars' ? 'marsKits' : null,
+          inputResource: switch (district.planet) {
+            'moon' => 'moonKits',
+            'mars' => 'marsKits',
+            _ => null,
+          },
           requiresHabitatChoice: district.id == 'mars_habitat',
           description: district.description,
         ),
@@ -1079,6 +1126,41 @@ abstract final class GameContent {
         'ridge',
       ],
     ),
+    'moon_south_pole': CityDefinition(
+      id: 'moon_south_pole',
+      name: '南極月面拠点',
+      planet: 'moon',
+      latitude: -87,
+      longitude: 30,
+      description: '氷層・高台・クレーターを持つ月面の補給拠点。地球から届く資材で基地と火星への発射設備を整える。',
+      terrain: [
+        'crater',
+        'ice',
+        'ridge',
+        'plain',
+        'ridge',
+        'ice',
+        'plain',
+        'plain',
+        'mineral',
+        'ridge',
+        'crater',
+        'plain',
+        'plain',
+        'plain',
+        'ice',
+        'ridge',
+        'mineral',
+        'plain',
+        'crater',
+        'ice',
+        'ridge',
+        'ridge',
+        'plain',
+        'ice',
+        'crater',
+      ],
+    ),
     'mars_arcadia': CityDefinition(
       id: 'mars_arcadia',
       name: 'アルカディア',
@@ -1243,6 +1325,61 @@ abstract final class GameContent {
       requiredResearch: 'reusable_launch',
       description: '輸送効率+4%。海岸で+2%、工業で+1%、発電地区で+2%。',
     ),
+    'space_elevator': DistrictDefinition(
+      id: 'space_elevator',
+      name: '宇宙エレベーター',
+      planet: 'earth',
+      cost: 240000,
+      durationSeconds: 86400,
+      upkeepPerMinute: 24,
+      maxLevel: 1,
+      requiredResearch: 'orbital_assembly',
+      prerequisites: ['composite_shielding'],
+      description: '軌道組立と材料研究を応用するSFの大事業。共用宇宙港の稼働中は打ち上げ費用を35%削減。1基のみ建設可能。',
+    ),
+    'moon_outpost': DistrictDefinition(
+      id: 'moon_outpost',
+      name: '月面基地',
+      planet: 'moon',
+      cost: 450,
+      durationSeconds: 180,
+      upkeepPerMinute: 2,
+      maxLevel: 1,
+      requiredResearch: 'life_support',
+      description: '輸送したキットで月面の活動拠点を整備。月面打ち上げ基地などの建設を解放する。',
+    ),
+    'moon_solar': DistrictDefinition(
+      id: 'moon_solar',
+      name: '月面発電地区',
+      planet: 'moon',
+      cost: 350,
+      durationSeconds: 180,
+      upkeepPerMinute: 1,
+      maxLevel: 1,
+      description: '月面設備へ電力を供給。月面資源地区と組み合わせて推進剤補給による打ち上げ費用削減を解放する。',
+    ),
+    'moon_extractor': DistrictDefinition(
+      id: 'moon_extractor',
+      name: '月面資源地区',
+      planet: 'moon',
+      cost: 1200,
+      durationSeconds: 600,
+      upkeepPerMinute: 3,
+      maxLevel: 1,
+      requiredResearch: 'local_resources',
+      allowedTerrain: ['ice', 'mineral'],
+      description: '氷層・鉱床で補給資源を確保。月面発電・打ち上げ基地と稼働すると打ち上げ費用をさらに10%削減。',
+    ),
+    'moon_spaceport': DistrictDefinition(
+      id: 'moon_spaceport',
+      name: '月面打ち上げ基地',
+      planet: 'moon',
+      cost: 900,
+      durationSeconds: 300,
+      upkeepPerMinute: 4,
+      maxLevel: 1,
+      description: '月面基地とともに火星探査機を打ち上げられる。月面建設班の稼働中は打ち上げ費用を15%削減。',
+    ),
     'mars_habitat': DistrictDefinition(
       id: 'mars_habitat',
       name: '火星居住地区',
@@ -1292,9 +1429,13 @@ abstract final class GameContent {
 
   static const resourceNames = {
     'earthKits': '地球の居住キット',
+    'moonKits': '月の居住キット',
     'marsKits': '火星の居住キット',
   };
   static const achievementNames = {
+    'first_launch': '初めてのロケット打ち上げ',
+    'moon_landing': '月への初輸送',
+    'mars_route_open': '月から火星航路を開拓',
     'first_landing': '火星への初輸送',
     'dome_habitat': 'ドームでの暮らし',
     'underground_habitat': '地下での暮らし',
@@ -1352,6 +1493,7 @@ class DistrictDefinition {
     required this.durationSeconds,
     required this.description,
     this.requiredResearch,
+    this.prerequisites = const [],
     this.level2Research,
     this.baseTaxPerMinute = 0,
     this.upkeepPerMinute = 0,
@@ -1361,6 +1503,7 @@ class DistrictDefinition {
   });
   final String id, name, planet, description;
   final String? requiredResearch, level2Research;
+  final List<String> prerequisites;
   final int cost,
       durationSeconds,
       baseTaxPerMinute,
@@ -1370,8 +1513,8 @@ class DistrictDefinition {
   final List<String> allowedTerrain;
   String get operatingFacilityId => switch (id) {
     'campus' || 'mars_lab' => 'lab',
-    'spaceport' => 'launch',
-    _ => planet == 'earth' ? 'factory' : 'mars',
+    'spaceport' || 'space_elevator' => 'launch',
+    _ => planet == 'earth' ? 'factory' : planet,
   };
   String researchForUpgrade(int targetLevel) => targetLevel == 2
       ? level2Research ??

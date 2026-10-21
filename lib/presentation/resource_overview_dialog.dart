@@ -36,6 +36,13 @@ class ResourceOverviewDialog extends StatelessWidget {
                       ),
                       StrategyFact('税収', '${dollars(game.taxPerMinute)}/分'),
                       StrategyFact('維持費', '${dollars(game.upkeepPerMinute)}/分'),
+                      if (game.planetUnlocked('moon')) ...[
+                        StrategyFact('月面の居住キット', '${game.moonKits} 基'),
+                        StrategyFact(
+                          '打ち上げ費用の削減',
+                          '−${game.launchCostReductionPercent}%',
+                        ),
+                      ],
                       const Text(
                         '受注の報酬と、建設・製造・育成の開始費用は毎分収支に含みません。研究施設の維持費は含みます。',
                         style: TextStyle(fontSize: 12, color: strategyMuted),

@@ -75,6 +75,7 @@ void main() {
 
   test('resource blockage uses the engine reason and clears when supplied', () {
     final engine = fresh();
+    engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
     engine.enqueue('mars_delivery');
     final tip = tips(engine).first;
     expect(tip.id, startsWith('resource:'));
@@ -87,6 +88,7 @@ void main() {
 
   test('a dismissal is scoped to the exact queued plan', () {
     final engine = fresh();
+    engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
     engine.enqueue('mars_delivery');
     final dismissed = tips(engine).first.id;
     expect(
@@ -94,6 +96,7 @@ void main() {
       isEmpty,
     );
     engine.cancelQueued(engine.state.plans.first.id);
+    engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
     engine.enqueue('mars_delivery');
     expect(
       evaluateContextualTips(engine.state, dismissedIds: {dismissed}).first.id,
@@ -314,6 +317,7 @@ void main() {
 
   test('waiting for cargo does not stop an independent research', () {
     final engine = fresh();
+    engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
     engine.enqueue('mars_delivery');
     engine.enqueue('life_support');
     final id = tips(engine).first.id;
@@ -328,11 +332,13 @@ void main() {
     final engine = fresh();
     final dismissed = <String>{'parallel-city', 'parallel-research'};
     for (var index = 0; index < 100; index++) {
+      engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
       engine.enqueue('mars_delivery');
       dismissed.add(tips(engine).first.id);
       engine.cancelQueued(engine.state.plans.last.id);
       dismissed.add('unknown:$index');
     }
+    engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
     engine.enqueue('mars_delivery');
     final active = tips(engine).first.id;
     dismissed.add(active);
