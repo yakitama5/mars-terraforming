@@ -1,4 +1,6 @@
 import 'agency_state.dart';
+import 'city_building.dart';
+export 'city_building.dart';
 import 'research_catalog.dart';
 export 'research_catalog.dart';
 export 'agency_state.dart';
@@ -43,6 +45,11 @@ class TaskDefinition {
     this.developmentId,
     this.requiredDevelopmentId,
     this.usesLaunchCost = false,
+    this.localInputs = const {},
+    this.localOutputs = const {},
+    this.powerDemand = 0,
+    this.buildingTechnologyId,
+    this.workAction = '',
   });
   final String id;
   final String name;
@@ -74,11 +81,15 @@ class TaskDefinition {
   final String? developmentId;
   final String? requiredDevelopmentId;
   final bool usesLaunchCost;
+  final Map<String, int> localInputs, localOutputs;
+  final int powerDemand;
+  final String? buildingTechnologyId;
+  final String workAction;
   int get durationMs => durationSeconds * 1000;
 }
 
 abstract final class GameContent {
-  static const version = 'district-9';
+  static const version = 'district-10';
   // Provisional progression and transport investment tuning. Discounts are
   // operational game effects, not estimates of real launch economics.
   static const moonDeliveryCost = 140;
@@ -89,6 +100,426 @@ abstract final class GameContent {
   static const moonPropellantLaunchDiscountPercent = 10;
   static const spaceElevatorLaunchDiscountPercent = 35;
   static const maxLaunchDiscountPercent = 60;
+  static const mapVehicleCrew = 2;
+  static const buildingRelocationDivisor = 10;
+  static const buildingRelocationDurationMs = 120000;
+  static const buildingSlotCount = 2;
+  static const mapBuildingKitRequirement = 1;
+  static const buildingStockLimit = 1000;
+  static const baseCityPower = 2;
+  static const solarDistrictPower = 4;
+
+  static const batteryCapacity = 20;
+  static const surveyResearchPoints = 36;
+  static const surveyedIceYieldBonus = 2;
+  static const kitPartCostReduction = 40;
+  static const kitProvisionCostReduction = 20;
+  static const kitServiceCostReduction = 30;
+  static const buildingResourceNames = <String, String>{
+    'rawWater': '原水',
+    'water': '処理水',
+    'food': '食品',
+    'provisions': '検査済み補給品',
+    'feedstock': '造形原料',
+    'parts': '交換部品',
+    'hydrogen': '水素ガス',
+    'oxygen': '酸素ガス',
+    'charge': '蓄電',
+    'serviceCredit': '整備済み交換セット',
+  };
+  static const mapBuildingDefinitions = <String, MapBuildingDefinition>{
+    'base_lab': MapBuildingDefinition(
+      id: 'base_lab',
+      name: '基礎研究所',
+      catalogId: 'base_lab',
+      description: '本部の既存研究所。基礎研究者と共通RPの発生元。追加購入は不要です。',
+      isBaseLab: true,
+    ),
+    'orbital_gardens': MapBuildingDefinition(
+      id: 'orbital_gardens',
+      name: '水耕温室',
+      catalogId: 'B01',
+      description: '処理水から食品を生産。実験へ研究者を配分すると生産量が下がります。',
+      workTaskIds: ['building_import_water', 'building_grow_food'],
+    ),
+    'space_food_quality': MapBuildingDefinition(
+      id: 'space_food_quality',
+      name: '食品検査・保管棟',
+      catalogId: 'B13',
+      description: '食品を検査済み補給品に加工し、受注や居住キット製造へ使います。',
+      workTaskIds: [
+        'building_import_food',
+        'building_inspect_food',
+        'building_food_contract',
+      ],
+    ),
+    'local_resources': MapBuildingDefinition(
+      id: 'local_resources',
+      name: '資源分析所',
+      catalogId: 'R01',
+      description: '指定区画を一度ずつ調査。既知の基本地形は研究前も確認できます。',
+      workTaskIds: ['building_survey'],
+    ),
+    'ice_mining': MapBuildingDefinition(
+      id: 'ice_mining',
+      name: '採氷区',
+      catalogId: 'R05',
+      description: '氷層に置き、原水を採掘。水処理棟へ供給します。',
+      allowedPlanets: ['moon', 'mars'],
+      allowedTerrain: ['ice'],
+      occupiesWholePlot: true,
+      workTaskIds: ['building_mine_ice'],
+    ),
+    'water_purification': MapBuildingDefinition(
+      id: 'water_purification',
+      name: '水処理棟',
+      catalogId: 'R07',
+      description: '原水を処理水へ加工。現地採掘と原水輸入を選べます。',
+      workTaskIds: ['building_import_raw_water', 'building_purify_water'],
+    ),
+    'process_design': MapBuildingDefinition(
+      id: 'process_design',
+      name: '部品造形工房',
+      catalogId: 'R15',
+      description: '造形原料から交換部品を製造。整備や地球のキット製造へ使います。',
+      workTaskIds: ['building_import_feedstock', 'building_print_parts'],
+    ),
+    'battery_banks': MapBuildingDefinition(
+      id: 'battery_banks',
+      name: '蓄電池棟',
+      catalogId: 'E09',
+      description: '余力のある電源で充電し、追加電力が必要な工程へ有限の蓄電を供給します。発電はしません。',
+      workTaskIds: ['building_charge'],
+    ),
+    'hydrogen_storage': MapBuildingDefinition(
+      id: 'hydrogen_storage',
+      name: '水電解・ガス貯蔵棟',
+      catalogId: 'E10',
+      description: '処理水から水素と酸素を製造。月面シャトルの対応推進剤に使います。',
+      workTaskIds: ['building_import_water', 'building_electrolyze'],
+    ),
+    'urban_planning': MapBuildingDefinition(
+      id: 'urban_planning',
+      name: '配電センター',
+      catalogId: 'E13',
+      description: '部品を使い同じ都市の共用配電を接続。施設の仕事へ供給する電力枠を広げます。',
+      workTaskIds: ['building_import_parts', 'building_connect_grid'],
+    ),
+    'condition_monitoring': MapBuildingDefinition(
+      id: 'condition_monitoring',
+      name: '整備センター',
+      catalogId: 'M08',
+      description: '部品を整備済み交換セットへ加工し、機体整備や地球の製造へ供給します。',
+      workTaskIds: ['building_import_parts', 'building_service_machine'],
+    ),
+    'reusable_launch': MapBuildingDefinition(
+      id: 'reusable_launch',
+      name: '再使用機の回収・整備棟',
+      catalogId: 'M25',
+      description: '部品または整備セットで機体を準備。再使用の貨物便は帰還後に次の整備が必要です。',
+      allowedPlanets: ['earth'],
+      occupiesWholePlot: true,
+      workTaskIds: [
+        'building_import_parts',
+        'building_prepare_rocket',
+        'building_reusable_delivery',
+      ],
+    ),
+    'lunar_shuttles': MapBuildingDefinition(
+      id: 'lunar_shuttles',
+      name: '月面シャトル整備棟',
+      catalogId: 'M13',
+      description: '月周辺軌道から月面へ貨物を降ろす反復便。地球側の搬入と帰還を工程にまとめ、火星へは直行しません。',
+      allowedPlanets: ['moon'],
+      occupiesWholePlot: true,
+      workTaskIds: [
+        'building_import_parts',
+        'building_import_propellant',
+        'building_prepare_shuttle',
+        'building_lunar_delivery',
+      ],
+    ),
+  };
+  static Iterable<String> get mapBuildingIds => mapBuildingDefinitions.keys;
+  static MapBuildingDefinition mapBuildingDefinition(String id) =>
+      mapBuildingDefinitions[id]!;
+  static bool districtOccupiesWholePlot(String id) =>
+      !['campus', 'industry', 'solar', 'mars_lab'].contains(id);
+  static String buildingWorkSummary(TaskDefinition task) => [
+    if (task.localInputs.isNotEmpty)
+      '入力：${task.localInputs.entries.map((e) => '${buildingResourceNames[e.key]} ${e.value}').join(' / ')}',
+    if (task.localOutputs.isNotEmpty)
+      '出力：${task.localOutputs.entries.map((e) => '${buildingResourceNames[e.key]} ${e.value}').join(' / ')}',
+    if (task.powerDemand > 0) '工程電力 ${task.powerDemand}',
+  ].join('。');
+  static const _buildingWorks = <String, TaskDefinition>{
+    'building_import_water': TaskDefinition(
+      id: 'building_import_water',
+      name: '処理水を輸入',
+      facilityId: 'factory',
+      durationSeconds: 90,
+      cost: 120,
+      buildingTechnologyId: '*',
+      localOutputs: {'water': 4},
+      description: '適合済みの処理水を輸入。水処理設備を必須にしない入口です。',
+    ),
+    'building_import_raw_water': TaskDefinition(
+      id: 'building_import_raw_water',
+      name: '原水を搬入',
+      facilityId: 'factory',
+      durationSeconds: 90,
+      cost: 60,
+      buildingTechnologyId: 'water_purification',
+      localOutputs: {'rawWater': 4},
+      description: '採氷区なしでも原水から処理を始められます。',
+    ),
+    'building_import_food': TaskDefinition(
+      id: 'building_import_food',
+      name: '食品を搬入',
+      facilityId: 'factory',
+      durationSeconds: 90,
+      cost: 100,
+      buildingTechnologyId: 'space_food_quality',
+      localOutputs: {'food': 4},
+      description: '食品検査は温室を先に建てず、輸入食品でも始められます。',
+    ),
+    'building_import_feedstock': TaskDefinition(
+      id: 'building_import_feedstock',
+      name: '造形原料を搬入',
+      facilityId: 'factory',
+      durationSeconds: 90,
+      cost: 80,
+      buildingTechnologyId: 'process_design',
+      localOutputs: {'feedstock': 4},
+      description: '認定した交換部品の対応原料を搬入します。',
+    ),
+    'building_import_parts': TaskDefinition(
+      id: 'building_import_parts',
+      name: '交換部品を搬入',
+      facilityId: 'factory',
+      durationSeconds: 90,
+      cost: 100,
+      buildingTechnologyId: '*',
+      localOutputs: {'parts': 2},
+      description: '工房なしでも部品を輸入し、配電や整備を始められます。',
+    ),
+    'building_import_propellant': TaskDefinition(
+      id: 'building_import_propellant',
+      name: '月面用の対応ガスを輸入',
+      facilityId: 'factory',
+      durationSeconds: 120,
+      cost: 140,
+      buildingTechnologyId: 'lunar_shuttles',
+      localOutputs: {'hydrogen': 2, 'oxygen': 2},
+      description: '水電解設備をそろえる前は対応する推進剤を輸入できます。',
+    ),
+    'building_grow_food': TaskDefinition(
+      id: 'building_grow_food',
+      name: '水耕食品を栽培',
+      facilityId: 'factory',
+      durationSeconds: 180,
+      cost: 30,
+      buildingTechnologyId: 'orbital_gardens',
+      localInputs: {'water': 1},
+      localOutputs: {'food': 3},
+      powerDemand: 1,
+      description: '処理水を使い食品を生産。実験への配属が増えると生産量が下がります。',
+    ),
+    'building_inspect_food': TaskDefinition(
+      id: 'building_inspect_food',
+      name: '食品を検査・包装',
+      facilityId: 'factory',
+      durationSeconds: 120,
+      cost: 20,
+      buildingTechnologyId: 'space_food_quality',
+      localInputs: {'food': 2},
+      localOutputs: {'provisions': 2},
+      powerDemand: 1,
+      description: '検査済み補給品は品質指定受注と地球の居住キット製造に利用できます。',
+    ),
+    'building_food_contract': TaskDefinition(
+      id: 'building_food_contract',
+      name: '品質指定の食品受注',
+      facilityId: 'factory',
+      durationSeconds: 240,
+      cost: 30,
+      reward: 1200,
+      buildingTechnologyId: 'space_food_quality',
+      localInputs: {'provisions': 2},
+      description: '検査・包装した補給品を外部へ納入。製造設備を自前の開発と共用します。',
+    ),
+    'building_survey': TaskDefinition(
+      id: 'building_survey',
+      name: '区画の資源適性を調査',
+      facilityId: 'lab',
+      durationSeconds: 180,
+      cost: 60,
+      buildingTechnologyId: 'local_resources',
+      workAction: 'survey',
+      powerDemand: 1,
+      description:
+          '指定区画の詳細な適性を記録し36RP。調査済み氷層の現地採水は原水+2。各都市・区画の成果は一度のみ、基本地形は調査前も見えます。',
+    ),
+    'building_mine_ice': TaskDefinition(
+      id: 'building_mine_ice',
+      name: '氷層から原水を採取',
+      facilityId: 'factory',
+      durationSeconds: 180,
+      cost: 30,
+      buildingTechnologyId: 'ice_mining',
+      workAction: 'mineIce',
+      localOutputs: {'rawWater': 4},
+      powerDemand: 2,
+      description: '施設のある氷層から原水を採取。水処理棟で処理水にできます。',
+    ),
+    'building_purify_water': TaskDefinition(
+      id: 'building_purify_water',
+      name: '原水を精製',
+      facilityId: 'factory',
+      durationSeconds: 120,
+      cost: 20,
+      buildingTechnologyId: 'water_purification',
+      localInputs: {'rawWater': 2},
+      localOutputs: {'water': 2},
+      powerDemand: 1,
+      description: '原水を適合する処理水へ変換します。',
+    ),
+    'building_print_parts': TaskDefinition(
+      id: 'building_print_parts',
+      name: '認定交換部品を造形',
+      facilityId: 'factory',
+      durationSeconds: 90,
+      cost: 20,
+      buildingTechnologyId: 'process_design',
+      localInputs: {'feedstock': 2},
+      localOutputs: {'parts': 3},
+      powerDemand: 3,
+      description: '部品は整備に使用。地球在庫は居住キット製造で自動使用され費用を1個40ドル軽減します。',
+    ),
+    'building_recycle_parts': TaskDefinition(
+      id: 'building_recycle_parts',
+      name: '廃部品を原料へ再成形',
+      facilityId: 'factory',
+      durationSeconds: 180,
+      cost: 20,
+      requiredResearch: 'material_reforming',
+      buildingTechnologyId: 'process_design',
+      localInputs: {'parts': 2},
+      localOutputs: {'feedstock': 1},
+      powerDemand: 1,
+      description: '回収損失を伴う再成形。入力を超えて材料は増えません。',
+    ),
+    'building_charge': TaskDefinition(
+      id: 'building_charge',
+      name: '余剰電力で充電',
+      facilityId: 'factory',
+      durationSeconds: 180,
+      cost: 10,
+      buildingTechnologyId: 'battery_banks',
+      localOutputs: {'charge': 5},
+      powerDemand: 1,
+      workAction: 'charge',
+      description: '電源を使って5単位充電。追加需要を蓄電から補い、使用した分だけ減ります。容量20。',
+    ),
+    'building_electrolyze': TaskDefinition(
+      id: 'building_electrolyze',
+      name: '水を電解し対応ガスを貯蔵',
+      facilityId: 'factory',
+      durationSeconds: 60,
+      cost: 30,
+      buildingTechnologyId: 'hydrogen_storage',
+      localInputs: {'water': 2},
+      localOutputs: {'hydrogen': 2, 'oxygen': 2},
+      powerDemand: 4,
+      description: '水と電力を使い水素・酸素を別々に貯蔵。月面シャトルの対応整備に使えます。',
+    ),
+    'relocate_base_lab': TaskDefinition(
+      id: 'relocate_base_lab',
+      name: '基礎研究所の移設',
+      facilityId: 'factory',
+      durationSeconds: 120,
+      cost: 0,
+      description: '基礎研究所の資産と研究者を保持して都市内の建設枠へ移設します。',
+    ),
+    'building_connect_grid': TaskDefinition(
+      id: 'building_connect_grid',
+      name: '同じ都市の共用配電を接続',
+      facilityId: 'factory',
+      durationSeconds: 180,
+      cost: 60,
+      buildingTechnologyId: 'urban_planning',
+      localInputs: {'parts': 1},
+      powerDemand: 1,
+      workAction: 'grid',
+      description: '部品を使い共用配電を接続。センター稼働中のみ同市の発電地区を仕事へ接続します。配電自体は発電しません。',
+    ),
+    'building_service_machine': TaskDefinition(
+      id: 'building_service_machine',
+      name: '機材の交換セットを整備',
+      facilityId: 'factory',
+      durationSeconds: 180,
+      cost: 20,
+      buildingTechnologyId: 'condition_monitoring',
+      localInputs: {'parts': 1},
+      localOutputs: {'serviceCredit': 1},
+      powerDemand: 1,
+      description: '交換セットは同市の回収機整備で部品の代わりに使えます。地球のキット製造でも1セット30ドルを軽減。',
+    ),
+    'building_prepare_rocket': TaskDefinition(
+      id: 'building_prepare_rocket',
+      name: '回収機を再整備',
+      facilityId: 'factory',
+      durationSeconds: 180,
+      cost: 60,
+      buildingTechnologyId: 'reusable_launch',
+      localInputs: {'parts': 1},
+      powerDemand: 1,
+      workAction: 'prepareRocket',
+      description: '部品または整備済み交換セットを使い次の1便へ準備。飛行後は再び整備が必要です。',
+    ),
+    'building_reusable_delivery': TaskDefinition(
+      id: 'building_reusable_delivery',
+      name: '再使用機で火星へ貨物輸送',
+      facilityId: 'launch',
+      durationSeconds: 240,
+      cost: 120,
+      buildingTechnologyId: 'reusable_launch',
+      inputResource: 'earthKits',
+      inputAmount: 3,
+      outputResource: 'marsKits',
+      outputAmount: 3,
+      usesLaunchCost: true,
+      workAction: 'rocketFlight',
+      description: '整備済み機体でキット3基をまとめて火星へ。機体準備を1回使い、帰還後に次の整備を要します。',
+    ),
+    'building_prepare_shuttle': TaskDefinition(
+      id: 'building_prepare_shuttle',
+      name: '月面シャトルを整備・充填',
+      facilityId: 'factory',
+      durationSeconds: 180,
+      cost: 40,
+      buildingTechnologyId: 'lunar_shuttles',
+      localInputs: {'parts': 1, 'hydrogen': 1, 'oxygen': 1},
+      powerDemand: 1,
+      workAction: 'prepareShuttle',
+      description: '月面の部品と対応ガスで次の1便を準備。旧地上実証では運航できません。',
+    ),
+    'building_lunar_delivery': TaskDefinition(
+      id: 'building_lunar_delivery',
+      name: '月周辺軌道から月面へ補給',
+      facilityId: 'launch',
+      durationSeconds: 150,
+      cost: 80,
+      buildingTechnologyId: 'lunar_shuttles',
+      inputResource: 'earthKits',
+      inputAmount: 3,
+      outputResource: 'moonKits',
+      outputAmount: 3,
+      usesLaunchCost: true,
+      workAction: 'shuttleFlight',
+      description: '地球側の搬入と月周辺軌道から月面への最後の区間を一便に簡略化。キットを3基まとめて搬入し、機体準備を1回使います。',
+    ),
+  };
   // Common RP use integer fixed-point integration in GameState. Values below
   // are provisional game tuning, not scientific performance estimates.
   static const initialResearchPoints = 24;
@@ -98,7 +529,7 @@ abstract final class GameContent {
   static const developmentDurationsByStage = [300, 1800, 14400];
   static const developmentUpkeepByStage = [3, 12, 35];
   static const developmentBonusesByStage = [3, 7, 12];
-  static const maxOperationalDevelopments = 12;
+  static const maxOperationalDevelopments = 24;
   static const researchTechnologies = ResearchCatalog.technologies;
   static const starterResearchCatalogIds = ['B01', 'M22', 'R01', 'E01'];
   // Discovery routes express how a new research idea appears in the game.
@@ -239,6 +670,8 @@ abstract final class GameContent {
       : '地球都市への導入';
   static String developmentFacilityId(String id) =>
       developmentIsPreparatory(id) ? 'lab' : technology(id).unlockFacilityId;
+  static int developmentDurationMs(String id) =>
+      developmentDurationsByStage[technology(id).stage] * 1000;
   static int developmentCost(String id) =>
       developmentCostsByStage[technology(id).stage];
   static int developmentUpkeepPerMinute(String id) =>
@@ -431,7 +864,7 @@ abstract final class GameContent {
       cost: 260,
       requiredResearch: 'life_support',
       outputResource: 'earthKits',
-      description: '生命維持設備と居住モジュールを1基製造。地球の在庫に追加する。',
+      description: '生命維持設備と居住モジュールを1基製造。地球の在庫に追加する。地球都市内に交換部品・検査済み補給品・整備セットがあれば各1を自動使用し、購入費をそれぞれ40・20・30ドル削減します。',
     ),
     'mars_delivery': TaskDefinition(
       id: 'mars_delivery',
@@ -469,6 +902,7 @@ abstract final class GameContent {
   /// existing saves; these branches add investment choices over several days.
   static final tasks = <String, TaskDefinition>{
     ..._starterTasks,
+    ..._buildingWorks,
     'moon_delivery': TaskDefinition(
       id: 'moon_delivery',
       name: '月へ輸送',
@@ -1428,6 +1862,7 @@ abstract final class GameContent {
   };
 
   static const resourceNames = {
+    ...buildingResourceNames,
     'earthKits': '地球の居住キット',
     'moonKits': '月の居住キット',
     'marsKits': '火星の居住キット',

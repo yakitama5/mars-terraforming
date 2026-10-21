@@ -10,6 +10,7 @@ export 'district_state.dart';
 export 'agency_state.dart';
 import 'first_run_tutorial.dart';
 export 'first_run_tutorial.dart';
+export 'city_building.dart';
 
 class PlannedTask {
   PlannedTask({
@@ -20,6 +21,11 @@ class PlannedTask {
     this.plotIndex,
     this.targetLevel,
     this.developmentCityId,
+    this.buildingInstanceId,
+    this.buildingPlotIndex,
+    this.buildingSlotIndex,
+    this.surveyPlotIndex,
+    this.relocation = false,
   });
   final String id;
   final String taskId;
@@ -27,6 +33,11 @@ class PlannedTask {
   final int? plotIndex;
   final int? targetLevel;
   final String? developmentCityId;
+  final String? buildingInstanceId;
+  final int? buildingPlotIndex, buildingSlotIndex, surveyPlotIndex;
+  final bool relocation;
+  Map<String, int> iterationLocalOutputs = {};
+  int iterationBatteryUnits = 0;
 
   /// Frozen when an iteration pays, including legacy iterations on migration.
   int iterationDurationMs = 0;
@@ -75,6 +86,13 @@ class PlannedTask {
     'plotIndex': plotIndex,
     'targetLevel': targetLevel,
     'developmentCityId': developmentCityId,
+    'buildingInstanceId': buildingInstanceId,
+    'buildingPlotIndex': buildingPlotIndex,
+    'buildingSlotIndex': buildingSlotIndex,
+    'surveyPlotIndex': surveyPlotIndex,
+    'relocation': relocation,
+    'iterationLocalOutputs': iterationLocalOutputs,
+    'iterationBatteryUnits': iterationBatteryUnits,
   };
   factory PlannedTask.fromJson(Map<String, dynamic> json) {
     final taskId = json['taskId'] as String;
@@ -89,7 +107,16 @@ class PlannedTask {
       plotIndex: json['plotIndex'] as int?,
       targetLevel: json['targetLevel'] as int?,
       developmentCityId: json['developmentCityId'] as String?,
+      buildingInstanceId: json['buildingInstanceId'] as String?,
+      buildingPlotIndex: json['buildingPlotIndex'] as int?,
+      buildingSlotIndex: json['buildingSlotIndex'] as int?,
+      surveyPlotIndex: json['surveyPlotIndex'] as int?,
+      relocation: json['relocation'] as bool? ?? false,
     );
+    plan.iterationLocalOutputs = Map<String, int>.from(
+      json['iterationLocalOutputs'] as Map? ?? {},
+    );
+    plan.iterationBatteryUnits = json['iterationBatteryUnits'] as int? ?? 0;
     plan.completedRuns = json['completedRuns'] as int;
     plan.status = json['status'] as String;
     plan.stopReason = json['stopReason'] as String;
@@ -153,12 +180,38 @@ class PlannedTask {
       final technologyId = plan.definition.developmentId!;
       final city = GameContent.cities[plan.developmentCityId];
       if (city == null ||
-          city.planet != GameContent.developmentPlanet(technologyId) ||
+          (plan.buildingPlotIndex != null
+              ? GameContent.mapBuildingDefinitions[technologyId]?.allowedPlanets
+                        .contains(city.planet) !=
+                    true
+              : city.planet != GameContent.developmentPlanet(technologyId)) ||
           plan.remainingRepeats != (plan.status == 'completed' ? 0 : 1)) {
         throw const FormatException('設備導入先または反復回数が不正です');
       }
+    } else if (plan.definition.buildingTechnologyId != null ||
+        plan.relocation) {
+      if (plan.buildingInstanceId == null ||
+          !GameContent.cities.containsKey(plan.developmentCityId)) {
+        throw const FormatException('施設の仕事・移設の対象が不正です');
+      }
     } else if (plan.developmentCityId != null) {
       throw const FormatException('作業に不正な設備導入先があります');
+    }
+    if (plan.iterationBatteryUnits < 0 ||
+        plan.iterationBatteryUnits > plan.definition.powerDemand ||
+        plan.iterationLocalOutputs.entries.any(
+          (e) =>
+              !GameContent.buildingResourceNames.containsKey(e.key) ||
+              e.value < 0,
+        ) ||
+        (plan.buildingPlotIndex != null &&
+            (plan.buildingPlotIndex! < 0 ||
+                plan.buildingPlotIndex! >=
+                    GameContent.cities[plan.developmentCityId]!.plotCount ||
+                plan.buildingSlotIndex == null ||
+                plan.buildingSlotIndex! < 0 ||
+                plan.buildingSlotIndex! >= GameContent.buildingSlotCount))) {
+      throw const FormatException('施設の位置・入出力が不正です');
     }
     return plan;
   }
@@ -194,16 +247,26 @@ class GameState {
   final Map<String, bool> developmentEnabled = {};
   final Map<String, int> developmentResearchers = {};
   final Map<String, String> developmentCityIds = {};
+  final Map<String, String> developmentTechnologyIds = {};
+  final Map<String, BuildingLocation> buildingLocations = {
+    'base_lab': const BuildingLocation(
+      cityId: 'earth_delta',
+      plotIndex: -1,
+      legacySite: true,
+    ),
+  };
+  final Map<String, Map<String, int>> cityStocks = {};
+  final Set<String> surveyedSites = {};
+  final Set<String> connectedGridCities = {};
+  final Set<String> preparedVehicles = {};
+  int nextBuildingId = 1;
   final Map<String, String> partnershipChoices = {};
   int get industrialWorkers =>
       specialistCount - researchers - developmentWorkers;
   int get developmentWorkers => developments.fold(
     0,
     (sum, id) =>
-        sum +
-        (isDevelopmentOperational(id)
-            ? GameContent.developmentCrewRequirement(id)
-            : 0),
+        sum + (isDevelopmentOperational(id) ? developmentCrewFor(id) : 0),
   );
   int get specializedResearchers => developmentResearchers.entries.fold(
     0,
@@ -251,7 +314,9 @@ class GameState {
       if (isDevelopmentOperational(entry.key)) {
         rate +=
             entry.value *
-            GameContent.developmentResearchRate(entry.key) *
+            GameContent.developmentResearchRate(
+              developmentTechnologyId(entry.key),
+            ) *
             modifier;
       }
     }
@@ -261,20 +326,22 @@ class GameState {
   bool isDevelopmentOperational(String id) =>
       developments.contains(id) &&
       developmentEnabled[id] == true &&
-      facilities[GameContent.developmentFacilityId(id)] == true;
+      facilities[developmentFacilityFor(id)] == true;
   int get developmentUpkeepPerMinute => developments.fold(
     0,
     (sum, id) =>
         sum +
         (isDevelopmentOperational(id)
-            ? GameContent.developmentUpkeepPerMinute(id)
+            ? GameContent.developmentUpkeepPerMinute(
+                developmentTechnologyId(id),
+              )
             : 0),
   );
   int developmentEfficiencyBonus(String facilityId) {
     var result = 0;
     for (final id in developments) {
       if (!isDevelopmentOperational(id)) continue;
-      final target = switch (GameContent.developmentEffect(id)) {
+      final target = switch (developmentEffectFor(id)) {
         ResearchUnlockEffect.research => 'lab',
         ResearchUnlockEffect.production => 'factory',
         ResearchUnlockEffect.transport => 'launch',
@@ -282,17 +349,25 @@ class GameState {
         ResearchUnlockEffect.income || ResearchUnlockEffect.partnership => '',
       };
       if (target != facilityId) continue;
-      final capacity = GameContent.developmentResearchCapacity(id);
+      final capacity = developmentResearchCapacityFor(id);
       final assigned = developmentResearchers[id] ?? 0;
       if (target == 'lab') {
         // An empty specialist laboratory has no autonomous RP or synergy.
         result += capacity == 0
             ? 0
-            : GameContent.developmentEfficiencyBonus(id) * assigned ~/ capacity;
+            : GameContent.developmentEfficiencyBonus(
+                    developmentTechnologyId(id),
+                  ) *
+                  assigned ~/
+                  capacity;
       } else {
         result += capacity == 0
-            ? GameContent.developmentEfficiencyBonus(id)
-            : GameContent.developmentEfficiencyBonus(id) *
+            ? GameContent.developmentEfficiencyBonus(
+                developmentTechnologyId(id),
+              )
+            : GameContent.developmentEfficiencyBonus(
+                    developmentTechnologyId(id),
+                  ) *
                   (capacity - assigned) ~/
                   capacity;
       }
@@ -305,11 +380,841 @@ class GameState {
         ![
           ResearchUnlockEffect.income,
           ResearchUnlockEffect.partnership,
-        ].contains(GameContent.developmentEffect(id))) {
+        ].contains(developmentEffectFor(id))) {
       return sum;
     }
-    return sum + GameContent.developmentIncomePerMinute(id);
+    return sum +
+        GameContent.developmentIncomePerMinute(developmentTechnologyId(id));
   });
+
+  String developmentTechnologyId(String id) =>
+      developmentTechnologyIds[id] ?? id;
+  String developmentFacilityFor(String id) {
+    if (id == 'base_lab') return 'lab';
+    final location = buildingLocations[id];
+    if (location != null && !location.legacySite) {
+      final planet = GameContent.cities[location.cityId]!.planet;
+      if (planet == 'moon' || planet == 'mars') return planet;
+    }
+    return GameContent.developmentFacilityId(developmentTechnologyId(id));
+  }
+
+  ResearchUnlockEffect developmentEffectFor(String id) =>
+      developmentTechnologyId(id) == 'lunar_shuttles' &&
+          buildingLocations[id]?.legacySite == false &&
+          GameContent.cities[developmentCityIds[id]]?.planet == 'moon'
+      ? ResearchUnlockEffect.transport
+      : GameContent.developmentEffect(developmentTechnologyId(id));
+  int developmentCrewFor(String id) =>
+      developmentTechnologyId(id) == 'lunar_shuttles' &&
+          developmentEffectFor(id) == ResearchUnlockEffect.transport
+      ? GameContent.mapVehicleCrew
+      : GameContent.developmentCrewRequirement(developmentTechnologyId(id));
+  int developmentResearchCapacityFor(String id) =>
+      developmentTechnologyId(id) == 'lunar_shuttles' &&
+          developmentEffectFor(id) == ResearchUnlockEffect.transport
+      ? 0
+      : GameContent.developmentResearchCapacity(developmentTechnologyId(id));
+  bool mapBuildingUnlocked(String id) =>
+      GameContent.mapBuildingDefinitions.containsKey(id) &&
+      (id == 'base_lab' || research.contains(id));
+  int cityStock(String cityId, String resourceId) =>
+      cityStocks[cityId]?[resourceId] ?? 0;
+  bool isSiteSurveyed(String cityId, int plotIndex) =>
+      surveyedSites.contains('$cityId:$plotIndex');
+  String siteSurveyReport(String cityId, int plotIndex) {
+    final city = GameContent.cities[cityId];
+    if (city == null || plotIndex < 0 || plotIndex >= city.plotCount) {
+      return '調査する区画を選んでください';
+    }
+    if (!isSiteSurveyed(cityId, plotIndex)) {
+      return '未調査。基本地形は確認でき、詳細調査で現地の適性を記録します。';
+    }
+    return city.terrainAt(plotIndex) == 'ice'
+        ? '氷層の採水適性を確認。ここで開始する現地採水の原水+${GameContent.surveyedIceYieldBonus}/工程。'
+        : '地質と搬入条件を記録済み。この区画の調査成果は共通RPへ反映済みです。';
+  }
+
+  int cityBatteryCharge(String cityId) => cityStock(cityId, 'charge');
+  bool _gridOperational(String cityId) =>
+      connectedGridCities.contains(cityId) &&
+      developments.any(
+        (id) =>
+            developmentTechnologyId(id) == 'urban_planning' &&
+            developmentCityIds[id] == cityId &&
+            isDevelopmentOperational(id),
+      );
+  int cityPowerSupply(String cityId) =>
+      GameContent.baseCityPower +
+      (_gridOperational(cityId)
+          ? districts.values
+                    .where(
+                      (d) =>
+                          d.cityId == cityId &&
+                          ['solar', 'moon_solar'].contains(d.districtId),
+                    )
+                    .length *
+                GameContent.solarDistrictPower
+          : 0);
+  int cityPowerDemand(String cityId) => plans
+      .where(
+        (p) =>
+            p.status == 'running' &&
+            p.developmentCityId == cityId &&
+            p.definition.buildingTechnologyId != null,
+      )
+      .fold(
+        0,
+        (sum, p) => sum + p.definition.powerDemand - p.iterationBatteryUnits,
+      );
+  int buildingBatteryRequired(String cityId, TaskDefinition task) => math.max(
+    0,
+    task.powerDemand -
+        math.max(0, cityPowerSupply(cityId) - cityPowerDemand(cityId)),
+  );
+  int buildingSurveyTarget(String id, [int? target]) {
+    if (target != null) return target;
+    final location = buildingLocations[id];
+    if (location != null && location.plotIndex >= 0) return location.plotIndex;
+    final cityId = developmentCityIds[id];
+    if (cityId == null) return 0;
+    for (var i = 0; i < GameContent.cities[cityId]!.plotCount; i++) {
+      if (!isSiteSurveyed(cityId, i)) return i;
+    }
+    return 0;
+  }
+
+  List<TaskDefinition> buildingWorkTasks(String id) {
+    final technologyId = developmentTechnologyId(id);
+    final definition = GameContent.mapBuildingDefinitions[technologyId];
+    if (definition == null || !developments.contains(id)) return const [];
+    return [
+      for (final taskId in definition.workTaskIds) GameContent.tasks[taskId]!,
+      if (technologyId == 'process_design' &&
+          research.contains('material_reforming'))
+        GameContent.tasks['building_recycle_parts']!,
+    ];
+  }
+
+  Map<String, int> buildingLocalInputs(String id, TaskDefinition task) {
+    final inputs = Map<String, int>.of(task.localInputs);
+    if (task.workAction == 'prepareRocket' &&
+        cityStock(developmentCityIds[id]!, 'serviceCredit') > 0) {
+      inputs.remove('parts');
+      inputs['serviceCredit'] = 1;
+    }
+    return inputs;
+  }
+
+  Map<String, int> buildingLocalOutputs(String id, TaskDefinition task) {
+    final capacity = task.id.startsWith('building_import_')
+        ? 0
+        : developmentResearchCapacityFor(id);
+    final available = capacity - (developmentResearchers[id] ?? 0);
+    final location = buildingLocations[id];
+    final surveyBonus =
+        task.workAction == 'mineIce' &&
+            location != null &&
+            !location.legacySite &&
+            isSiteSurveyed(location.cityId, location.plotIndex)
+        ? GameContent.surveyedIceYieldBonus
+        : 0;
+    return {
+      for (final e in task.localOutputs.entries)
+        e.key: capacity == 0
+            ? e.value + (e.key == 'rawWater' ? surveyBonus : 0)
+            : ((e.value + (e.key == 'rawWater' ? surveyBonus : 0)) * available +
+                      capacity -
+                      1) ~/
+                  capacity,
+    };
+  }
+
+  String? buildingWorkLockReason(
+    String id,
+    String taskId, {
+    int? targetPlotIndex,
+  }) {
+    final task = GameContent.tasks[taskId];
+    if (task == null || !buildingWorkTasks(id).any((t) => t.id == taskId)) {
+      return 'この施設では実施できない仕事です';
+    }
+    if (!isDevelopmentOperational(id)) return '施設を稼働してから仕事を予約してください';
+    final cityId = developmentCityIds[id]!;
+    final city = GameContent.cities[cityId]!;
+    final definition =
+        GameContent.mapBuildingDefinitions[developmentTechnologyId(id)]!;
+    if (!definition.allowedPlanets.contains(city.planet)) {
+      return 'この仕事には対応する天体への施設配置が必要です';
+    }
+    final cityReason = cityLockReason(cityId);
+    if (cityReason != null) return cityReason;
+    if (task.workAction != 'survey' &&
+        !task.id.startsWith('building_import_') &&
+        developmentResearchCapacityFor(id) > 0 &&
+        (developmentResearchers[id] ?? 0) >=
+            developmentResearchCapacityFor(id)) {
+      return '研究者を生産運転へ戻してください';
+    }
+    if (task.workAction == 'survey') {
+      final target = buildingSurveyTarget(id, targetPlotIndex);
+      if (target < 0 || target >= city.plotCount) return '調査する区画を選んでください';
+      if (isSiteSurveyed(cityId, target)) return 'この区画の調査は完了しています';
+    }
+    if (task.workAction == 'grid' && connectedGridCities.contains(cityId)) {
+      return 'この都市の配電接続は完了しています';
+    }
+    if (['prepareRocket', 'prepareShuttle'].contains(task.workAction) &&
+        plans.any(
+          (p) =>
+              p.status == 'running' &&
+              p.buildingInstanceId == id &&
+              [
+                'rocketFlight',
+                'shuttleFlight',
+              ].contains(p.definition.workAction),
+        )) {
+      return '機体の帰還を待ってから整備してください';
+    }
+    if (['prepareRocket', 'prepareShuttle'].contains(task.workAction) &&
+        preparedVehicles.contains(id)) {
+      return '機体は整備済みです。便を運航してください';
+    }
+    if (['rocketFlight', 'shuttleFlight'].contains(task.workAction) &&
+        !preparedVehicles.contains(id)) {
+      return '機体を整備してから運航してください';
+    }
+    final spaceReason = spaceTaskLockReason(task);
+    if (spaceReason != null) return spaceReason;
+    for (final e in buildingLocalInputs(id, task).entries) {
+      if (cityStock(cityId, e.key) < e.value) {
+        return '都市内の${GameContent.buildingResourceNames[e.key]}が${e.value}必要です';
+      }
+    }
+    for (final e in buildingLocalOutputs(id, task).entries) {
+      final cap = e.key == 'charge'
+          ? GameContent.batteryCapacity
+          : GameContent.buildingStockLimit;
+      final pending = plans
+          .where((p) => p.status == 'running' && p.developmentCityId == cityId)
+          .fold(0, (sum, p) => sum + (p.iterationLocalOutputs[e.key] ?? 0));
+      if (cityStock(cityId, e.key) + pending + e.value > cap) {
+        return '${GameContent.buildingResourceNames[e.key]}の保管上限です';
+      }
+    }
+    final battery = buildingBatteryRequired(cityId, task);
+    if (battery > 0 &&
+        (task.workAction == 'charge' || cityBatteryCharge(cityId) < battery)) {
+      return '電力不足：配電接続または蓄電が必要です（不足$battery）';
+    }
+    return null;
+  }
+
+  Set<int> _occupiedBuildingSlots(
+    String cityId,
+    int plotIndex, {
+    String? ignoreInstance,
+    String? ignorePlan,
+  }) {
+    final result = <int>{};
+    for (final e in buildingLocations.entries) {
+      if (e.key == ignoreInstance ||
+          e.value.legacySite ||
+          e.value.cityId != cityId ||
+          e.value.plotIndex != plotIndex) {
+        continue;
+      }
+      // A relocating building is shown and reserved only at its destination.
+      if (plans.any(
+        (p) =>
+            p.status == 'running' &&
+            p.relocation &&
+            p.buildingInstanceId == e.key,
+      )) {
+        continue;
+      }
+      final definition =
+          GameContent.mapBuildingDefinitions[developmentTechnologyId(e.key)]!;
+      if (definition.occupiesWholePlot) {
+        result.addAll([0, 1]);
+      } else {
+        result.add(e.value.slotIndex);
+      }
+    }
+    for (final p in plans.where(
+      (p) =>
+          !p.isFinished &&
+          p.id != ignorePlan &&
+          p.buildingInstanceId != ignoreInstance &&
+          p.developmentCityId == cityId &&
+          p.buildingPlotIndex == plotIndex,
+    )) {
+      final definition =
+          GameContent.mapBuildingDefinitions[p.relocation
+              ? developmentTechnologyId(p.buildingInstanceId!)
+              : p.definition.developmentId]!;
+      if (definition.occupiesWholePlot) {
+        result.addAll([0, 1]);
+      } else {
+        result.add(p.buildingSlotIndex!);
+      }
+    }
+    return result;
+  }
+
+  String? _buildingPlacementReason(
+    String technologyId,
+    String cityId,
+    int plotIndex,
+    int slotIndex, {
+    String? instanceId,
+    String? ignorePlan,
+  }) {
+    final definition = GameContent.mapBuildingDefinitions[technologyId];
+    final city = GameContent.cities[cityId];
+    if (definition == null || city == null) return '対応する都市と施設を選んでください';
+    if (!mapBuildingUnlocked(technologyId)) return '対応する技術の解放が必要です';
+    final cityReason = cityLockReason(cityId);
+    if (cityReason != null) return cityReason;
+    if (!definition.allowedPlanets.contains(city.planet)) {
+      return 'この天体には建設できません';
+    }
+    if (plotIndex < 0 ||
+        plotIndex >= city.plotCount ||
+        slotIndex < 0 ||
+        slotIndex >= GameContent.buildingSlotCount) {
+      return '区画と建設枠を選んでください';
+    }
+    if (definition.occupiesWholePlot && slotIndex != 0) {
+      return '大型施設は区画全体を使用します';
+    }
+    if (definition.allowedTerrain.isNotEmpty &&
+        !definition.allowedTerrain.contains(city.terrainAt(plotIndex))) {
+      return 'この地形には建設できません';
+    }
+    if (developments.any(
+          (id) =>
+              id != instanceId &&
+              developmentTechnologyId(id) == technologyId &&
+              developmentCityIds[id] == cityId,
+        ) ||
+        plans.any(
+          (p) =>
+              !p.isFinished &&
+              p.id != ignorePlan &&
+              p.buildingInstanceId != instanceId &&
+              p.developmentCityId == cityId &&
+              p.definition.developmentId == technologyId,
+        )) {
+      return 'この都市には同系統の施設が導入済み、または予約済みです';
+    }
+    final occupied = _occupiedBuildingSlots(
+      cityId,
+      plotIndex,
+      ignoreInstance: instanceId,
+      ignorePlan: ignorePlan,
+    );
+    final district = districtAt(cityId, plotIndex);
+    if (district != null) {
+      if (GameContent.districtOccupiesWholePlot(district.districtId)) {
+        occupied.addAll([0, 1]);
+      } else {
+        occupied.add(0);
+      }
+    }
+    for (final p in plans.where(
+      (p) =>
+          !p.isFinished &&
+          p.id != ignorePlan &&
+          p.cityId == cityId &&
+          p.plotIndex == plotIndex,
+    )) {
+      if (GameContent.districtOccupiesWholePlot(p.definition.districtId!)) {
+        occupied.addAll([0, 1]);
+      } else {
+        occupied.add(0);
+      }
+    }
+    if (definition.occupiesWholePlot
+        ? occupied.isNotEmpty
+        : occupied.contains(slotIndex)) {
+      return 'この建設枠は使用中、または予約済みです';
+    }
+    return null;
+  }
+
+  String? buildingPlanLockReason(PlannedTask plan) => _buildingPlacementReason(
+    plan.relocation
+        ? developmentTechnologyId(plan.buildingInstanceId!)
+        : plan.definition.developmentId!,
+    plan.developmentCityId!,
+    plan.buildingPlotIndex!,
+    plan.buildingSlotIndex!,
+    instanceId: plan.buildingInstanceId,
+    ignorePlan: plan.id,
+  );
+  String? mapBuildingKitResource(String cityId) =>
+      switch (GameContent.cities[cityId]?.planet) {
+        'moon' => 'moonKits',
+        'mars' => 'marsKits',
+        _ => null,
+      };
+  int resourceAmount(String id) => switch (id) {
+    'earthKits' => earthKits,
+    'moonKits' => moonKits,
+    'marsKits' => marsKits,
+    _ => throw ArgumentError.value(id, 'resource'),
+  };
+
+  /// Future iterations quote their inputs. A running paid iteration never
+  /// enters the start transition again, including after a saved restart.
+  Map<String, int> plannedInputResources(PlannedTask plan) {
+    final task = plan.definition;
+    return {
+      if (task.inputResource != null) task.inputResource!: task.inputAmount,
+      if (plan.buildingPlotIndex != null &&
+          !plan.relocation &&
+          task.developmentId != null &&
+          mapBuildingKitResource(plan.developmentCityId!) != null)
+        mapBuildingKitResource(plan.developmentCityId!)!:
+            GameContent.mapBuildingKitRequirement,
+    };
+  }
+
+  BuildingPreview buildingPreview(
+    String id, {
+    required String cityId,
+    required int plotIndex,
+    int slotIndex = 0,
+    bool relocation = false,
+  }) {
+    final existing =
+        relocation && (id == 'base_lab' || developments.contains(id));
+    final technologyId = developmentTechnologyId(id);
+    final location = buildingLocations[id];
+    if (!GameContent.mapBuildingDefinitions.containsKey(technologyId)) {
+      return const BuildingPreview(
+        cost: 0,
+        durationMs: 0,
+        upkeepPerMinute: 0,
+        blockedReason: '対応する施設を選んでください',
+      );
+    }
+    var reason = _buildingPlacementReason(
+      technologyId,
+      cityId,
+      plotIndex,
+      slotIndex,
+      instanceId: existing ? id : null,
+    );
+    if (existing &&
+        location?.legacySite == false &&
+        location?.cityId == cityId &&
+        location?.plotIndex == plotIndex &&
+        location?.slotIndex == slotIndex) {
+      reason = '現在の敷地と同じ位置です';
+    }
+    if (existing &&
+        plans.any((p) => !p.isFinished && p.buildingInstanceId == id)) {
+      reason = 'この施設の仕事・建設を終えてから移設してください';
+    }
+    if (!existing && technologyId == 'base_lab') {
+      reason = '基礎研究所は既存の1棟を移設してください';
+    }
+    final resourceId = !existing && technologyId != 'base_lab'
+        ? mapBuildingKitResource(cityId)
+        : null;
+    return BuildingPreview(
+      resourceId: resourceId,
+      requiredKits: resourceId == null
+          ? 0
+          : GameContent.mapBuildingKitRequirement,
+      availableKits: resourceId == null ? 0 : resourceAmount(resourceId),
+      cost: existing
+          ? (location?.legacySite == true || id == 'base_lab'
+                ? 0
+                : (GameContent.developmentCost(technologyId) +
+                          GameContent.buildingRelocationDivisor -
+                          1) ~/
+                      GameContent.buildingRelocationDivisor)
+          : technologyId == 'base_lab'
+          ? 0
+          : GameContent.developmentCost(technologyId),
+      durationMs: existing
+          ? GameContent.buildingRelocationDurationMs
+          : technologyId == 'base_lab'
+          ? 0
+          : effectiveDurationMs(
+              GameContent.tasks[GameContent.developmentTaskId(technologyId)]!,
+            ),
+      upkeepPerMinute: id == 'base_lab'
+          ? 0
+          : GameContent.developmentUpkeepPerMinute(technologyId),
+      blockedReason: reason,
+    );
+  }
+
+  void validateBuildingState() {
+    if (nextBuildingId < 1) throw const FormatException('施設番号が不正です');
+    for (final e in developmentTechnologyIds.entries) {
+      if (!developments.contains(e.key) ||
+          !GameContent.mapBuildingDefinitions.containsKey(e.value) ||
+          e.value == 'base_lab' ||
+          e.key == e.value) {
+        throw const FormatException('施設実体と技術の対応が不正です');
+      }
+    }
+    final slots = <String>{};
+    final technologies = <String>{};
+    for (final e in buildingLocations.entries) {
+      final id = e.key;
+      final location = e.value;
+      final technologyId = developmentTechnologyId(id);
+      final definition = GameContent.mapBuildingDefinitions[technologyId];
+      final city = GameContent.cities[location.cityId];
+      if (definition == null ||
+          city == null ||
+          (id != 'base_lab' && !developments.contains(id)) ||
+          (id != 'base_lab' && developmentCityIds[id] != location.cityId) ||
+          location.slotIndex < 0 ||
+          location.slotIndex >= GameContent.buildingSlotCount) {
+        throw const FormatException('施設の保存位置が不正です');
+      }
+      if (!technologies.add('${location.cityId}:$technologyId')) {
+        throw const FormatException('同じ都市に同系統の施設が重複しています');
+      }
+      if (location.legacySite) {
+        if (location.plotIndex != -1) {
+          throw const FormatException('既存敷地の位置が不正です');
+        }
+        continue;
+      }
+      if (location.plotIndex < 0 ||
+          location.plotIndex >= city.plotCount ||
+          !definition.allowedPlanets.contains(city.planet) ||
+          (definition.allowedTerrain.isNotEmpty &&
+              !definition.allowedTerrain.contains(
+                city.terrainAt(location.plotIndex),
+              )) ||
+          (definition.occupiesWholePlot && location.slotIndex != 0)) {
+        throw const FormatException('施設の用地条件が不正です');
+      }
+      if (plans.any(
+        (p) =>
+            p.status == 'running' && p.relocation && p.buildingInstanceId == id,
+      )) {
+        continue;
+      }
+      final used = definition.occupiesWholePlot ? [0, 1] : [location.slotIndex];
+      for (final slot in used) {
+        if (!slots.add('${location.cityId}:${location.plotIndex}:$slot')) {
+          throw const FormatException('施設の建設枠が重複しています');
+        }
+      }
+    }
+    if (!buildingLocations.containsKey('base_lab')) {
+      throw const FormatException('基礎研究所がありません');
+    }
+    for (final id in developments) {
+      if (GameContent.mapBuildingDefinitions.containsKey(
+            developmentTechnologyId(id),
+          ) &&
+          !buildingLocations.containsKey(id)) {
+        throw const FormatException('施設の位置がありません');
+      }
+    }
+    for (final d in districts.values) {
+      for (final slot
+          in GameContent.districtOccupiesWholePlot(d.districtId)
+              ? [0, 1]
+              : [0]) {
+        if (!slots.add('${d.cityId}:${d.plotIndex}:$slot')) {
+          throw const FormatException('地区と施設の用地が重複しています');
+        }
+      }
+    }
+    final technologyTargets = {
+      for (final id in developments)
+        if (GameContent.mapBuildingDefinitions.containsKey(
+          developmentTechnologyId(id),
+        ))
+          '${developmentCityIds[id]}:${developmentTechnologyId(id)}': id,
+    };
+    final relocating = plans
+        .where((p) => !p.isFinished && p.relocation)
+        .map((p) => p.buildingInstanceId)
+        .toList();
+    if (relocating.toSet().length != relocating.length) {
+      throw const FormatException('同じ施設の移設予約が重複しています');
+    }
+    final pendingSurveys = <String>{};
+    final newIds = <String>{};
+    for (final p in plans) {
+      if (p.status != 'running' &&
+          (p.iterationLocalOutputs.isNotEmpty ||
+              p.iterationBatteryUnits != 0)) {
+        throw const FormatException('未実行の仕事に支払済みの生産量があります');
+      }
+      if (p.definition.buildingTechnologyId == null &&
+          p.buildingPlotIndex == null &&
+          (p.buildingInstanceId != null ||
+              p.buildingSlotIndex != null ||
+              p.surveyPlotIndex != null)) {
+        throw const FormatException('作業に不正な施設の参照があります');
+      }
+      if (p.buildingPlotIndex != null) {
+        if (p.buildingInstanceId == null ||
+            p.buildingSlotIndex == null ||
+            p.developmentCityId == null) {
+          throw const FormatException('施設建設の実体が不正です');
+        }
+        final tech = p.relocation
+            ? developmentTechnologyId(p.buildingInstanceId!)
+            : p.definition.developmentId;
+        final def = GameContent.mapBuildingDefinitions[tech];
+        final city = GameContent.cities[p.developmentCityId];
+        if (def == null ||
+            city == null ||
+            !def.allowedPlanets.contains(city.planet) ||
+            (def.allowedTerrain.isNotEmpty &&
+                !def.allowedTerrain.contains(
+                  city.terrainAt(p.buildingPlotIndex!),
+                )) ||
+            (def.occupiesWholePlot && p.buildingSlotIndex != 0)) {
+          throw const FormatException('予約施設の用地条件が不正です');
+        }
+        if (p.relocation &&
+            p.buildingInstanceId != 'base_lab' &&
+            !developments.contains(p.buildingInstanceId)) {
+          throw const FormatException('移設元の施設がありません');
+        }
+        if (!p.isFinished) {
+          final target = '${p.developmentCityId}:$tech';
+          if (technologyTargets.containsKey(target) &&
+              technologyTargets[target] != p.buildingInstanceId) {
+            throw const FormatException('同じ都市の施設系統が重複しています');
+          }
+          technologyTargets[target] = p.buildingInstanceId!;
+          if (p.remainingRepeats != 1) {
+            throw const FormatException('施設工事の反復回数が不正です');
+          }
+          if (!p.relocation &&
+              (!newIds.add(p.buildingInstanceId!) ||
+                  developments.contains(p.buildingInstanceId))) {
+            throw const FormatException('施設実体の建設予約が重複しています');
+          }
+          for (final slot
+              in def.occupiesWholePlot ? [0, 1] : [p.buildingSlotIndex!]) {
+            if (!slots.add(
+              '${p.developmentCityId}:${p.buildingPlotIndex}:$slot',
+            )) {
+              throw const FormatException('施設予約の建設枠が重複しています');
+            }
+          }
+        }
+      } else if (p.relocation) {
+        throw const FormatException('移設先がありません');
+      }
+      if (p.definition.buildingTechnologyId != null) {
+        final id = p.buildingInstanceId;
+        final task = p.definition;
+        if (!p.isFinished && relocating.contains(id)) {
+          throw const FormatException('移設中の施設に仕事が予約されています');
+        }
+        if (!p.isFinished &&
+            task.workAction == 'survey' &&
+            !pendingSurveys.add(
+              '${p.developmentCityId}:${p.surveyPlotIndex}',
+            )) {
+          throw const FormatException('同じ区画の調査予約が重複しています');
+        }
+        if (id == null ||
+            !developments.contains(id) ||
+            (!p.isFinished && developmentCityIds[id] != p.developmentCityId) ||
+            !buildingWorkTasks(id).any((t) => t.id == task.id) ||
+            p.buildingPlotIndex != null) {
+          throw const FormatException('施設の仕事の対象が不正です');
+        }
+        if (task.workAction == 'survey' &&
+            (p.surveyPlotIndex == null ||
+                p.surveyPlotIndex! < 0 ||
+                p.surveyPlotIndex! >=
+                    GameContent.cities[p.developmentCityId]!.plotCount ||
+                p.remainingRepeats != (p.status == 'completed' ? 0 : 1))) {
+          throw const FormatException('調査対象が不正です');
+        }
+        if (task.workAction != 'survey' && p.surveyPlotIndex != null) {
+          throw const FormatException('仕事に不正な調査対象があります');
+        }
+        for (final output in p.iterationLocalOutputs.entries) {
+          if (!task.localOutputs.containsKey(output.key) ||
+              output.value >
+                  task.localOutputs[output.key]! +
+                      (task.workAction == 'mineIce'
+                          ? GameContent.surveyedIceYieldBonus
+                          : 0)) {
+            throw const FormatException('施設の凍結済み生産量が不正です');
+          }
+        }
+      } else if (p.iterationLocalOutputs.isNotEmpty ||
+          p.iterationBatteryUnits != 0) {
+        throw const FormatException('仕事に不正な都市在庫があります');
+      }
+    }
+    for (final p in plans.where(
+      (p) =>
+          !p.isFinished && p.cityId != null && !p.definition.isDistrictUpgrade,
+    )) {
+      for (final slot
+          in GameContent.districtOccupiesWholePlot(p.definition.districtId!)
+              ? [0, 1]
+              : [0]) {
+        if (!slots.add('${p.cityId}:${p.plotIndex}:$slot')) {
+          throw const FormatException('地区予約と施設の用地が重複しています');
+        }
+      }
+    }
+    for (final e in cityStocks.entries) {
+      if (!GameContent.cities.containsKey(e.key) ||
+          e.value.entries.any(
+            (v) =>
+                !GameContent.buildingResourceNames.containsKey(v.key) ||
+                v.value < 0 ||
+                v.value >
+                    (v.key == 'charge'
+                        ? GameContent.batteryCapacity
+                        : GameContent.buildingStockLimit),
+          )) {
+        throw const FormatException('都市在庫が不正です');
+      }
+    }
+    for (final key in surveyedSites) {
+      final parts = key.split(':');
+      final city = GameContent.cities[parts.first];
+      final plot = parts.length == 2 ? int.tryParse(parts.last) : null;
+      if (city == null || plot == null || plot < 0 || plot >= city.plotCount) {
+        throw const FormatException('調査記録が不正です');
+      }
+    }
+    if (connectedGridCities.any((id) => !GameContent.cities.containsKey(id)) ||
+        preparedVehicles.any(
+          (id) =>
+              !developments.contains(id) ||
+              ![
+                'reusable_launch',
+                'lunar_shuttles',
+              ].contains(developmentTechnologyId(id)) ||
+              plans.any(
+                (p) =>
+                    p.status == 'running' &&
+                    p.buildingInstanceId == id &&
+                    [
+                      'rocketFlight',
+                      'shuttleFlight',
+                    ].contains(p.definition.workAction),
+              ),
+        )) {
+      throw const FormatException('配電・機体整備の記録が不正です');
+    }
+  }
+
+  List<CityBuildingSnapshot> cityBuildings(String cityId) {
+    final result = <CityBuildingSnapshot>[];
+    final ids = <String>{
+      if (buildingLocations['base_lab']?.cityId == cityId) 'base_lab',
+      ...developments.where(
+        (id) =>
+            GameContent.mapBuildingDefinitions.containsKey(
+              developmentTechnologyId(id),
+            ) &&
+            developmentCityIds[id] == cityId,
+      ),
+    };
+    for (final id in ids) {
+      if (plans.any(
+        (p) =>
+            p.status == 'running' && p.relocation && p.buildingInstanceId == id,
+      )) {
+        continue;
+      }
+      final technologyId = developmentTechnologyId(id);
+      final definition = GameContent.mapBuildingDefinitions[technologyId]!;
+      final location =
+          buildingLocations[id] ??
+          BuildingLocation(cityId: cityId, plotIndex: -1, legacySite: true);
+      final work = plans
+          .where(
+            (p) =>
+                !p.isFinished &&
+                p.buildingInstanceId == id &&
+                p.definition.buildingTechnologyId != null,
+          )
+          .firstOrNull;
+      result.add(
+        CityBuildingSnapshot(
+          id: id,
+          technologyId: technologyId,
+          catalogId: definition.catalogId,
+          name: definition.name,
+          cityId: cityId,
+          plotIndex: location.plotIndex,
+          slotIndex: location.slotIndex,
+          legacySite: location.legacySite,
+          operational: id == 'base_lab'
+              ? facilities['lab'] == true
+              : isDevelopmentOperational(id),
+          occupiesWholePlot: definition.occupiesWholePlot,
+          workState: work?.status ?? 'none',
+          workProgress: work?.progress ?? 0,
+          workLabel: work?.definition.name ?? '',
+          vehiclePresent: !plans.any(
+            (p) =>
+                p.status == 'running' &&
+                p.buildingInstanceId == id &&
+                [
+                  'rocketFlight',
+                  'shuttleFlight',
+                ].contains(p.definition.workAction),
+          ),
+        ),
+      );
+    }
+    for (final p in plans.where(
+      (p) =>
+          !p.isFinished &&
+          p.developmentCityId == cityId &&
+          p.buildingPlotIndex != null,
+    )) {
+      final id = p.buildingInstanceId!;
+      final technologyId = p.relocation
+          ? developmentTechnologyId(id)
+          : p.definition.developmentId!;
+      final definition = GameContent.mapBuildingDefinitions[technologyId]!;
+      result.add(
+        CityBuildingSnapshot(
+          id: id,
+          technologyId: technologyId,
+          catalogId: definition.catalogId,
+          name: definition.name,
+          cityId: cityId,
+          plotIndex: p.buildingPlotIndex!,
+          slotIndex: p.buildingSlotIndex!,
+          legacySite: false,
+          operational: false,
+          occupiesWholePlot: definition.occupiesWholePlot,
+          workState: p.status,
+          workProgress: p.progress,
+          workLabel: p.status == 'queued' && p.stopReason.isNotEmpty
+              ? p.stopReason
+              : p.relocation
+              ? '移設中'
+              : '建設中',
+          underConstruction: true,
+        ),
+      );
+    }
+    return result;
+  }
 
   /// Only the explored frontier exists in the UI: unseen roots, descendants,
   /// and graph geometry must never disclose the future shape of a field.
@@ -641,19 +1546,26 @@ class GameState {
         totalLevels >= thresholds[stage + 1]) {
       stage++;
     }
+    final builtPlots = <int>{
+      for (final d in completed) d.plotIndex,
+      for (final b in cityBuildings(cityId))
+        if (!b.legacySite && !b.underConstruction) b.plotIndex,
+    };
+    final reserved = <int>{
+      for (final p in plans)
+        if (!p.isFinished &&
+            p.cityId == cityId &&
+            !p.definition.isDistrictUpgrade)
+          p.plotIndex!,
+      for (final b in cityBuildings(cityId))
+        if (b.underConstruction) b.plotIndex,
+    };
     return CityDevelopmentSummary(
-      completedPlots: completed.length,
+      completedPlots: builtPlots.length,
       totalLevels: totalLevels,
-      emptyPlots: city.plotCount - completed.length,
-      reservedPlots: plans
-          .where(
-            (p) =>
-                !p.isFinished &&
-                p.cityId == cityId &&
-                p.definition.districtId != null &&
-                !p.definition.isDistrictUpgrade,
-          )
-          .length,
+      emptyPlots: city.plotCount - builtPlots.length,
+      reservedPlots: reserved.length,
+      reservedOccupiedPlots: reserved.intersection(builtPlots).length,
       stageName: GameContent.cityStageNames[stage],
       nextStageAtTotalLevels: stage + 1 < thresholds.length
           ? thresholds[stage + 1]
@@ -804,15 +1716,48 @@ class GameState {
     return math.min(GameContent.maxLaunchDiscountPercent, discount);
   }
 
-  int taskCost(TaskDefinition task) => task.usesLaunchCost
-      ? (task.cost * (100 - launchCostReductionPercent) + 99) ~/ 100
-      : task.cost;
+  Map<String, int> kitSupportInputs(TaskDefinition task) {
+    if (task.outputResource != 'earthKits') return const {};
+    final cities = GameContent.cities.values.where((c) => c.planet == 'earth');
+    return {
+      for (final resource in ['parts', 'provisions', 'serviceCredit'])
+        resource: math.min(
+          task.outputAmount,
+          cities.fold(0, (sum, c) => sum + cityStock(c.id, resource)),
+        ),
+    };
+  }
+
+  int taskCost(TaskDefinition task) {
+    final support = kitSupportInputs(task);
+    final reduction =
+        (support['parts'] ?? 0) * GameContent.kitPartCostReduction +
+        (support['provisions'] ?? 0) * GameContent.kitProvisionCostReduction +
+        (support['serviceCredit'] ?? 0) * GameContent.kitServiceCostReduction;
+    return math.max(
+      0,
+      task.usesLaunchCost
+          ? (task.cost * (100 - launchCostReductionPercent) + 99) ~/ 100
+          : task.cost - reduction,
+    );
+  }
+
   int currentTaskDurationMs(String taskId) =>
       effectiveDurationMs(GameContent.tasks[taskId]!);
   int _scaledDuration(int duration, String facilityId) =>
       (duration * 100 + 99 + facilityBonusPercent(facilityId)) ~/
       (100 + facilityBonusPercent(facilityId));
-  int plannedCost(PlannedTask plan) => plan.definition.districtId == null
+  int plannedCost(PlannedTask plan) => plan.relocation
+      ? (buildingLocations[plan.buildingInstanceId]?.legacySite == true ||
+                plan.buildingInstanceId == 'base_lab'
+            ? 0
+            : (GameContent.developmentCost(
+                        developmentTechnologyId(plan.buildingInstanceId!),
+                      ) +
+                      GameContent.buildingRelocationDivisor -
+                      1) ~/
+                  GameContent.buildingRelocationDivisor)
+      : plan.definition.districtId == null
       ? taskCost(plan.definition)
       : _districtInvestment(
           plan.cityId!,
@@ -820,7 +1765,9 @@ class GameState {
           plan.targetLevel!,
           upgrade: plan.definition.isDistrictUpgrade,
         ).cost;
-  int plannedDurationMs(PlannedTask plan) => plan.definition.districtId == null
+  int plannedDurationMs(PlannedTask plan) => plan.relocation
+      ? GameContent.buildingRelocationDurationMs
+      : plan.definition.districtId == null
       ? effectiveDurationMs(plan.definition)
       : _scaledDuration(
           _districtInvestment(
@@ -889,6 +1836,12 @@ class GameState {
       reason = 'この惑星には配置できません';
     } else if (!cityUnlocked(cityId)) {
       reason = cityLockReason(cityId);
+    } else if (!upgrade &&
+        _occupiedBuildingSlots(cityId, plotIndex).any(
+          (slot) =>
+              GameContent.districtOccupiesWholePlot(districtId) || slot == 0,
+        )) {
+      reason = 'この区画は施設または建設予約が使用しています';
     } else if (districtPlanAt(cityId, plotIndex) != null) {
       reason = 'この区画は建設・増強を予約済みです';
     } else if (upgrade &&
@@ -1203,6 +2156,19 @@ class GameState {
     'developmentEnabled': Map<String, bool>.of(developmentEnabled),
     'developmentResearchers': Map<String, int>.of(developmentResearchers),
     'developmentCityIds': Map<String, String>.of(developmentCityIds),
+    'developmentTechnologyIds': Map<String, String>.of(
+      developmentTechnologyIds,
+    ),
+    'buildingLocations': {
+      for (final e in buildingLocations.entries) e.key: e.value.toJson(),
+    },
+    'cityStocks': {
+      for (final e in cityStocks.entries) e.key: Map<String, int>.of(e.value),
+    },
+    'surveyedSites': surveyedSites.toList()..sort(),
+    'connectedGridCities': connectedGridCities.toList()..sort(),
+    'preparedVehicles': preparedVehicles.toList()..sort(),
+    'nextBuildingId': nextBuildingId,
     'partnershipChoices': Map<String, String>.of(partnershipChoices),
     'nextPlanId': nextPlanId,
     'contractRevenue': contractRevenue,
@@ -1235,6 +2201,7 @@ class GameState {
         json['schemaVersion'] == schemaVersion &&
         [
           GameContent.version,
+          'district-9',
           'district-8',
           'district-7',
           'district-6',
@@ -1273,6 +2240,7 @@ class GameState {
     state.habitatChoice = json['habitatChoice'] as String?;
     final currentAgency =
         json['contentVersion'] == GameContent.version ||
+        json['contentVersion'] == 'district-9' ||
         json['contentVersion'] == 'district-8' ||
         json['contentVersion'] == 'district-7' ||
         json['contentVersion'] == 'district-6' ||
@@ -1299,6 +2267,44 @@ class GameState {
     state.developmentCityIds.addAll(
       Map<String, String>.from(json['developmentCityIds'] as Map? ?? {}),
     );
+    state.developmentTechnologyIds.addAll(
+      Map<String, String>.from(json['developmentTechnologyIds'] as Map? ?? {}),
+    );
+    if (json['contentVersion'] == GameContent.version &&
+        json['buildingLocations'] is! Map) {
+      throw const FormatException('現行保存に施設の位置がありません');
+    }
+    if (json['buildingLocations'] case final Map locations) {
+      state.buildingLocations.clear();
+      for (final e in locations.entries) {
+        state.buildingLocations[e.key as String] = BuildingLocation.fromJson(
+          Map<String, dynamic>.from(e.value as Map),
+        );
+      }
+    } else {
+      for (final id in state.developments) {
+        if (GameContent.mapBuildingDefinitions.containsKey(id)) {
+          state.buildingLocations[id] = BuildingLocation(
+            cityId: state.developmentCityIds[id]!,
+            plotIndex: -1,
+            legacySite: true,
+          );
+        }
+      }
+    }
+    for (final e in (json['cityStocks'] as Map? ?? {}).entries) {
+      state.cityStocks[e.key as String] = Map<String, int>.from(e.value as Map);
+    }
+    state.surveyedSites.addAll(
+      (json['surveyedSites'] as List? ?? []).cast<String>(),
+    );
+    state.connectedGridCities.addAll(
+      (json['connectedGridCities'] as List? ?? []).cast<String>(),
+    );
+    state.preparedVehicles.addAll(
+      (json['preparedVehicles'] as List? ?? []).cast<String>(),
+    );
+    state.nextBuildingId = json['nextBuildingId'] as int? ?? 1;
     state.nextPlanId = json['nextPlanId'] as int;
     state.contractRevenue = json['contractRevenue'] as int;
     state.research.addAll((json['research'] as List).cast<String>());
@@ -1400,7 +2406,11 @@ class GameState {
     }
     if (state.researchPointUnits < 0 ||
         state.developments.any(
-          (id) => GameContent.researchTechnologies[id]?.isPurchasable != true,
+          (id) =>
+              GameContent
+                  .researchTechnologies[state.developmentTechnologyId(id)]
+                  ?.isPurchasable !=
+              true,
         ) ||
         state.developmentEnabled.keys.any(
           (id) => !state.developments.contains(id),
@@ -1416,15 +2426,25 @@ class GameState {
     for (final id in state.developments) {
       final city = GameContent.cities[state.developmentCityIds[id]];
       final assigned = state.developmentResearchers[id] ?? 0;
-      if (!state.research.contains(id) ||
+      if (!state.research.contains(state.developmentTechnologyId(id)) ||
           city == null ||
-          city.planet != GameContent.developmentPlanet(id) ||
+          (state.buildingLocations[id]?.legacySite == false
+              ? GameContent
+                        .mapBuildingDefinitions[state.developmentTechnologyId(
+                          id,
+                        )]
+                        ?.allowedPlanets
+                        .contains(city.planet) !=
+                    true
+              : city.planet !=
+                    GameContent.developmentPlanet(
+                      state.developmentTechnologyId(id),
+                    )) ||
           assigned < 0 ||
-          assigned > GameContent.developmentResearchCapacity(id) ||
+          assigned > state.developmentResearchCapacityFor(id) ||
           (state.developmentEnabled[id] != true && assigned != 0) ||
           (state.developmentEnabled[id] == true &&
-              state.facilities[GameContent.developmentFacilityId(id)] !=
-                  true)) {
+              state.facilities[state.developmentFacilityFor(id)] != true)) {
         throw const FormatException('設備の導入先または配属が不正です');
       }
     }
@@ -1456,8 +2476,14 @@ class GameState {
     for (final plan in state.plans.where(
       (plan) => !plan.isFinished && plan.definition.developmentId != null,
     )) {
+      if (plan.relocation) continue;
       final id = plan.definition.developmentId!;
-      if (!developmentTargets.add(id) || state.developments.contains(id)) {
+      final target = plan.buildingInstanceId == null
+          ? id
+          : '${plan.developmentCityId}:$id';
+      if (!developmentTargets.add(target) ||
+          (plan.buildingInstanceId == null &&
+              state.developments.contains(id))) {
         throw const FormatException('設備の導入予約が重複しています');
       }
     }
@@ -1516,7 +2542,11 @@ class GameState {
         throw const FormatException('同じ設備で複数の作業が実行されています');
       }
     }
-    if (![GameContent.version, 'district-8'].contains(json['contentVersion'])) {
+    if (![
+      GameContent.version,
+      'district-9',
+      'district-8',
+    ].contains(json['contentVersion'])) {
       state._knownResearch.addAll(state._legacyDiscoveredResearchIds());
     }
     if (json['contentVersion'] != GameContent.version &&
@@ -1540,7 +2570,11 @@ class GameState {
                   GameContent.cities[district.cityId]!.planet == 'mars',
             ) ||
             state.developments.any(
-              (id) => GameContent.developmentPlanet(id) == 'mars',
+              (id) =>
+                  GameContent.developmentPlanet(
+                    state.developmentTechnologyId(id),
+                  ) ==
+                  'mars',
             ) ||
             state.plans.any(
               (plan) =>
@@ -1555,6 +2589,7 @@ class GameState {
             ))) {
       state.legacyUnlockedPlanets.addAll(['moon', 'mars']);
     }
+    state.validateBuildingState();
     return state;
   }
 }
