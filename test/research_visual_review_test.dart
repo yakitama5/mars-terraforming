@@ -232,8 +232,8 @@ void main() {
       final hidden = ResearchCatalog.byCatalogId('M12')!;
       expect(find.text(hidden.name), findsNothing);
 
-      // Use the same commands as the product: knowledge first, paid application
-      // second, then normal simulated time to finish its factory work.
+      // Use the product route: knowledge unlock, map position and explicit
+      // confirmation, then normal simulated time to finish the construction.
       controller.state.moneyUnits = 100000 * GameState.moneyScale;
       await controller.command((engine) {
         _fundResearch(controller, 'orbital_gardens');
@@ -245,23 +245,45 @@ void main() {
       await tester.tap(find.byKey(const Key('operations-4')));
       await tester.pumpAndSettle();
       await _capture(tester, key, 'product_applications_$suffix');
-      final build = find.byKey(const Key('build-development-orbital_gardens'));
-      await tester.ensureVisible(build);
+      final map = find.byKey(const Key('open-building-map-orbital_gardens'));
+      await tester.ensureVisible(map);
+      await tester.pumpAndSettle();
+      await tester.tap(map);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('building-title-orbital_gardens')),
+        findsOneWidget,
+      );
+      expect(controller.state.developments, isEmpty);
+      await tester.tap(find.byKey(const Key('plot-earth_delta-12')));
+      await tester.pumpAndSettle();
+      final slot = find.byKey(const Key('building-slot-0'));
+      await tester.ensureVisible(slot);
+      await tester.pumpAndSettle();
+      await tester.tap(slot);
       await tester.pumpAndSettle();
       await _capture(tester, key, 'product_application_investment_$suffix');
-      await tester.tap(build);
+      await tester.tap(find.byKey(const Key('confirm-map-building')));
       await tester.pumpAndSettle();
+      final building = controller.state
+          .cityBuildings('earth_delta')
+          .singleWhere(
+            (building) => building.technologyId == 'orbital_gardens',
+          );
+      expect(building.plotIndex, 12);
+      expect(building.slotIndex, 0);
       await controller.command((engine) {
         engine.advanceBy(const Duration(minutes: 6));
         return null;
       });
       await tester.pumpAndSettle();
-      expect(controller.state.developments, contains('orbital_gardens'));
-      final operation = find.byKey(
-        const Key('enable-development-orbital_gardens'),
-      );
+      expect(controller.state.developments, contains(building.id));
+      final operation = find.byKey(Key('enable-map-building-${building.id}'));
       await tester.ensureVisible(operation);
       await tester.pumpAndSettle();
+      await tester.tap(operation);
+      await tester.pumpAndSettle();
+      expect(controller.state.developmentEnabled[building.id], isTrue);
       await _capture(tester, key, 'product_application_operating_$suffix');
     });
   }

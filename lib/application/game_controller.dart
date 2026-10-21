@@ -210,6 +210,34 @@ class GameController extends ChangeNotifier {
     _emit();
   }
 
+  Future<void> constructMapBuilding(
+    String technologyId, {
+    required String cityId,
+    required int plotIndex,
+    int slotIndex = 0,
+  }) => command(
+    (game) => game.enqueueMapBuilding(
+      technologyId,
+      cityId: cityId,
+      plotIndex: plotIndex,
+      slotIndex: slotIndex,
+    ),
+  );
+
+  Future<void> relocateMapBuilding(
+    String instanceId, {
+    required String cityId,
+    required int plotIndex,
+    int slotIndex = 0,
+  }) => command(
+    (game) => game.relocateMapBuilding(
+      instanceId,
+      cityId: cityId,
+      plotIndex: plotIndex,
+      slotIndex: slotIndex,
+    ),
+  );
+
   Future<void> advanceForDevelopment({
     Duration duration = const Duration(minutes: 5),
   }) async {

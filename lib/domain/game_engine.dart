@@ -87,6 +87,9 @@ class GameEngine {
   String? enqueue(String taskId, {int? repeats = 1}) {
     final task = GameContent.tasks[taskId];
     if (task == null) return '未対応の計画です';
+    if (task.buildingTechnologyId != null || task.id == 'relocate_base_lab') {
+      return '都市の施設から仕事を予約してください';
+    }
     if (task.districtId != null) return '都市の区画から建設を予約してください';
     if (task.developmentId != null) return '導入先の都市を選んで設備を予約してください';
     if (task.unique && !state.isResearchDiscovered(taskId)) {
@@ -148,7 +151,9 @@ class GameEngine {
     final technology = GameContent.researchTechnologies[technologyId];
     if (technology == null || !technology.isPurchasable) return '導入できる設備がありません';
     if (!state.research.contains(technologyId)) return '対応する技術の解放が必要です';
-    if (state.developments.contains(technologyId) ||
+    if (state.developments.any(
+          (id) => state.developmentTechnologyId(id) == technologyId,
+        ) ||
         state.plans.any(
           (plan) =>
               plan.definition.developmentId == technologyId && !plan.isFinished,
@@ -177,11 +182,155 @@ class GameEngine {
     return null;
   }
 
+  String? enqueueMapBuilding(
+    String technologyId, {
+    required String cityId,
+    required int plotIndex,
+    int slotIndex = 0,
+  }) {
+    if (!GameContent.mapBuildingDefinitions.containsKey(technologyId) ||
+        technologyId == 'base_lab') {
+      return '対応する研究施設を選んでください';
+    }
+    final preview = state.buildingPreview(
+      technologyId,
+      cityId: cityId,
+      plotIndex: plotIndex,
+      slotIndex: slotIndex,
+    );
+    if (!preview.isValid) return preview.blockedReason;
+    if (technologyId == 'base_lab') return '既存の基礎研究所を移設してください';
+    if (state.activePlanCount >= GameContent.maxActivePlans) {
+      return '予約が上限に達しています';
+    }
+    String id;
+    do {
+      id = 'building-${state.nextBuildingId++}';
+    } while (state.developments.contains(id) ||
+        state.plans.any((p) => p.buildingInstanceId == id));
+    state.plans.add(
+      PlannedTask(
+        id: 'plan-${state.nextPlanId++}',
+        taskId: GameContent.developmentTaskId(technologyId),
+        developmentCityId: cityId,
+        buildingInstanceId: id,
+        buildingPlotIndex: plotIndex,
+        buildingSlotIndex: slotIndex,
+      ),
+    );
+    _record(
+      '${state.cityName(cityId)}に${GameContent.mapBuildingDefinitions[technologyId]!.name}の建設を予約',
+    );
+    _stabilize();
+    return null;
+  }
+
+  String? relocateMapBuilding(
+    String id, {
+    required String cityId,
+    required int plotIndex,
+    int slotIndex = 0,
+  }) {
+    if (id != 'base_lab' && !state.developments.contains(id)) {
+      return '移設する施設がありません';
+    }
+    final preview = state.buildingPreview(
+      id,
+      cityId: cityId,
+      plotIndex: plotIndex,
+      slotIndex: slotIndex,
+      relocation: true,
+    );
+    if (!preview.isValid) return preview.blockedReason;
+    if (state.activePlanCount >= GameContent.maxActivePlans) {
+      return '予約が上限に達しています';
+    }
+    state.plans.add(
+      PlannedTask(
+        id: 'plan-${state.nextPlanId++}',
+        taskId: id == 'base_lab'
+            ? 'relocate_base_lab'
+            : GameContent.developmentTaskId(state.developmentTechnologyId(id)),
+        developmentCityId: cityId,
+        buildingInstanceId: id,
+        buildingPlotIndex: plotIndex,
+        buildingSlotIndex: slotIndex,
+        relocation: true,
+      ),
+    );
+    _record('${state.cityName(cityId)}への施設移設を予約');
+    _stabilize();
+    return null;
+  }
+
+  String? enqueueBuildingWork(
+    String id,
+    String taskId, {
+    int? repeats = 1,
+    int? targetPlotIndex,
+  }) {
+    if (repeats != null && repeats < 1) return '反復回数は1回以上を指定してください';
+    final reason = state.buildingWorkLockReason(
+      id,
+      taskId,
+      targetPlotIndex: targetPlotIndex,
+    );
+    if (reason != null) return reason;
+    if (state.activePlanCount >= GameContent.maxActivePlans) {
+      return '予約が上限に達しています';
+    }
+    if (state.plans.any(
+      (p) => !p.isFinished && p.relocation && p.buildingInstanceId == id,
+    )) {
+      return '施設の移設完了を待ってください';
+    }
+    final task = GameContent.tasks[taskId]!;
+    final cityId = state.developmentCityIds[id]!;
+    final target = task.workAction == 'survey'
+        ? state.buildingSurveyTarget(id, targetPlotIndex)
+        : null;
+    if (['survey', 'grid'].contains(task.workAction) && repeats != 1) {
+      return 'この仕事は対象ごとに1回だけ予約してください';
+    }
+    if (state.plans.any(
+      (p) =>
+          !p.isFinished &&
+          ((task.workAction == 'survey' &&
+                  p.definition.workAction == 'survey' &&
+                  p.developmentCityId == cityId &&
+                  p.surveyPlotIndex == target) ||
+              (task.workAction == 'grid' &&
+                  p.definition.workAction == 'grid' &&
+                  p.developmentCityId == cityId)),
+    )) {
+      return '同じ対象の仕事を予約済みです';
+    }
+    state.plans.add(
+      PlannedTask(
+        id: 'plan-${state.nextPlanId++}',
+        taskId: taskId,
+        remainingRepeats: repeats,
+        developmentCityId: cityId,
+        buildingInstanceId: id,
+        surveyPlotIndex: target,
+      ),
+    );
+    _record('${state.cityName(cityId)}で${task.name}を予約');
+    _stabilize();
+    return null;
+  }
+
   String? setDevelopmentEnabled(String id, bool enabled) {
     if (!state.developments.contains(id)) return '設備の導入を完了してください';
     if (state.developmentEnabled[id] == enabled) return null;
+    if (enabled &&
+        state.plans.any(
+          (p) => !p.isFinished && p.relocation && p.buildingInstanceId == id,
+        )) {
+      return '移設の完了を待ってください';
+    }
     if (enabled) {
-      final facilityId = GameContent.developmentFacilityId(id);
+      final facilityId = state.developmentFacilityFor(id);
       if (state.facilities[facilityId] != true) {
         return '${GameContent.facilities[facilityId]!.name}を再開してから設備を稼働してください';
       }
@@ -189,15 +338,17 @@ class GameEngine {
           GameContent.maxOperationalDevelopments) {
         return '同時に運営できる設備は${GameContent.maxOperationalDevelopments}件です。稼働先を見直してください';
       }
-      if (state.money < GameContent.developmentUpkeepPerMinute(id)) {
+      if (state.money <
+          GameContent.developmentUpkeepPerMinute(
+            state.developmentTechnologyId(id),
+          )) {
         return '再開には維持費1分分の資金が必要です';
       }
-      if (GameContent.developmentEffect(id) ==
-              ResearchUnlockEffect.partnership &&
+      if (state.developmentEffectFor(id) == ResearchUnlockEffect.partnership &&
           state.partnershipChoices.isEmpty) {
         return '提携先と合意してから共同設備を稼働してください';
       }
-      final crew = GameContent.developmentCrewRequirement(id);
+      final crew = state.developmentCrewFor(id);
       if (state.industrialWorkers - state.reservedIndustrialWorkers < crew) {
         return '設備の担当者$crew名が必要です。支払済みの工業作業の人員は移せません';
       }
@@ -206,7 +357,7 @@ class GameEngine {
     // Suspending an installation releases its research team explicitly.
     if (!enabled) state.developmentResearchers[id] = 0;
     _record(
-      '${GameContent.technology(id).unlockName}を${enabled ? '稼働' : '休止'}',
+      '${GameContent.technology(state.developmentTechnologyId(id)).unlockName}を${enabled ? '稼働' : '休止'}',
     );
     _stabilize();
     return null;
@@ -214,12 +365,19 @@ class GameEngine {
 
   String? assignDevelopmentResearchers(String id, int count) {
     if (!state.isDevelopmentOperational(id)) return '設備を稼働してから研究者を配置してください';
-    final capacity = GameContent.developmentResearchCapacity(id);
+    final capacity = state.developmentResearchCapacityFor(id);
     if (count < 0 || count > capacity) return 'この設備の研究者は0〜$capacity名です';
+    if (state.plans.any(
+      (p) => p.status == 'running' && p.buildingInstanceId == id,
+    )) {
+      return '支払済みの仕事が完了してから研究配属を変更してください';
+    }
     final current = state.developmentResearchers[id] ?? 0;
     if (count - current > state.labResearchers) return '基礎研究所に配属できる研究者が不足しています';
     state.developmentResearchers[id] = count;
-    _record('${GameContent.technology(id).unlockName}の研究運転へ$count名を配置');
+    _record(
+      '${GameContent.technology(state.developmentTechnologyId(id)).unlockName}の研究運転へ$count名を配置',
+    );
     _stabilize();
     return null;
   }
@@ -427,7 +585,7 @@ class GameEngine {
     }
     if (!enabled) {
       for (final id in state.developments) {
-        if (GameContent.developmentFacilityId(id) == facilityId) {
+        if (state.developmentFacilityFor(id) == facilityId) {
           state.developmentEnabled[id] = false;
           state.developmentResearchers[id] = 0;
         }
@@ -457,6 +615,8 @@ class GameEngine {
 
   bool _planCanAdvance(PlannedTask plan) =>
       state.facilities[plan.definition.facilityId]! &&
+      (plan.definition.buildingTechnologyId == null ||
+          state.isDevelopmentOperational(plan.buildingInstanceId!)) &&
       (plan.definition.requiredDevelopmentId == null ||
           state.isDevelopmentOperational(
             plan.definition.requiredDevelopmentId!,
@@ -544,13 +704,7 @@ class GameEngine {
           } else if (plan != head) {
             plan.stopReason = '共用設備の順番待ち';
           } else if (plan.status == 'running') {
-            plan.stopReason =
-                plan.definition.requiredDevelopmentId != null &&
-                    !state.isDevelopmentOperational(
-                      plan.definition.requiredDevelopmentId!,
-                    )
-                ? '対応する設備・機体が休止中'
-                : '';
+            plan.stopReason = !_planCanAdvance(plan) ? '対応する設備・機体が休止中' : '';
           } else {
             plan.stopReason = _requirementReason(plan);
             if (plan.stopReason.isEmpty) {
@@ -642,8 +796,23 @@ class GameEngine {
         !state.isDevelopmentOperational(task.requiredDevelopmentId!)) {
       return '導入した設備・機体の稼働が必要です';
     }
+    if (task.buildingTechnologyId != null) {
+      final reason = state.buildingWorkLockReason(
+        plan.buildingInstanceId!,
+        task.id,
+        targetPlotIndex: plan.surveyPlotIndex,
+      );
+      if (reason != null) return reason;
+    }
+    if (plan.buildingPlotIndex != null) {
+      final reason = state.buildingPlanLockReason(plan);
+      if (reason != null) return reason;
+    }
     if (task.developmentId != null) {
-      if (state.developments.contains(task.developmentId)) return 'この設備は導入済みです';
+      if (plan.buildingInstanceId == null &&
+          state.developments.contains(task.developmentId)) {
+        return 'この設備は導入済みです';
+      }
       final cityReason = state.cityLockReason(plan.developmentCityId!);
       if (cityReason != null) return cityReason;
     }
@@ -663,9 +832,10 @@ class GameEngine {
         }
       }
     }
-    if (task.inputResource != null &&
-        _resource(task.inputResource!) < task.inputAmount) {
-      return '資源不足：${GameContent.resourceNames[task.inputResource]}が${task.inputAmount}基必要';
+    for (final input in state.plannedInputResources(plan).entries) {
+      if (state.resourceAmount(input.key) < input.value) {
+        return '資源不足：${GameContent.resourceNames[input.key]}が${input.value}基必要（現在${state.resourceAmount(input.key)}基）';
+      }
     }
     final cost = state.plannedCost(plan);
     if (includeMoney && state.moneyUnits < cost * GameState.moneyScale) {
@@ -692,8 +862,36 @@ class GameEngine {
     final task = plan.definition;
     final cost = state.plannedCost(plan);
     state.moneyUnits -= cost * GameState.moneyScale;
-    if (task.inputResource != null) {
-      _changeResource(task.inputResource!, -task.inputAmount);
+    for (final input in state.plannedInputResources(plan).entries) {
+      _changeResource(input.key, -input.value);
+    }
+    if (task.buildingTechnologyId != null) {
+      final id = plan.buildingInstanceId!;
+      final cityId = plan.developmentCityId!;
+      for (final e in state.buildingLocalInputs(id, task).entries) {
+        _changeLocalStock(cityId, e.key, -e.value);
+      }
+      plan.iterationLocalOutputs = state.buildingLocalOutputs(id, task);
+      plan.iterationBatteryUnits = state.buildingBatteryRequired(cityId, task);
+      _changeLocalStock(cityId, 'charge', -plan.iterationBatteryUnits);
+      if (['rocketFlight', 'shuttleFlight'].contains(task.workAction)) {
+        state.preparedVehicles.remove(id);
+      }
+    }
+    for (final e in state.kitSupportInputs(task).entries) {
+      var amount = e.value;
+      for (final city in GameContent.cities.values.where(
+        (c) => c.planet == 'earth',
+      )) {
+        final used = math.min(amount, state.cityStock(city.id, e.key));
+        _changeLocalStock(city.id, e.key, -used);
+        amount -= used;
+      }
+    }
+    if (plan.relocation && plan.buildingInstanceId != 'base_lab') {
+      state.developmentEnabled[plan.buildingInstanceId!] = false;
+      state.developmentResearchers[plan.buildingInstanceId!] = 0;
+      state.preparedVehicles.remove(plan.buildingInstanceId);
     }
     plan.status = 'running';
     plan.iterationSpecialists = switch (task.facilityId) {
@@ -728,12 +926,52 @@ class GameEngine {
       _changeResource(task.outputResource!, task.outputAmount);
     }
     if (task.unique) state.research.add(task.id);
-    if (task.developmentId != null) {
-      final id = task.developmentId!;
-      state.developments.add(id);
-      state.developmentEnabled[id] = false;
-      state.developmentResearchers[id] = 0;
-      state.developmentCityIds[id] = plan.developmentCityId!;
+    if (task.developmentId != null || plan.relocation) {
+      final id = plan.buildingInstanceId ?? task.developmentId!;
+      final technologyId = plan.relocation
+          ? state.developmentTechnologyId(id)
+          : task.developmentId!;
+      if (id != 'base_lab') {
+        state.developments.add(id);
+        state.developmentEnabled[id] = false;
+        state.developmentResearchers[id] = 0;
+        state.developmentCityIds[id] = plan.developmentCityId!;
+        if (id != technologyId) {
+          state.developmentTechnologyIds[id] = technologyId;
+        }
+      }
+      if (plan.buildingPlotIndex != null) {
+        state.buildingLocations[id] = BuildingLocation(
+          cityId: plan.developmentCityId!,
+          plotIndex: plan.buildingPlotIndex!,
+          slotIndex: plan.buildingSlotIndex!,
+        );
+      } else if (GameContent.mapBuildingDefinitions.containsKey(technologyId)) {
+        state.buildingLocations[id] = BuildingLocation(
+          cityId: plan.developmentCityId!,
+          plotIndex: -1,
+          legacySite: true,
+        );
+      }
+    }
+    if (task.buildingTechnologyId != null) {
+      final cityId = plan.developmentCityId!;
+      for (final e in plan.iterationLocalOutputs.entries) {
+        _changeLocalStock(cityId, e.key, e.value);
+      }
+      switch (task.workAction) {
+        case 'survey':
+          if (state.surveyedSites.add('$cityId:${plan.surveyPlotIndex}')) {
+            state.researchPointUnits +=
+                GameContent.surveyResearchPoints * GameState.researchPointScale;
+          }
+        case 'grid':
+          state.connectedGridCities.add(cityId);
+        case 'prepareRocket' || 'prepareShuttle':
+          state.preparedVehicles.add(plan.buildingInstanceId!);
+      }
+      plan.iterationLocalOutputs = {};
+      plan.iterationBatteryUnits = 0;
     }
     if (task.districtId != null) {
       final definition = GameContent.districts[task.districtId]!;
@@ -808,7 +1046,9 @@ class GameEngine {
       if (state.developmentEnabled[id] == true) {
         state.developmentEnabled[id] = false;
         state.developmentResearchers[id] = 0;
-        _record('資金不足により${GameContent.technology(id).unlockName}を休止');
+        _record(
+          '資金不足により${GameContent.technology(state.developmentTechnologyId(id)).unlockName}を休止',
+        );
       }
     }
     // Provisional priority. Tax collection never stops and there is no debt.
@@ -817,7 +1057,7 @@ class GameEngine {
       if (state.facilities[id]!) {
         state.facilities[id] = false;
         for (final development in state.developments) {
-          if (GameContent.developmentFacilityId(development) == id) {
+          if (state.developmentFacilityFor(development) == id) {
             state.developmentEnabled[development] = false;
             state.developmentResearchers[development] = 0;
           }
@@ -827,12 +1067,12 @@ class GameEngine {
     }
   }
 
-  int _resource(String id) => switch (id) {
-    'earthKits' => state.earthKits,
-    'moonKits' => state.moonKits,
-    'marsKits' => state.marsKits,
-    _ => throw ArgumentError.value(id, 'resource'),
-  };
+  void _changeLocalStock(String cityId, String resource, int amount) {
+    if (amount == 0) return;
+    final stock = state.cityStocks.putIfAbsent(cityId, () => {});
+    stock[resource] = (stock[resource] ?? 0) + amount;
+  }
+
   void _changeResource(String id, int amount) {
     switch (id) {
       case 'earthKits':
