@@ -64,6 +64,18 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
         await tester.tap(finder);
         await tester.pump(const Duration(milliseconds: 500));
+        // A pumped frame does not guarantee the native save has finished.
+        // Later commands intentionally refuse input while a save is busy.
+        await tester.runAsync(() async {
+          final waiting = Stopwatch()..start();
+          while (controller.busy &&
+              waiting.elapsed < const Duration(seconds: 30)) {
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+          }
+        });
+        expect(controller.busy, isFalse, reason: '操作後の保存完了待ち: $key');
+        expect(controller.error, isNull);
+        await tester.pump();
         expect(tester.takeException(), isNull);
       }
 
@@ -364,20 +376,32 @@ void main() {
       final home = controller.state.districtPlanAt('earth_delta', 12)!;
       expect(home.definition.districtId, 'housing');
       // Move construction ahead of the external contract's future repetitions.
-      await controller.command(
-        (engine) => engine.reorderPlan(
-          home.id,
-          relativeToPlanId: factoryRun.id,
-          before: true,
-        ),
-      );
-      await controller.advanceForDevelopment(
-        duration: Duration(milliseconds: factoryRun.remainingMs),
-      );
+      await controller.command((engine) {
+        expect(
+          engine.reorderPlan(
+            home.id,
+            relativeToPlanId: factoryRun.id,
+            before: true,
+          ),
+          isNull,
+        );
+        final current = engine.state.currentPlanFor('factory')!;
+        expect(current.id, factoryRun.id);
+        engine.advanceBy(Duration(milliseconds: current.remainingMs));
+        return null;
+      });
       await tester.pump(const Duration(milliseconds: 500));
       expect(
         tester.widget<CityScene>(find.byType(CityScene)).plots[12].workState,
         SceneWorkState.building,
+        reason: jsonEncode({
+          'money': controller.state.money,
+          'home': home.toJson(),
+          'factory': controller.state
+              .upcomingPlansFor('factory')
+              .map((plan) => plan.toJson())
+              .toList(),
+        }),
       );
       expect(
         tester.widget<CityScene>(find.byType(CityScene)).plots[12].level,
