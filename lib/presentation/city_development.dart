@@ -5,6 +5,7 @@ import '../domain/game_content.dart';
 import '../domain/game_state.dart';
 import '../rendering/city_scene.dart';
 import 'city_scene_data.dart';
+import 'city_buildings.dart';
 import 'city_facility_palette.dart';
 import 'district_location_impact.dart';
 import 'first_run_coach.dart';
@@ -25,12 +26,14 @@ class CityDevelopment extends StatefulWidget {
     this.onOpenGlobe,
     this.onOpenOperations,
     this.guidedFirstBuild = false,
+    this.initialMapBuildingId,
   });
   final GameController controller;
   final bool renderScene;
   final bool guidedFirstBuild;
   final VoidCallback? onOpenGlobe, onOpenOperations;
   final String cityId;
+  final String? initialMapBuildingId;
   final ValueChanged<String> onCityChanged;
   final ValueChanged<String> onOpenResearch;
   final InvestmentCandidate? savedInvestment;
@@ -47,6 +50,11 @@ class _CityDevelopmentState extends State<CityDevelopment> {
   bool placementMode = false;
   bool hasPlotSelection = false;
   String? selectedDistrict;
+  String? selectedMapBuildingId;
+  String? selectedBuildingInstanceId;
+  bool movingMapBuilding = false;
+  int selectedMapBuildingSlot = 0;
+  int buildingWorkTargetPlot = 12;
   GameState get game => widget.controller.state;
   CityDefinition get city => GameContent.cities[widget.cityId]!;
   bool get _narrowTutorial =>
@@ -75,6 +83,15 @@ class _CityDevelopmentState extends State<CityDevelopment> {
   void initState() {
     super.initState();
     _restoreTutorialPlot();
+    final requested = widget.initialMapBuildingId;
+    if (!widget.guidedFirstBuild &&
+        requested != null &&
+        game.mapBuildingUnlocked(requested) &&
+        GameContent.mapBuildingDefinitions[requested]!.allowedPlanets.contains(
+          city.planet,
+        )) {
+      _chooseMapBuilding(requested, notify: false);
+    }
   }
 
   void _restoreTutorialPlot() {
@@ -96,6 +113,12 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     super.didUpdateWidget(oldWidget);
     _restoreTutorialPlot();
     if (oldWidget.cityId != widget.cityId) {
+      if (!movingMapBuilding ||
+          _mapDefinition?.allowedPlanets.contains(city.planet) != true) {
+        selectedMapBuildingId = null;
+        selectedBuildingInstanceId = null;
+        movingMapBuilding = false;
+      }
       final previousDistrict =
           selectedDistrict ??
           game.districtAt(oldWidget.cityId, selectedPlot)?.districtId ??
@@ -108,6 +131,156 @@ class _CityDevelopmentState extends State<CityDevelopment> {
       placementMode = selectedDistrict != null;
       choosingFacility = selectedDistrict == null;
       showInspector = true;
+    }
+  }
+
+  List<MapBuildingDefinition> get mapBuildingChoices => GameContent
+      .mapBuildingDefinitions
+      .values
+      .where((definition) => game.mapBuildingUnlocked(definition.id))
+      .where((definition) => definition.allowedPlanets.contains(city.planet))
+      .where(
+        (definition) =>
+            !definition.isBaseLab ||
+            game
+                .cityBuildings(city.id)
+                .any((building) => building.technologyId == definition.id),
+      )
+      .toList();
+
+  MapBuildingDefinition? get _mapDefinition =>
+      GameContent.mapBuildingDefinitions[selectedMapBuildingId];
+  CityBuildingSnapshot? get _mapBuilding => preferredMapBuilding(
+    (movingMapBuilding
+            ? GameContent.cities.values.expand(
+                (item) => game.cityBuildings(item.id),
+              )
+            : game.cityBuildings(city.id))
+        .where(
+          (building) => selectedBuildingInstanceId != null
+              ? building.id == selectedBuildingInstanceId
+              : building.technologyId == selectedMapBuildingId,
+        ),
+  );
+  bool get _mapPlacement =>
+      _mapDefinition != null && (movingMapBuilding || _mapBuilding == null);
+  Set<int> get _availableBuildingSlots => {
+    if (_mapDefinition != null)
+      for (final slot in [0, 1])
+        if (game
+            .buildingPreview(
+              movingMapBuilding
+                  ? selectedBuildingInstanceId ?? selectedMapBuildingId!
+                  : selectedMapBuildingId!,
+              cityId: city.id,
+              plotIndex: selectedPlot,
+              slotIndex: slot,
+              relocation: movingMapBuilding,
+            )
+            .isValid)
+          slot,
+  };
+  Set<int> get _buildingPlots => {
+    if (_mapDefinition != null)
+      for (var index = 0; index < city.plotCount; index++)
+        if ([0, 1].any(
+          (slot) => game
+              .buildingPreview(
+                movingMapBuilding
+                    ? selectedBuildingInstanceId ?? selectedMapBuildingId!
+                    : selectedMapBuildingId!,
+                cityId: city.id,
+                plotIndex: index,
+                slotIndex: slot,
+                relocation: movingMapBuilding,
+              )
+              .isValid,
+        ))
+          index,
+  };
+
+  void _chooseMapBuilding(String technologyId, {bool notify = true}) {
+    void choose() {
+      selectedMapBuildingId = technologyId;
+      final existing = preferredMapBuilding(
+        game
+            .cityBuildings(city.id)
+            .where((building) => building.technologyId == technologyId),
+      );
+      selectedBuildingInstanceId = existing?.id;
+      movingMapBuilding = false;
+      placementMode = false;
+      choosingFacility = false;
+      showInspector = true;
+      if (existing != null) {
+        selectedPlot = existing.plotIndex < 0 ? 12 : existing.plotIndex;
+        hasPlotSelection = existing.plotIndex >= 0;
+        selectedMapBuildingSlot = existing.slotIndex;
+      } else {
+        selectedMapBuildingSlot = 0;
+        if (hasPlotSelection && _availableBuildingSlots.isNotEmpty) {
+          selectedMapBuildingSlot = _availableBuildingSlots.first;
+        }
+      }
+    }
+
+    if (notify) {
+      setState(choose);
+    } else {
+      choose();
+    }
+  }
+
+  void _selectMapBuilding(String instanceId) {
+    final building = preferredMapBuilding(
+      game.cityBuildings(city.id).where((item) => item.id == instanceId),
+    );
+    if (building == null) return;
+    _chooseMapBuilding(building.technologyId);
+    setState(() => selectedBuildingInstanceId = instanceId);
+  }
+
+  void _cancelMapBuilding() => setState(() {
+    selectedMapBuildingId = null;
+    selectedBuildingInstanceId = null;
+    movingMapBuilding = false;
+    choosingFacility = true;
+    placementMode = false;
+  });
+
+  Future<void> _confirmMapBuilding() async {
+    final technologyId = selectedMapBuildingId;
+    if (technologyId == null || !hasPlotSelection) return;
+    if (movingMapBuilding && selectedBuildingInstanceId != null) {
+      await widget.controller.relocateMapBuilding(
+        selectedBuildingInstanceId!,
+        cityId: city.id,
+        plotIndex: selectedPlot,
+        slotIndex: selectedMapBuildingSlot,
+      );
+    } else {
+      await widget.controller.constructMapBuilding(
+        technologyId,
+        cityId: city.id,
+        plotIndex: selectedPlot,
+        slotIndex: selectedMapBuildingSlot,
+      );
+    }
+    if (!mounted) return;
+    final built = game
+        .cityBuildings(city.id)
+        .where(
+          (item) =>
+              item.technologyId == technologyId &&
+              item.plotIndex == selectedPlot &&
+              item.slotIndex == selectedMapBuildingSlot,
+        )
+        .firstOrNull;
+    if (built != null) {
+      setState(() {
+        selectedBuildingInstanceId = built.id;
+        movingMapBuilding = false;
+      });
     }
   }
 
@@ -175,9 +348,62 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         hasPlotSelection &&
         (game.districtAt(city.id, selectedPlot) != null ||
             game.districtPlanAt(city.id, selectedPlot) != null);
-    return choosingFacility || (!inspectingWork && _newDistrict == null)
+    final definition = _mapDefinition;
+    final panel = definition != null
+        ? MapBuildingInspector(
+            controller: widget.controller,
+            definition: definition,
+            cityId: city.id,
+            building: _mapBuilding,
+            hasPlotSelection: hasPlotSelection,
+            plotIndex: selectedPlot,
+            slotIndex: selectedMapBuildingSlot,
+            availableSlots: _availableBuildingSlots,
+            moving: movingMapBuilding,
+            onSlotSelected: (slot) =>
+                setState(() => selectedMapBuildingSlot = slot),
+            workTargetPlot: buildingWorkTargetPlot,
+            onWorkTargetSelected: (plot) =>
+                setState(() => buildingWorkTargetPlot = plot),
+            onConfirm: _confirmMapBuilding,
+            onCancel: _cancelMapBuilding,
+            onRelocate: () => setState(() {
+              movingMapBuilding = true;
+              hasPlotSelection = false;
+            }),
+          )
+        : choosingFacility || (!inspectingWork && _newDistrict == null)
         ? _facilityPalette()
         : _inspector();
+    final buildings = hasPlotSelection
+        ? game
+              .cityBuildings(city.id)
+              .where((building) => building.plotIndex == selectedPlot)
+              .toList()
+        : <CityBuildingSnapshot>[];
+    if (buildings.isEmpty) return panel;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Wrap(
+            spacing: 4,
+            children: [
+              for (final building in {
+                for (final item in buildings) item.id: item,
+              }.values)
+                ActionChip(
+                  key: Key('select-map-building-${building.id}'),
+                  label: Text(building.name),
+                  onPressed: () => _selectMapBuilding(building.id),
+                ),
+            ],
+          ),
+        ),
+        Expanded(child: panel),
+      ],
+    );
   }
 
   Widget _facilityPalette() => CityFacilityPalette(
@@ -185,6 +411,23 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     selectedId: _newDistrict,
     onSelected: _chooseFacility,
     lockReason: _facilityLockReason,
+    additionalChoices: [
+      if (mapBuildingChoices.isNotEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            '研究施設・生産設備',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+        ),
+      for (final definition in mapBuildingChoices)
+        MapBuildingChoice(
+          definition: definition,
+          controller: widget.controller,
+          cityId: city.id,
+          onSelected: () => _chooseMapBuilding(definition.id),
+        ),
+    ],
   );
 
   Widget _overview() {
@@ -281,8 +524,22 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 adjacentPlots: hasPlotSelection
                     ? city.adjacentPlots(selectedPlot).toSet()
                     : const {},
-                constructionMode: placementMode,
-                buildablePlots: _buildablePlots,
+                constructionMode: placementMode || _mapPlacement,
+                buildablePlots: _mapPlacement
+                    ? _buildingPlots
+                    : _buildablePlots,
+                selectedBuildingId: selectedBuildingInstanceId,
+                onBuildingSelected: _selectMapBuilding,
+                selectedBuildingSlot: hasPlotSelection
+                    ? selectedMapBuildingSlot
+                    : null,
+                onBuildingSlotSelected: (slot) =>
+                    setState(() => selectedMapBuildingSlot = slot),
+                buildingPlacementMode: _mapPlacement,
+                buildingOccupiesWholePlot:
+                    _mapDefinition?.occupiesWholePlot ?? false,
+                availableBuildingSlots: _availableBuildingSlots,
+                legacyBuildings: sceneLegacyBuildingsForCity(game, city),
                 renderScene: widget.renderScene,
                 onPlotSelected:
                     widget.guidedFirstBuild &&
@@ -292,6 +549,35 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                     ? (_) {}
                     : _selectPlot,
               ),
+              if (!widget.guidedFirstBuild &&
+                  game
+                      .cityBuildings(city.id)
+                      .any(
+                        (building) =>
+                            building.legacySite || building.plotIndex < 0,
+                      ))
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: PopupMenuButton<String>(
+                    key: const Key('legacy-buildings-menu'),
+                    tooltip: '本部・既存敷地の設備',
+                    onSelected: _selectMapBuilding,
+                    itemBuilder: (_) => [
+                      for (final building in game.cityBuildings(city.id))
+                        if (building.legacySite || building.plotIndex < 0)
+                          PopupMenuItem(
+                            key: Key('legacy-building-${building.id}'),
+                            value: building.id,
+                            child: Text(building.name),
+                          ),
+                    ],
+                    child: const Chip(
+                      avatar: Icon(Icons.science_outlined, size: 17),
+                      label: Text('本部・既存敷地', style: TextStyle(fontSize: 11)),
+                    ),
+                  ),
+                ),
               if (_narrowTutorial)
                 Positioned(
                   left: 0,
@@ -397,6 +683,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
 
   void _chooseFacility(String id) => setState(() {
     if (widget.guidedFirstBuild && id != 'housing') return;
+    selectedMapBuildingId = null;
+    selectedBuildingInstanceId = null;
+    movingMapBuilding = false;
     if (!available.any((district) => district.id == id)) return;
     selectedDistrict = id;
     choosingFacility = false;
@@ -418,6 +707,16 @@ class _CityDevelopmentState extends State<CityDevelopment> {
     selectedPlot = index;
     hasPlotSelection = true;
     showInspector = true;
+    if (_mapPlacement) {
+      if (!_availableBuildingSlots.contains(selectedMapBuildingSlot) &&
+          _availableBuildingSlots.isNotEmpty) {
+        selectedMapBuildingSlot = _availableBuildingSlots.first;
+      }
+      return;
+    }
+    selectedMapBuildingId = null;
+    selectedBuildingInstanceId = null;
+    movingMapBuilding = false;
     final existing = game.districtAt(city.id, index);
     final reserved = game.districtPlanAt(city.id, index);
     if (existing != null || reserved != null) {

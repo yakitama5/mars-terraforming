@@ -137,6 +137,17 @@ void main() {
           game.state.developmentCityIds[id] = 'earth_delta';
         }
         final money = game.state.money;
+        if (task.buildingTechnologyId != null) {
+          expect(
+            game.state.spaceTaskLockReason(task),
+            contains('火星探査機'),
+            reason: task.id,
+          );
+          expect(game.enqueue(task.id), contains('都市の施設'), reason: task.id);
+          expect(game.state.earthKits, 50);
+          expect(game.state.money, money);
+          continue;
+        }
         expect(game.enqueue(task.id), isNull, reason: task.id);
         expect(game.state.plans.single.status, 'queued', reason: task.id);
         expect(

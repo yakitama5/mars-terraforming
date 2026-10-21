@@ -15,6 +15,11 @@ ScenePlot _scenePlot(GameState game, CityDefinition city, int index) {
   final plan = game.districtPlanAt(city.id, index);
   final districtId = district?.districtId ?? plan?.definition.districtId;
   return ScenePlot(
+    buildings: [
+      for (final building in game.cityBuildings(city.id))
+        if (building.plotIndex == index && !building.legacySite)
+          _sceneBuilding(building),
+    ],
     index: index,
     terrain: city.terrainAt(index),
     terrainName: GameContent.terrainNames[city.terrainAt(index)]!,
@@ -37,3 +42,30 @@ ScenePlot _scenePlot(GameState game, CityDefinition city, int index) {
         : '建設予約',
   );
 }
+
+List<SceneBuilding> sceneLegacyBuildingsForCity(
+  GameState game,
+  CityDefinition city,
+) => [
+  for (final building in game.cityBuildings(city.id))
+    if (building.legacySite || building.plotIndex < 0) _sceneBuilding(building),
+];
+
+SceneBuilding _sceneBuilding(CityBuildingSnapshot building) => SceneBuilding(
+  id: building.id,
+  catalogId: building.catalogId,
+  name: building.name,
+  slotIndex: building.slotIndex,
+  operational: building.operational,
+  vehiclePresent: building.vehiclePresent,
+  occupiesWholePlot: building.occupiesWholePlot,
+  workState: !building.underConstruction
+      ? SceneWorkState.none
+      : switch (building.workState) {
+          'running' => SceneWorkState.building,
+          'queued' => SceneWorkState.queued,
+          _ => SceneWorkState.none,
+        },
+  workProgress: building.workProgress,
+  workLabel: building.workLabel.isEmpty ? null : building.workLabel,
+);

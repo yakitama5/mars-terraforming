@@ -10,6 +10,8 @@ import 'city_snapshot.dart';
 import 'city_surface.dart';
 import 'planet_models.dart';
 
+part 'city_building_models.dart';
+
 /// Districts grow across the terrain instead of standing on display plinths.
 /// The numerous low-poly houses, trees and roads share one baked mesh; domes,
 /// tanks and rockets reuse the globe's primitive buffers.
@@ -61,10 +63,20 @@ class CityModels {
     return root;
   }
 
-  fs.Node developments(CityTerrain terrain, List<ScenePlot> plots) {
+  fs.Node developments(
+    CityTerrain terrain,
+    List<ScenePlot> plots, {
+    List<SceneBuilding> legacyBuildings = const [],
+  }) {
     final root = fs.Node(name: '地域の集落・植生・建設現場');
     final mesh = _CityMesh();
-    final developed = plots.where((plot) => plot.isDeveloped).toList();
+    final developed = plots
+        .where(
+          (plot) =>
+              plot.isDeveloped ||
+              plot.buildings.any((building) => building.isBuilt),
+        )
+        .toList();
     for (var i = 0; i < developed.length; i++) {
       for (var j = i + 1; j < developed.length; j++) {
         final a = terrain.center(developed[i].index);
@@ -79,15 +91,55 @@ class CityModels {
     }
     for (final plot in plots) {
       final center = terrain.center(plot.index);
-      if (!plot.isDeveloped && plot.workState != SceneWorkState.building) {
+      if (!plot.isDeveloped &&
+          plot.workState != SceneWorkState.building &&
+          !plot.buildings.any(
+            (building) =>
+                building.isBuilt ||
+                building.workState == SceneWorkState.building,
+          )) {
         _nature(mesh, terrain, plot, center);
       }
-      if (plot.isDeveloped) _district(root, mesh, terrain, plot, center);
+      if (plot.isDeveloped) {
+        if (plot.buildings.isEmpty) {
+          _district(root, mesh, terrain, plot, center);
+        } else {
+          // An existing district remains one physical asset in pad A. Its
+          // supporting models move with it; no second copy remains at center.
+          final districtRoot = fs.Node(name: '既存地区の用地A');
+          final districtMesh = _CityMesh();
+          _district(districtRoot, districtMesh, terrain, plot, center);
+          districtMesh.attach(districtRoot, '既存地区の建物群');
+          districtRoot
+            ..position = vm.Vector3(
+              center.x * .52 - .40,
+              center.y * .32,
+              center.z * .30,
+            )
+            ..scale = vm.Vector3(.48, .68, .70);
+          root.add(districtRoot);
+        }
+      }
+      for (final building in plot.buildings) {
+        _researchBuilding(root, terrain, plot.index, building);
+      }
       if (plot.workState == SceneWorkState.queued) {
         _reservation(mesh, terrain, center);
       } else if (plot.workState == SceneWorkState.building) {
         _construction(mesh, terrain, center, upgrade: plot.isDeveloped);
       }
+    }
+    for (var index = 0; index < legacyBuildings.length; index++) {
+      final building = legacyBuildings[index];
+      if (building.id == 'base_lab') continue;
+      _researchBuilding(
+        root,
+        terrain,
+        0,
+        building,
+        centerOverride: terrain.legacyBuildingCenter(index),
+        scaleOverride: building.occupiesWholePlot ? .60 : .48,
+      );
     }
     // Updating a completed/paid district also updates its ground cover. Trees
     // are retained on a reservation, and cleared only when construction starts.

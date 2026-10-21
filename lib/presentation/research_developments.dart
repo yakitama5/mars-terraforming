@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../application/game_controller.dart';
 import '../domain/game_content.dart';
 import 'strategy_widgets.dart';
+import 'city_buildings.dart';
 
 /// Applications are purchased and operated after knowledge has been unlocked.
 /// Only owned knowledge is listed, so this view cannot expose future branches.
@@ -11,10 +12,12 @@ class ResearchDevelopments extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onReserveOperation,
+    this.onOpenMap,
   });
 
   final GameController controller;
   final ValueChanged<String> onReserveOperation;
+  final void Function(String technologyId, String cityId)? onOpenMap;
 
   @override
   State<ResearchDevelopments> createState() => _ResearchDevelopmentsState();
@@ -67,10 +70,133 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
     );
   }
 
+  Widget _mapDevelopment(ResearchTechnology technology) {
+    final game = widget.controller.state;
+    final id = technology.id;
+    final definition = GameContent.mapBuildingDefinitions[id]!;
+    final cities = GameContent.cities.values
+        .where(
+          (city) =>
+              definition.allowedPlanets.contains(city.planet) &&
+              game.cityUnlocked(city.id),
+        )
+        .toList();
+    final proposed = proposedCities[id];
+    final selectedCity = cities.any((city) => city.id == proposed)
+        ? proposed
+        : cities.firstOrNull?.id;
+    final existing = selectedCity == null
+        ? null
+        : preferredMapBuilding(
+            game
+                .cityBuildings(selectedCity)
+                .where((building) => building.technologyId == id),
+          );
+    return StrategyCard(
+      key: Key('development-$id'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                mapBuildingIcon(definition.catalogId),
+                color: mapBuildingAccent(definition),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  definition.name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '研究：${technology.name}',
+            style: const TextStyle(fontSize: 11, color: strategyMint),
+          ),
+          const SizedBox(height: 8),
+          Text(definition.description, style: const TextStyle(fontSize: 13)),
+          const SizedBox(height: 8),
+          Text(
+            definition.occupiesWholePlot ? '大型設備・1区画を専有' : '通常設備・1区画に2施設まで',
+            style: const TextStyle(fontSize: 12, color: strategyCopper),
+          ),
+          if (existing == null) ...[
+            StrategyFact('建設費', dollars(GameContent.developmentCost(id))),
+            StrategyFact(
+              '稼働時の維持費',
+              '${dollars(GameContent.developmentUpkeepPerMinute(id))}/分',
+            ),
+          ] else
+            Text(
+              existing.workState == 'none'
+                  ? '保有済み・配属と仕事は地図で操作'
+                  : existing.workLabel,
+              style: const TextStyle(fontSize: 12, color: strategyMint),
+            ),
+          const SizedBox(height: 8),
+          if (cities.isNotEmpty)
+            DropdownButtonFormField<String>(
+              key: ValueKey('development-city-$id-$selectedCity'),
+              initialValue: selectedCity,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: '建設・運営する都市'),
+              items: [
+                for (final city in cities)
+                  DropdownMenuItem(
+                    value: city.id,
+                    child: Text(game.cityName(city.id)),
+                  ),
+              ],
+              onChanged: widget.controller.busy
+                  ? null
+                  : (value) => setState(() {
+                      if (value != null) proposedCities[id] = value;
+                    }),
+            )
+          else
+            const Text(
+              '対応する都市を開設すると建設できます。',
+              style: TextStyle(fontSize: 12, color: strategyCopper),
+            ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.tonalIcon(
+              key: Key('open-building-map-$id'),
+              onPressed:
+                  widget.controller.busy ||
+                      selectedCity == null ||
+                      widget.onOpenMap == null
+                  ? null
+                  : () => widget.onOpenMap!(id, selectedCity),
+              icon: const Icon(Icons.place_outlined, size: 18),
+              label: Text(existing == null ? '地図で建設位置を選ぶ' : '地図で建物を確認'),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '地図で区画と位置を選び、費用・適地を確認して予約します。',
+            style: TextStyle(fontSize: 11, color: strategyMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _development(ResearchTechnology technology) {
     final controller = widget.controller;
     final game = controller.state;
     final id = technology.id;
+    if (GameContent.mapBuildingDefinitions.containsKey(id)) {
+      return _mapDevelopment(technology);
+    }
     final taskId = GameContent.developmentTaskId(id);
     final task = GameContent.tasks[taskId]!;
     final owned = game.developments.contains(id);

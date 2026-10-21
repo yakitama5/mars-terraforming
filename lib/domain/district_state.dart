@@ -143,11 +143,16 @@ class CityDevelopmentSummary {
     required this.totalLevels,
     required this.emptyPlots,
     required this.reservedPlots,
+    this.reservedOccupiedPlots = 0,
     required this.stageName,
     required this.nextStageAtTotalLevels,
   });
   final int completedPlots, totalLevels, emptyPlots, reservedPlots;
-  int get availablePlots => emptyPlots - reservedPlots;
+
+  /// A second slot on an occupied plot does not remove another empty plot.
+  final int reservedOccupiedPlots;
+  int get availablePlots =>
+      emptyPlots - (reservedPlots - reservedOccupiedPlots);
   final String stageName;
   final int? nextStageAtTotalLevels;
 }

@@ -49,6 +49,31 @@ void main() {
     final snapshot = state.toJson()
       ..['contentVersion'] = 'district-7'
       ..remove('discoveredResearch');
+    // v7 had no physical building metadata or local-work iteration fields.
+    for (final key in [
+      'developmentTechnologyIds',
+      'buildingLocations',
+      'cityStocks',
+      'surveyedSites',
+      'connectedGridCities',
+      'preparedVehicles',
+      'nextBuildingId',
+    ]) {
+      snapshot.remove(key);
+    }
+    for (final plan in snapshot['plans'] as List) {
+      for (final key in [
+        'buildingInstanceId',
+        'buildingPlotIndex',
+        'buildingSlotIndex',
+        'surveyPlotIndex',
+        'relocation',
+        'iterationLocalOutputs',
+        'iterationBatteryUnits',
+      ]) {
+        (plan as Map).remove(key);
+      }
+    }
     return jsonDecode(jsonEncode(snapshot)) as Map<String, dynamic>;
   }
 
@@ -108,9 +133,15 @@ void main() {
           'developmentEnabled',
           'developmentResearchers',
           'developmentCityIds',
-          'plans',
         ]) {
           expect(state.toJson()[key], legacy[key], reason: key);
+        }
+        for (final entry in (legacy['plans'] as List).single.entries) {
+          expect(
+            state.plans.single.toJson()[entry.key],
+            entry.value,
+            reason: 'paid plan ${entry.key}',
+          );
         }
         expect(state.discoveredResearchIds, containsAll(historicalRoots));
         expect(state.research, isNot(contains(technology('B09'))));
@@ -238,8 +269,7 @@ void main() {
   test(
     'a current fixture without the optional key uses only current discovery',
     () {
-      final saved = oldSnapshot()
-        ..['contentVersion'] = GameContent.version
+      final saved = GameState.fromJson(oldSnapshot()).toJson()
         ..['plans'] = []
         ..remove('discoveredResearch');
       final current = GameState.fromJson(saved);
