@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
+import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/domain/save_repository.dart';
 import 'package:mars_terraforming/presentation/city_development.dart';
+import 'package:mars_terraforming/presentation/city_facility_palette.dart';
 import 'package:mars_terraforming/presentation/investment_comparison.dart';
 import 'package:mars_terraforming/rendering/city_scene.dart';
 
@@ -111,6 +113,185 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Set<String> paletteIds(WidgetTester tester) {
+    final palette = find.byType(CityFacilityPalette);
+    if (palette.evaluate().isEmpty) return {};
+    return tester
+        .widget<CityFacilityPalette>(palette)
+        .districts
+        .map((district) => district.id)
+        .toSet();
+  }
+
+  testWidgets(
+    'initial construction choices show only research-free districts',
+    (tester) async {
+      final controller = await createController();
+      await showCity(tester, controller);
+      expect(paletteIds(tester), {'housing', 'solar'});
+      expect(find.byKey(const Key('district-option-campus')), findsNothing);
+      expect(find.byKey(const Key('district-option-industry')), findsNothing);
+      expect(find.byKey(const Key('district-option-spaceport')), findsNothing);
+      expect(
+        find.byKey(const Key('district-option-space_elevator')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('discovery and RP reservation do not expose district choices', (
+    tester,
+  ) async {
+    final controller = await createController();
+    await showCity(tester, controller);
+    await controller.command(
+      (engine) => engine.unlockResearch('deployable_solar_arrays'),
+    );
+    await tester.pumpAndSettle();
+    expect(controller.state.isResearchDiscovered('urban_planning'), isTrue);
+    expect(paletteIds(tester), {'housing', 'solar'});
+    await controller.command((engine) => engine.enqueue('urban_planning'));
+    await tester.pumpAndSettle();
+    expect(controller.state.plans.last.status, 'queued');
+    expect(paletteIds(tester), {'housing', 'solar'});
+    await controller.command((engine) {
+      engine.state.researchPointUnits =
+          GameContent.researchPointCost('urban_planning') *
+          GameState.researchPointScale;
+      engine.advanceBy(Duration.zero);
+      return null;
+    });
+    await tester.pumpAndSettle();
+    expect(controller.state.research, contains('urban_planning'));
+    expect(paletteIds(tester), {'housing', 'solar', 'campus', 'industry'});
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'space elevator appears only after both prerequisite technologies',
+    (tester) async {
+      final controller = await createController();
+      controller.state.research.add('orbital_assembly');
+      await showCity(tester, controller);
+      expect(paletteIds(tester), isNot(contains('space_elevator')));
+      await controller.command((engine) {
+        engine.state.research.add('composite_shielding');
+        return null;
+      });
+      await tester.pumpAndSettle();
+      expect(paletteIds(tester), contains('space_elevator'));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('lack of cash and vacant land does not hide known facilities', (
+    tester,
+  ) async {
+    final controller = await createController();
+    controller.state
+      ..money = 0
+      ..research.add('urban_planning');
+    for (
+      var plot = 0;
+      plot < GameContent.cities['earth_delta']!.plotCount;
+      plot++
+    ) {
+      final district = DistrictState(
+        cityId: 'earth_delta',
+        plotIndex: plot,
+        districtId: 'housing',
+      );
+      controller.state.districts[district.key] = district;
+    }
+    await showCity(tester, controller);
+    expect(paletteIds(tester), {'housing', 'solar', 'campus', 'industry'});
+    expect(controller.state.money, 0);
+    expect(controller.state.cityDevelopment('earth_delta').availablePlots, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'lunar and Martian choices use research independently of city access',
+    (tester) async {
+      final controller = await createController();
+      controller.state.achievements.add('first_launch');
+      expect(controller.state.cityUnlocked('moon_south_pole'), isTrue);
+      await showCity(tester, controller, cityId: 'moon_south_pole');
+      expect(paletteIds(tester), {'moon_solar', 'moon_spaceport'});
+      controller.state.research.addAll(['life_support', 'local_resources']);
+      await controller.command((_) => null);
+      await tester.pumpAndSettle();
+      expect(paletteIds(tester), {
+        'moon_outpost',
+        'moon_solar',
+        'moon_extractor',
+        'moon_spaceport',
+      });
+      controller.state.achievements.add('mars_route_open');
+      await showCity(tester, controller, cityId: 'mars_arcadia');
+      expect(controller.state.cityUnlocked('mars_arcadia'), isFalse);
+      expect(controller.state.habitatChoice, isNull);
+      expect(paletteIds(tester), {'mars_habitat', 'extractor'});
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('an empty research frontier remains usable on the Martian map', (
+    tester,
+  ) async {
+    final controller = await createController();
+    controller.state.achievements.add('mars_route_open');
+    await showCity(tester, controller, cityId: 'mars_arcadia');
+    expect(paletteIds(tester), isEmpty);
+    expect(find.byType(CityScene), findsOneWidget);
+    await selectPlot(tester, 7);
+    expect(paletteIds(tester), isEmpty);
+    expect(find.byType(DistrictSelectionHeading), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final reserved in [false, true]) {
+    testWidgets(
+      'map selection retains a ${reserved ? 'reserved' : 'built'} district without its research',
+      (tester) async {
+        final controller = await createController();
+        if (reserved) {
+          controller.state.plans.add(
+            PlannedTask(
+              id: 'retained-campus',
+              taskId: 'district_campus',
+              cityId: 'earth_delta',
+              plotIndex: 7,
+              targetLevel: 1,
+            ),
+          );
+        } else {
+          controller.state.districts['earth_delta:7'] = const DistrictState(
+            cityId: 'earth_delta',
+            plotIndex: 7,
+            districtId: 'campus',
+          );
+        }
+        await showCity(tester, controller);
+        expect(paletteIds(tester), isNot(contains('campus')));
+        await selectPlot(tester, 7);
+        expect(
+          find.byKey(const Key('district-selection-campus')),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const Key('city-open-details')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('district-detail')), findsOneWidget);
+        expect(
+          find.byKey(const Key('district-selection-campus')),
+          findsWidgets,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final (district, level, required) in [
     ('housing', 1, 'urban_planning'),
     ('campus', 1, 'automated_fabrication'),
@@ -176,6 +357,7 @@ void main() {
     ) async {
       final controller = await createController();
       controller.state.achievements.add('mars_route_open');
+      controller.state.research.add('life_support');
       String? openedResearch;
       var operationsOpened = false;
       await showCity(

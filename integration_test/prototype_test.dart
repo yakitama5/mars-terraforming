@@ -10,6 +10,7 @@ import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/infrastructure/file_save_store.dart';
 import 'package:mars_terraforming/main.dart';
+import 'package:mars_terraforming/presentation/city_facility_palette.dart';
 import 'package:mars_terraforming/rendering/city_scene.dart';
 
 void main() {
@@ -63,6 +64,18 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
         await tester.tap(finder);
         await tester.pump(const Duration(milliseconds: 500));
+        // A pumped frame does not guarantee the native save has finished.
+        // Later commands intentionally refuse input while a save is busy.
+        await tester.runAsync(() async {
+          final waiting = Stopwatch()..start();
+          while (controller.busy &&
+              waiting.elapsed < const Duration(seconds: 30)) {
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+          }
+        });
+        expect(controller.busy, isFalse, reason: '操作後の保存完了待ち: $key');
+        expect(controller.error, isNull);
+        await tester.pump();
         expect(tester.takeException(), isNull);
       }
 
@@ -321,6 +334,14 @@ void main() {
       // Choose a district, then compare real tiles before confirming placement.
       await tapKey('navigation-1');
       await sceneReady();
+      expect(
+        tester
+            .widget<CityFacilityPalette>(find.byType(CityFacilityPalette))
+            .districts
+            .map((district) => district.id),
+        ['housing', 'solar'],
+      );
+      await capture('facility-unlocks-ios-initial');
       await tapKey('district-option-housing');
       // Tap actual projected ground coordinates, not an accessibility label.
       await tester.tap(find.byTooltip('都市全体を表示'));
@@ -355,20 +376,32 @@ void main() {
       final home = controller.state.districtPlanAt('earth_delta', 12)!;
       expect(home.definition.districtId, 'housing');
       // Move construction ahead of the external contract's future repetitions.
-      await controller.command(
-        (engine) => engine.reorderPlan(
-          home.id,
-          relativeToPlanId: factoryRun.id,
-          before: true,
-        ),
-      );
-      await controller.advanceForDevelopment(
-        duration: Duration(milliseconds: factoryRun.remainingMs),
-      );
+      await controller.command((engine) {
+        expect(
+          engine.reorderPlan(
+            home.id,
+            relativeToPlanId: factoryRun.id,
+            before: true,
+          ),
+          isNull,
+        );
+        final current = engine.state.currentPlanFor('factory')!;
+        expect(current.id, factoryRun.id);
+        engine.advanceBy(Duration(milliseconds: current.remainingMs));
+        return null;
+      });
       await tester.pump(const Duration(milliseconds: 500));
       expect(
         tester.widget<CityScene>(find.byType(CityScene)).plots[12].workState,
         SceneWorkState.building,
+        reason: jsonEncode({
+          'money': controller.state.money,
+          'home': home.toJson(),
+          'factory': controller.state
+              .upcomingPlansFor('factory')
+              .map((plan) => plan.toJson())
+              .toList(),
+        }),
       );
       expect(
         tester.widget<CityScene>(find.byType(CityScene)).plots[12].level,
@@ -438,6 +471,18 @@ void main() {
       );
       await capture('terrain-ios-upgraded');
       await tapKey('city-change-facility');
+      expect(
+        tester
+            .widget<CityFacilityPalette>(find.byType(CityFacilityPalette))
+            .districts
+            .map((district) => district.id),
+        containsAll(['campus', 'industry']),
+      );
+      expect(
+        find.byKey(const Key('district-option-space_elevator')),
+        findsNothing,
+      );
+      await capture('facility-unlocks-ios-urban');
       await tapKey('district-option-campus');
       await tapKey('plot-earth_delta-7');
       final estimate = controller.state.districtPreview(
