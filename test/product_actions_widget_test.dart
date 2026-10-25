@@ -23,6 +23,7 @@ void main() {
     addTearDown(controller.dispose);
     await tester.pumpWidget(
       MarsApp(
+        showTitle: false,
         showIntroduction: false,
         controller: controller,
         renderScene: false,

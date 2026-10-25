@@ -58,7 +58,11 @@ void main() {
       addTearDown(controller.dispose);
       addTearDown(() => directory.delete(recursive: true));
       await tester.pumpWidget(
-        MarsApp(controller: controller, showIntroduction: false),
+        MarsApp(
+          controller: controller,
+          showIntroduction: false,
+          showTitle: false,
+        ),
       );
 
       Future<void> settledSave() async {

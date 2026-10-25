@@ -1,0 +1,38 @@
+material {
+  name: "TitlePlanetAtmosphere",
+  shading_model: unlit,
+  blending: alpha,
+  culling: back,
+  depth_write: false,
+  parameters: [
+    { type: vec3, name: scatter_color, default: [0.16, 0.40, 0.85] },
+    { type: vec3, name: sun_direction, default: [-0.7, 0.4, 0.6] },
+    { type: float, name: density, default: 0.7 },
+    { type: float, name: intensity, default: 1.2 },
+  ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 n = GetWorldNormal();
+    vec3 v = GetViewDirection();
+    vec3 l = normalize(material_params.sun_direction);
+    float mu = max(dot(n, v), 0.0);
+    float daylight = smoothstep(-0.35, 0.55, dot(n, l));
+    // 外殻の接線では光路長を0にし、地表の縁で最も長くする。
+    // 単純なFresnel最大値を殻の外端へ置くと、平たい輪郭帯に見える。
+    float inner = 1.0 / 1.024;
+    float impact = sqrt(max(1.0 - mu * mu, 0.0));
+    float visible_column = max(mu -
+        sqrt(max(inner * inner - impact * impact, 0.0)), 0.0);
+    float altitude = max(impact - inner, 0.0) / (1.0 - inner);
+    float density = material_params.density * exp(-altitude * 5.0);
+    float optical = 1.0 - exp(-visible_column * density * 4.0);
+    float rayleigh = 0.75 * (1.0 + pow(dot(v, l), 2.0));
+    float forward = pow(max(dot(v, -l), 0.0), 12.0);
+    vec3 light = material_params.scatter_color * rayleigh +
+        vec3(0.7, 0.34, 0.15) * forward * 0.18;
+    material.base_color = vec4(light * material_params.intensity,
+        optical * (0.08 + daylight * 0.55));
+    PrepareMaterial(material);
+  }
+}

@@ -43,6 +43,18 @@ void main() {
       }
 
       for (
+        var attempt = 0;
+        attempt < 120 &&
+            find.byKey(const Key('title-start')).evaluate().isEmpty;
+        attempt++
+      ) {
+        await wait(const Duration(milliseconds: 500));
+        await tester.pump();
+      }
+      expect(find.byKey(const Key('title-start')), findsOneWidget);
+      await tap('title-start');
+
+      for (
         var i = 0;
         i < 120 && find.byKey(const Key('cinematic-pause')).evaluate().isEmpty;
         i++

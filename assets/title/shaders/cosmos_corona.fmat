@@ -1,0 +1,34 @@
+material {
+  name: "TitleSolarCorona",
+  shading_model: unlit,
+  blending: additive,
+  culling: none,
+  parameters: [
+    { type: float, name: time, default: 0.0 },
+    { type: float, name: strength, default: 1.0 },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec2 p = (GetUV0() - 0.5) * 12.0;
+    float r = length(p);
+    float a = atan(p.y, p.x);
+    float safe_r = max(r, 1.0);
+    float t = material_params.time * 0.003;
+    float plume = pow(0.5 + 0.5 * sin(a * 5.0 + sin(a * 13.0) * 0.34 + t), 7.0);
+    float fine = 0.76 + 0.24 * sin(a * 61.0 + sin(a * 17.0) + t);
+    float inner = 0.72 * exp(-(safe_r - 1.0) * 5.4);
+    float outer = (0.065 + plume * 0.18 * fine) * pow(safe_r, -3.1);
+    // Quiet optical diffraction, not a geometric four-point star silhouette.
+    float horizontal = 0.045 * exp(-abs(p.y) * 34.0) * exp(-abs(p.x) * 0.82);
+    float vertical = 0.018 * exp(-abs(p.x) * 42.0) * exp(-abs(p.y) * 1.0);
+    float diagonal = 0.009 * exp(-abs(p.x - p.y) * 40.0) * exp(-r * 0.95);
+    vec3 inner_color = vec3(1.0, 0.88, 0.72);
+    vec3 outer_color = vec3(0.77, 0.86, 1.0);
+    vec3 emission = inner_color * inner + outer_color * outer;
+    emission += vec3(1.0, 0.93, 0.82) * (horizontal + vertical + diagonal);
+    emission *= smoothstep(0.965, 1.025, r) * (1.0 - smoothstep(4.5, 6.0, r));
+    material.base_color = vec4(emission * material_params.strength, 1.0);
+  }
+}

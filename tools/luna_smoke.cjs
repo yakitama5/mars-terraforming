@@ -39,6 +39,7 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
       await page.screenshot({ path: path.join(output, `${name}.png`) });
     };
     await page.goto(url);
+    await button('タップまたはクリックしてスタート').click({ timeout: 60000 });
     await button('OPを一時停止').waitFor({ timeout: 60000 });
     await page.waitForTimeout(1500);
     const retry = button('音楽つきで最初から見る');
@@ -91,6 +92,7 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
     assert.ok(queued.moneyUnits < initial.moneyUnits);
     // The current staged order survives a genuine reload before the reward.
     await page.reload();
+    await button('タップまたはクリックしてスタート').click({ timeout: 60000 });
     await button('ルナに完成を頼む').waitFor({ timeout: 60000 });
     await button('ルナに完成を頼む').click();
     await button('研究へ進む').waitFor();
@@ -118,6 +120,7 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
     assert.ok(asset > 7000000, 'Soundtrack is precached for offline playback');
     await context.setOffline(true);
     await page.reload();
+    await button('タップまたはクリックしてスタート').click({ timeout: 60000 });
     await button('設備・進行').waitFor({ timeout: 60000 });
     const restored = await snapshot();
     assert.equal(restored.firstRunTutorial, 'completed');

@@ -50,7 +50,13 @@ void main() {
           ),
           child: child!,
         ),
-        home: home ?? GameScreen(controller: controller, renderScene: false),
+        home:
+            home ??
+            GameScreen(
+              showTitle: false,
+              controller: controller,
+              renderScene: false,
+            ),
       ),
     );
     await tester.pumpAndSettle();

@@ -157,6 +157,7 @@ void main() {
       );
       await tester.pumpWidget(
         MarsApp(
+          showTitle: false,
           showIntroduction: false,
           controller: controller,
           renderScene: false,
@@ -255,6 +256,7 @@ void main() {
       addTearDown(controller.dispose);
       await tester.pumpWidget(
         MarsApp(
+          showTitle: false,
           showIntroduction: false,
           controller: controller,
           renderScene: false,
@@ -336,6 +338,7 @@ void main() {
       controller.state.districts[campus.key] = campus;
       await tester.pumpWidget(
         MarsApp(
+          showTitle: false,
           showIntroduction: false,
           controller: controller,
           renderScene: false,
@@ -386,6 +389,7 @@ void main() {
         final savedBefore = jsonEncode(store.data);
         await tester.pumpWidget(
           MarsApp(
+            showTitle: false,
             showIntroduction: false,
             controller: controller,
             renderScene: false,
@@ -484,6 +488,7 @@ void main() {
           await controller.initialize(startTimer: false);
           await tester.pumpWidget(
             MarsApp(
+              showTitle: false,
               showIntroduction: false,
               controller: controller,
               renderScene: false,
