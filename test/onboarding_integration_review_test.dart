@@ -26,6 +26,7 @@ Future<void> _smallScreen(
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     MarsApp(
+      showTitle: false,
       showIntroduction: false,
       controller: controller,
       renderScene: false,
@@ -100,6 +101,7 @@ void main() {
       expect(restored.state.tipsEnabled, isFalse);
       await tester.pumpWidget(
         MarsApp(
+          showTitle: false,
           showIntroduction: false,
           controller: restored,
           renderScene: false,

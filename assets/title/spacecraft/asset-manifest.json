@@ -1,0 +1,37 @@
+{
+  "sourceRevision": "11ebb4ee043715aefbba6aeec8a61746fad67fa7",
+  "assets": [
+    {
+      "file": "nasa_mro.glb",
+      "sourcePath": "3D Models/Mars Reconnaissance Orbiter (MRO) (A)/Mars Reconnaissance Orbiter (MRO) (A).glb",
+      "sourceSha256": "b195c566d227dec8e42ca2fafcc2a8cc26a127e04ed577e4b9515199d2002d9e",
+      "sha256": "3e7c81d358d46e5851226b0d145c8aed9f57ed167e4ad0b3e7a2a09065b47df0",
+      "bytes": 3980612,
+      "meshes": 6,
+      "materials": 11,
+      "triangles": 124062
+    },
+    {
+      "file": "nasa_saturn_v.glb",
+      "sourcePath": "3D Models/Saturn V/Saturn V.glb",
+      "sourceSha256": "6c44497bce54ee0b09d0edb8e33a6f484762a320dab1c54b383e434f5bba06b5",
+      "sha256": "b9b55011074b60b6d42e0fb05b02bc86b802f3cb60479ae6bec5614ba9051afb",
+      "bytes": 927312,
+      "meshes": 22,
+      "materials": 13,
+      "triangles": 34814
+    },
+    {
+      "file": "nasa_bennu.glb",
+      "sourcePath": "3D Models/1999 RQ36 asteroid/1999 RQ36 asteroid.glb",
+      "sourceSha256": "644af15678447df90c2d9e85674809c7fc70f439e0865418aa6618a8483b7958",
+      "sha256": "6415dd543e59bf2b1238d03727e5f7b25f0f856c173e66540a66eda219799f5a",
+      "bytes": 2447592,
+      "meshes": 1,
+      "materials": 2,
+      "triangles": 18240,
+      "textureSource": "https://www.nasa.gov/wp-content/uploads/2023/03/bennu_global_mosaic_reduced_size.png",
+      "textureSourceSha256": "cc2d73cf23ca87a998db8171f67a56aec09ff94e5acbe1630108471236eeb197"
+    }
+  ]
+}

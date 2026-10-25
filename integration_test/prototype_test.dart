@@ -94,6 +94,21 @@ void main() {
       }
 
       await tester.pump(const Duration(seconds: 1));
+      for (
+        var attempt = 0;
+        attempt < 120 &&
+            find.byKey(const Key('title-start')).evaluate().isEmpty;
+        attempt++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 500)),
+        );
+        await tester.pump();
+      }
+      expect(find.byKey(const Key('title-start')), findsOneWidget);
+      await tapKey('title-start');
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
       await tapKey('opening-cinematic-skip');
       await capture('blue-ios-opening');
       await tapKey('opening-next');

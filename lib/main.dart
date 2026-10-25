@@ -50,10 +50,12 @@ class MarsApp extends StatelessWidget {
     this.sceneBuilder,
     this.renderScene = true,
     this.showIntroduction = true,
+    this.showTitle = true,
   });
   final GameController controller;
   final bool renderScene;
   final bool showIntroduction;
+  final bool showTitle;
   final Widget Function(bool earth, int earthLevel, int habitats, bool cargo)?
   sceneBuilder;
 
@@ -148,6 +150,7 @@ class MarsApp extends StatelessWidget {
       sceneBuilder: sceneBuilder,
       renderScene: renderScene,
       showIntroduction: showIntroduction,
+      showTitle: showTitle,
     ),
   );
 }

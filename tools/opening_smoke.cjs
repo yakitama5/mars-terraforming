@@ -43,6 +43,7 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
       await page.screenshot({ path: path.join(output, `${name}.png`) });
     };
     await page.goto(url);
+    await button('タップまたはクリックしてスタート').click({ timeout: 60000 });
     await button('物語へ').waitFor({ timeout: 60000 });
     const filmInitial = await snapshot();
     for (const [chapter, label] of ['都市開発', 'ロケット打ち上げ', '月面基地', '火星探査', '火星移住'].entries()) {
@@ -115,6 +116,7 @@ const output = process.env.MARS_SCREENSHOT_DIR || path.resolve(__dirname, '../do
     await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 60000 });
     await context.setOffline(true);
     await page.reload({ waitUntil: 'domcontentloaded' });
+    await button('タップまたはクリックしてスタート').click({ timeout: 60000 });
     assert.equal(await completeFirstRun(page), false);
     await button('都市開発').waitFor({ timeout: 60000 });
     assert.equal(await button('物語をスキップ').count(), 0);

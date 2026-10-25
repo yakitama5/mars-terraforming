@@ -1,0 +1,35 @@
+material {
+  name: "TitleBlueAndBlackMarble",
+  shading_model: unlit,
+  blending: opaque,
+  culling: back,
+  parameters: [
+    { type: sampler2d, name: day_map, hint: default_white },
+    { type: sampler2d, name: night_map, hint: default_black },
+    { type: vec3, name: sun_direction, default: [-0.7, 0.4, 0.6] },
+    { type: float, name: sunlight, default: 2.1 },
+    { type: float, name: night_intensity, default: 3.0 },
+  ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec2 uv = GetUV0();
+    vec3 n = GetWorldNormal();
+    vec3 v = GetViewDirection();
+    vec3 l = normalize(material_params.sun_direction);
+    float ndl = dot(n, l);
+    float day = smoothstep(-0.10, 0.15, ndl);
+    vec3 albedo = SRGBToLinear(texture(day_map, uv).rgb);
+    vec3 night = SRGBToLinear(texture(night_map, uv).rgb);
+    float water = clamp((albedo.b - max(albedo.r, albedo.g) * 0.85) * 14.0, 0.0, 1.0);
+    float specular = pow(max(dot(reflect(-l, n), v), 0.0), 110.0) * water;
+    vec3 lit = albedo * (0.008 + max(ndl, 0.0) * material_params.sunlight);
+    lit += vec3(0.62, 0.76, 1.0) * specular * day * 0.85;
+    float edge = pow(1.0 - max(dot(n, v), 0.0), 4.0);
+    lit += vec3(0.025, 0.10, 0.23) * edge * smoothstep(-0.2, 0.5, ndl);
+    lit += max(night - vec3(0.002), vec3(0.0)) *
+        (1.0 - day) * material_params.night_intensity;
+    material.base_color = vec4(lit, 1.0);
+    PrepareMaterial(material);
+  }
+}

@@ -25,6 +25,7 @@ const _phoneInsets = EdgeInsets.fromLTRB(24, 8, 24, 16);
 Widget _screen(GameController controller, double textScale) => Builder(
   builder: (context) {
     final product = MarsApp(
+      showTitle: false,
       controller: controller,
       renderScene: false,
       showIntroduction: false,
@@ -49,6 +50,7 @@ Widget _screen(GameController controller, double textScale) => Builder(
         child: child!,
       ),
       home: GameScreen(
+        showTitle: false,
         controller: controller,
         renderScene: false,
         showIntroduction: false,

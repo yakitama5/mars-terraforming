@@ -27,6 +27,7 @@ import 'research_display.dart';
 import 'research_developments.dart';
 import 'resource_overview_dialog.dart';
 import 'strategy_widgets.dart';
+import 'title_screen.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -35,16 +36,21 @@ class GameScreen extends StatefulWidget {
     this.sceneBuilder,
     this.renderScene = true,
     this.showIntroduction = true,
+    this.showTitle = true,
   });
   final GameController controller;
   final bool renderScene;
   final bool showIntroduction;
+  final bool showTitle;
   final Widget Function(bool, int, int, bool)? sceneBuilder;
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
 
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
+  // This belongs to the running app, never the saved world: every cold launch
+  // presents the title, while resume and ordinary controller updates do not.
+  bool _titleDismissed = false;
   String planet = 'earth';
   bool get earth => planet == 'earth';
   int tab = 0;
@@ -108,6 +114,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   : Semantics(liveRegion: true, child: Text(controller.error!)),
             ),
           ),
+        );
+      }
+      if (widget.showTitle && !_titleDismissed) {
+        return TitleScreen(
+          game: game,
+          renderScene: widget.renderScene,
+          onStart: () => setState(() => _titleDismissed = true),
         );
       }
       if (widget.showIntroduction &&

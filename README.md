@@ -67,6 +67,7 @@ Web試遊は既定で開発用の別セーブと時間送りを使います。
 
 ## 資料と検証
 
+- [起動タイトルの3D表現・セーブ反映・検証](docs/title-screen.md)
 - [製品としての操作性・文字量・導線の改善](docs/product-usability.md)
 - [最初の1時間のガイド・状況別Tips・完了通知](docs/first-hour-guidance.md)
 - [プロジェクトメモリ：現在の好み・方針・再開時の要約](docs/project-memory.md)
@@ -92,3 +93,8 @@ Google連携・全球環境・ED・周回・火星復元は今後の段階です
 本プロジェクトは [MIT License](LICENSE) で公開しています。
 第三者のライブラリ・素材には、それぞれのライセンスが適用されます。
 同梱のNoto Sans JPは [SIL Open Font License 1.1](assets/fonts/OFL.txt) に従います。
+タイトルにはNASAの[天体画像・実測標高](docs/title-assets.md)と[宇宙機モデル](docs/title-spacecraft-assets.md)、
+ESO/S. Brunierの[全天写真](https://www.eso.org/public/images/eso0932a/)を使用しています。
+ESO写真は[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)で、縮小・露光・彩度調整と球面投影を行っています。
+素材ごとの出典・変更・条件は[全天素材の台帳](docs/title-cosmos-assets.md)等を参照してください。
+これらの原素材へ本作MITを適用したり、NASA/ESOによる本作の推薦を意味する表示を行ったりはしません。

@@ -1,0 +1,30 @@
+material {
+  name: "TitleMeasuredMars",
+  shading_model: lit,
+  blending: opaque,
+  culling: back,
+  parameters: [
+    { type: sampler2d, name: albedo_map, hint: default_white },
+    { type: sampler2d, name: normal_map, hint: default_normal },
+    { type: float, name: normal_strength, default: 1.0 },
+    { type: float, name: greenery, default: 0.0 },
+  ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec2 uv = GetUV0();
+    vec3 color = SRGBToLinear(texture(albedo_map, uv).rgb);
+    vec2 delta = vec2(mod(uv.x - 0.33 + 0.5, 1.0) - 0.5, uv.y - 0.53);
+    delta *= vec2(8.0, 13.0);
+    float pocket = exp(-dot(delta, delta));
+    color = mix(color, vec3(0.055, 0.13, 0.075),
+        pocket * material_params.greenery * 0.28);
+    material.base_color = vec4(color, 1.0);
+    material.normal = PerturbNormal(normal_map, GetWorldNormal(),
+        v_viewvector, uv, material_params.normal_strength);
+    material.roughness = 0.92;
+    material.metallic = 0.0;
+    material.specular = 0.16;
+    PrepareMaterial(material);
+  }
+}

@@ -36,6 +36,7 @@ void main() {
     if (!controller.state.openingSeen) await controller.skipOpening();
     await tester.pumpWidget(
       MarsApp(
+        showTitle: false,
         controller: controller,
         renderScene: false,
         showIntroduction: introduction,
@@ -244,7 +245,9 @@ void main() {
       );
       await resumed.initialize(startTimer: false);
       addTearDown(resumed.dispose);
-      await tester.pumpWidget(MarsApp(controller: resumed, renderScene: false));
+      await tester.pumpWidget(
+        MarsApp(showTitle: false, controller: resumed, renderScene: false),
+      );
       await tester.pumpAndSettle();
       expect(resumed.state.worldId, world);
       expect(

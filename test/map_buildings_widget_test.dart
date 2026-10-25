@@ -95,6 +95,7 @@ void main() {
           MaterialApp(
             theme: ThemeData.dark(useMaterial3: true),
             home: GameScreen(
+              showTitle: false,
               controller: controller,
               renderScene: false,
               showIntroduction: false,
@@ -335,6 +336,7 @@ void main() {
         MaterialApp(
           theme: ThemeData.dark(useMaterial3: true),
           home: GameScreen(
+            showTitle: false,
             controller: controller,
             renderScene: false,
             showIntroduction: false,

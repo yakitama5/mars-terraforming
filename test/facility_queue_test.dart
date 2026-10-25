@@ -319,6 +319,7 @@ void main() {
         MaterialApp(
           theme: ThemeData.dark(useMaterial3: true),
           home: GameScreen(
+            showTitle: false,
             showIntroduction: false,
             controller: controller,
             sceneBuilder: (_, _, _, _) => const SizedBox.expand(),

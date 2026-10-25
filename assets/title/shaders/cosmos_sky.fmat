@@ -1,0 +1,34 @@
+material {
+  name: "TitleDeepStarSky",
+  parameters: [
+    { type: sampler2d, name: star_map, hint: default_black },
+    { type: float, name: star_exposure, default: 0.5 },
+    { type: float, name: sky_saturation, default: 0.62 },
+    { type: float, name: sky_yaw, default: -1.15 },
+    { type: float, name: sky_tilt, default: -0.55 },
+  ],
+}
+
+sky {
+  vec3 Sky(vec3 direction) {
+    float cy = cos(material_params.sky_yaw);
+    float sy = sin(material_params.sky_yaw);
+    vec3 yawed = vec3(cy * direction.x + sy * direction.z,
+                     direction.y,
+                     -sy * direction.x + cy * direction.z);
+    float ct = cos(material_params.sky_tilt);
+    float st = sin(material_params.sky_tilt);
+    direction = vec3(ct * yawed.x - st * yawed.y,
+                     st * yawed.x + ct * yawed.y,
+                     yawed.z);
+    vec2 uv = SphericalToEquirectangular(direction);
+    uv.y = 1.0 - uv.y;
+    // Read the mipmapped ESO photographic panorama, not a convolved IBL cube.
+    // The engine helper handles the longitude seam and polar footprint.
+    vec3 measured = SRGBToLinear(max(SampleEquirectByFootprint(star_map, direction, uv), vec3(0.0)));
+    float luminance = dot(measured, vec3(0.2126, 0.7152, 0.0722));
+    // Preserve the photograph's dark floor: lifting it reveals JPEG colour noise.
+    vec3 graded = mix(vec3(luminance), measured, material_params.sky_saturation);
+    return graded * material_params.star_exposure;
+  }
+}
