@@ -70,6 +70,17 @@ void main() {
     });
     await tester.pumpWidget(MarsApp(controller: controller));
     await settle();
+    for (
+      var attempt = 0;
+      attempt < 120 && find.byKey(const Key('title-start')).evaluate().isEmpty;
+      attempt++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 500)),
+      );
+      await tester.pump();
+    }
+    expect(find.byKey(const Key('title-start')), findsOneWidget);
     await tester.tap(find.byKey(const Key('title-start')));
     await settle();
     expect(

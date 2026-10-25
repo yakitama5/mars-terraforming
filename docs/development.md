@@ -1,5 +1,13 @@
 # 開発・検証の引き継ぎ
 
+2026-10-26追補: タイトルをNASAの観測画像/MOLA実測地形、ESOの全天写真、NASAの詳細宇宙機へ更新。
+起動は素材とシェーダーのロード完了後に開始操作を有効化し、下端のCreditsで素材条件を確認できる。
+独自build hookと固定版hooksを採用し、GLBと`.fmat`を対象環境へ事前変換する。
+描画は最大30fps・倍率2、全天写真のGPU最大辺4096。全652テスト・解析・Webスモークが成功。
+最終照明/姿勢と4k星空でiOS GPU試験・撮影も成功。現在版のCI/反映/内部配信は作業中。
+実機負荷と長時間の熱・メモリは未測定。
+詳細は[タイトル画面](title-screen.md)、再生成は[タイトルの素材とbuild hook](#タイトルの素材とbuild-hook)を参照する。
+
 2026-10-25追補: [3Dタイトル画面](title-screen.md)を毎回のコールド起動で表示する。
 保存の読み込み/初回保存が成功してから、タップ/クリックまたはEnter/Spaceで新規はOP、既存はゲームへ。
 背景復帰だけではタイトルへ戻らない。新規の資金保護・既存の放置進行と保存ガードを維持する。
@@ -71,6 +79,7 @@ Android / iOSの署名・ストア登録・内部テストCDは [モバイル内
 | Xcode / Simulator runtime | 26.1.1 / iOS26.1 |
 | 依存の固定 | pubspec.yamlで直依存を完全固定、pubspec.lockで推移依存固定 |
 | SDK管理 | mise.toml、SDK制約も完全一致 |
+| タイトルのbuild hook | hooks 2.0.2をpubspec/lockfileへ固定。FlutterScene 0.24.3のbuildScenes/buildMaterialsを使用 |
 
 着手時の公式確認:
 [Flutter公式配布JSON](https://storage.googleapis.com/flutter_infra_release/releases/releases_macos.json)、
@@ -82,8 +91,8 @@ Android / iOSの署名・ストア登録・内部テストCDは [モバイル内
 
 iOS/macOSはInfo.plistで `FLTEnableFlutterGPU=true`、AndroidはmanifestのEnableFlutterGPUを設定。
 iOSのInfo.plistとDart側の両方で横画面指定。iPadは試作中fullscreen。
-基本形状だけなので独自アセット用hookは不要、Scene依存自身のhookがシェーダを生成する。
-生成物は配布時に同梱し、起動時の通信は不要。
+タイトルのGLB・独自シェーダーは`hook/build.dart`で事前変換する。
+Scene依存自身のシェーダー生成と併せて生成物を配布時に同梱し、起動時の素材取得は不要。
 
 ## 起動と遊び方
 
@@ -100,6 +109,7 @@ mise exec -- flutter run -d <iOS-device-id>
 mise exec -- flutter run -d <iOS-device-id> --dart-define=DEV_TOOLS=true
 ```
 
+毎回のコールド起動で3Dタイトルを表示する。ロード完了後、タップ/クリックまたはEnter/Spaceで開始する。
 新規ゲームは40秒の3Dの未来序章から、ミナとの3幕の会話へ進む。地球の街・火星の街・輸送ロケットを命名して開発を開始する。
 OPはスキップ可能。既存セーブでは自動再生せず、「ガイド」で再視聴・全都市の改名ができる。
 
@@ -126,6 +136,61 @@ OPはスキップ可能。既存セーブでは自動再生せず、「ガイド
 設備一覧は画面幅いっぱいに開き、広いPC画面は2列、iPhone横画面相当は1列で表示する。
 各カードには稼働/休止と維持費、現在の進捗・残り時間、予約の種別・反復数・停止理由がある。
 「惑星マップ」で球体へ戻る。「開発記録」は設備画面のサブタブで確認できる。
+
+## タイトルの素材とbuild hook
+
+タイトルの入力素材は`assets/title/planets/`・`assets/title/cosmos/`・`assets/title/spacecraft/`、
+独自材質は`assets/title/shaders/*.fmat`に置く。採用元・利用条件・寸法・ハッシュは
+[天体](title-assets.md)、[全天写真と太陽](title-cosmos-assets.md)、[宇宙機](title-spacecraft-assets.md)を参照する。
+NASA/ESOの原素材を本作MITへ変更せず、アプリのCreditsと出典文書を併せて維持する。
+
+`hook/build.dart`はFlutterScene 0.24.3の`buildScenes`・`buildMaterials`を呼ぶ。
+通常のFlutter build/run/driveで、GLBから対象環境のScene、`.fmat`から対象GPU用のshader bundleと
+参照情報を再生成する。`pubspec.yaml`は`flutter_scene_generated/`を同梱対象にする。
+生成物を手編集せず、GLB・`.fmat`・hookの入力を変更して通常ビルドで更新する。
+原GLBと生成Scene binaryをアプリへ二重に詰めない。
+MROの元GLBは約4MB、生成Scene binaryは約39MB。配布容量・実行時メモリは区別し、
+4k星空・惑星・機体・ポスト処理を合わせたAndroidのピークメモリは実測前として扱う。
+
+```sh
+mise exec -- flutter pub get --enforce-lockfile
+mise exec -- bash tools/build_web_preview.sh
+mise exec -- flutter build ios --simulator --debug
+```
+
+これらと`flutter test`/`flutter drive`は同じcheckoutで並列実行しない。
+依存・フォーマット・進行と画面の単体検証は従来の`mise exec -- bash tools/check.sh`、
+シェーダー/Sceneの生成とGPU読込はbuildと通し試験で確認する。
+
+宇宙機の派生GLBを作り直す場合は、PillowとNumPyのあるPythonで以下を実行する。
+固定コミットのNASA原素材を一時キャッシュへ取得し、元SHAを検証してから材質・補助normalを調整する。
+
+```sh
+python3 assets/title/spacecraft/prepare_assets.py
+```
+
+生成したGLBと`asset-manifest.json`を、[宇宙機台帳](title-spacecraft-assets.md)のハッシュ・
+元の形状/画像の保持・外部URI非使用と照合する。標高や天体画像の再取得・縮小は
+[天体台帳](title-assets.md)の8分割配置、経度/南北方向、単位、出力寸法とハッシュを使う。
+現時点で天体画像の一括再生成スクリプトは同梱していないため、縮小画像を作り直す際は
+同台帳の手順と実測値域を再確認する。出典の新版を自動的に採用しない。
+
+ESOの元JPEGは6000×3000で同梱し、実行時のGPU読込は4096×2048に制限する。
+素材を再取得した場合は、[全天素材台帳](title-cosmos-assets.md)の公式URL・SHA-256・CC BY 4.0と
+`ESO/S. Brunier`の表記を照合する。ゲーム起動時の素材ダウンロード処理は追加しない。
+
+タイトル専用のGPU通し試験は一時セーブだけを使う。
+
+```sh
+mise exec -- flutter drive --driver=test_driver/integration_test.dart \
+  --target=integration_test/title_screen_test.dart -d <iOS-simulator-id>
+```
+
+Webは配信したpreviewに対して`tools/title_smoke.cjs`を実行する。
+Chrome/Playwrightの用意は[Web検証ガイド](web-preview.md)を参照する。
+必要に応じて`MARS_BASE_URL`と`MARS_SCREENSHOT_DIR`を指定し、独立したブラウザcontextで
+タイトルの読込、動き、大小画面、OP前の順序、既存継続とオフラインを確認する。
+正式な通常/開発セーブで撮影しない。最新の結果と実機未測定の範囲は[タイトルの記録](title-screen.md)へ残す。
 
 ## 構造とハーネス
 

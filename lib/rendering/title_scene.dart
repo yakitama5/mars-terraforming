@@ -5,7 +5,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart' as fs;
 import 'package:vector_math/vector_math.dart' as vm;
 
-import 'title_scene_models.dart';
+import 'title_celestial_models.dart';
+import 'title_cosmos_models.dart';
+import 'title_spacecraft_models.dart';
 import 'title_scene_motion.dart';
 import 'title_scene_snapshot.dart';
 
@@ -29,10 +31,11 @@ class TitleScene extends StatefulWidget {
 class _TitleSceneState extends State<TitleScene>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   fs.Scene? _scene;
-  TitleSceneModels? _models;
+  TitleCelestialModels? _models;
+  TitleCosmosModels? _cosmos;
   late TitleSceneSnapshot _displayedSnapshot;
   TitleMarsModel? _mars;
-  fs.Node? _stars, _earth, _earthGlobe, _rocket, _satellite;
+  fs.Node? _earth, _earthGlobe, _rocket, _satellite;
   final _asteroids = <fs.Node>[];
   late final Ticker _ticker;
   Duration? _lastTick;
@@ -41,6 +44,10 @@ class _TitleSceneState extends State<TitleScene>
   bool _reduceMotion = false;
   bool _failed = false;
   int _generation = 0;
+  static final _cameraPosition = vm.Vector3(0, 1, 14);
+  static final _marsPosition = vm.Vector3(0, -7.4, 0);
+  static final _sunPosition = vm.Vector3(11, 5.5, -8);
+  static final _sunDirection = (_sunPosition - _marsPosition).normalized();
 
   @override
   void initState() {
@@ -84,80 +91,98 @@ class _TitleSceneState extends State<TitleScene>
     try {
       await fs.Scene.initializeStaticResources();
       if (!mounted || generation != _generation) return;
+      final resources = await Future.wait<Object>([
+        TitleCelestialModels.load(),
+        TitleCosmosModels.load(),
+        TitleSpacecraftModels.load(),
+      ]);
+      if (!mounted || generation != _generation) return;
       pending = fs.Scene();
-      final models = TitleSceneModels();
+      final models = resources[0] as TitleCelestialModels;
+      final cosmos = resources[1] as TitleCosmosModels;
+      final spacecraft = resources[2] as TitleSpacecraftModels;
       _models = models;
+      _cosmos = cosmos;
       _displayedSnapshot = widget.snapshot;
-      _mars = models.mars(
-        greening: widget.snapshot.greenery,
-        cloudCover: widget.snapshot.cloudCoverage,
-        settlementCount: widget.snapshot.settlementCount,
-        infrastructureCount: widget.snapshot.infrastructureCount,
-        activity: widget.snapshot.activity,
-        atmosphere: widget.snapshot.atmosphere,
-      );
+      _mars = models.mars(widget.snapshot);
       _mars!.root
         ..name = 'title-mars'
-        ..position = vm.Vector3(0, -5.0, 0)
-        ..scale = vm.Vector3.all(1.9);
-      _orientLimb(_mars!);
-      _stars = models.stars()..name = 'title-stars';
+        ..position = _marsPosition
+        ..scale = vm.Vector3.all(2.6);
       _earth = models.earth()
         ..name = 'title-earth'
-        ..position = vm.Vector3(12.5, 5.0, -24)
-        ..scale = vm.Vector3.all(.42);
+        ..position = vm.Vector3(-17, 5.8, -22)
+        ..scale = vm.Vector3.all(.70);
       _earthGlobe = _earth!.getChildByName('title-earth-globe');
-      _earth!
-          .getChildByName('title-earth-limb')
-          ?.rotation = vm.Quaternion.fromTwoVectors(
-        vm.Vector3(0, 0, 1),
-        vm.Vector3(-12.5, -4, 38).normalized(),
-      );
-      _rocket = models.rocket()
+      _rocket = spacecraft.rocket
         ..name = 'title-rocket'
-        ..scale = vm.Vector3.all(.27);
-      _satellite = models.satellite()
+        ..scale = vm.Vector3.all(.30);
+      _satellite = spacecraft.satellite
         ..name = 'title-satellite'
-        ..scale = vm.Vector3.all(.32);
-      final sun = models.sun()
-        ..position = vm.Vector3(-18, 8, -32)
-        ..scale = vm.Vector3.all(.7);
-      for (final node in [
-        _mars!.root,
-        _stars!,
-        _earth!,
-        sun,
-        _rocket!,
-        _satellite!,
-      ]) {
+        ..scale = vm.Vector3.all(.24);
+      final sun = cosmos.sun(radius: .32)
+        ..position = _sunPosition
+        ..rotation = vm.Quaternion.fromTwoVectors(
+          vm.Vector3(0, 0, 1),
+          (_cameraPosition - _sunPosition).normalized(),
+        );
+      for (final node in [_mars!.root, _earth!, sun, _rocket!, _satellite!]) {
         pending.add(node);
       }
       for (var i = 0; i < 2; i++) {
-        final node = models.asteroid(i + 13)
-          ..scale = vm.Vector3.all(.28 + i * .13);
+        final node =
+            (i == 0 ? spacecraft.asteroid : spacecraft.asteroid.clone())
+              ..scale = vm.Vector3.all(.17 + i * .11);
         _asteroids.add(node);
         pending.add(node);
       }
-      pending.skybox = fs.Skybox(
-        fs.GradientSkySource(
-          zenithColor: vm.Vector3(.00035, .0007, .002),
-          horizonColor: vm.Vector3(.002, .004, .01),
-          groundColor: vm.Vector3(.0003, .0005, .0012),
-          sunColor: vm.Vector3.zero(),
-        ),
+      pending.environmentSettings = fs.EnvironmentSettings(
+        environment: cosmos.environment,
+        skybox: cosmos.skybox,
+        environmentIntensity: .30,
+        toneMapping: fs.ToneMappingMode.aces,
+        exposure: .95,
+        bloomEnabled: true,
+        bloomThreshold: 1.05,
+        bloomIntensity: .25,
+        bloomScatter: .82,
+        lensFlareEnabled: true,
+        lensFlareIntensity: .15,
+        lensFlareGhostCount: 3,
+        lensFlareHaloIntensity: .12,
+        vignetteEnabled: true,
+        vignetteIntensity: .19,
+        vignetteRadius: .9,
+        colorGradingEnabled: true,
+        contrast: 1.05,
+        saturation: 1.03,
+        ambientOcclusionEnabled: true,
+        ambientOcclusionMethod: fs.AmbientOcclusionMethod.groundTruth,
+        ambientOcclusionRadius: .15,
+        ambientOcclusionIntensity: .6,
+        ambientOcclusionHalfResolution: true,
       );
-      pending.environmentIntensity = .19;
+      pending.antiAliasingMode = fs.AntiAliasingMode.smaa;
       pending.directionalLight = fs.DirectionalLight(
-        direction: vm.Vector3(.65, -.45, -.65),
-        color: vm.Vector3(1, .83, .68),
-        intensity: 2.5,
-        castsShadow: false,
+        direction: -_sunDirection,
+        color: vm.Vector3(1, .94, .85),
+        intensity: 4.0,
+        castsShadow: true,
+        shadowCascadeCount: 1,
+        shadowMapResolution: 2048,
+        shadowMaxDistance: 70,
+        shadowDepthBias: .003,
+        shadowNormalBias: .01,
+        shadowSoftness: .05,
       );
-      pending.postProcess.bloom
-        ..enabled = true
-        ..threshold = 1.1
-        ..intensity = .15
-        ..scatter = .65;
+      final fill = fs.Node(name: '地球照を思わせる淡い機体の補助光')
+        ..addComponent(
+          fs.DirectionalLightComponent.aimed(
+            fs.DirectionalLight(color: vm.Vector3(.45, .66, 1), intensity: .35),
+            vm.Vector3(-.2, -.3, -1),
+          ),
+        );
+      pending.add(fill);
       _scene = pending;
       _animate();
       setState(() => _failed = false);
@@ -187,33 +212,16 @@ class _TitleSceneState extends State<TitleScene>
       return;
     }
     // 施設完成など外観の変化があったときだけメッシュを差し替える。
-    final updated = models.mars(
-      greening: widget.snapshot.greenery,
-      cloudCover: widget.snapshot.cloudCoverage,
-      settlementCount: widget.snapshot.settlementCount,
-      infrastructureCount: widget.snapshot.infrastructureCount,
-      activity: widget.snapshot.activity,
-      atmosphere: widget.snapshot.atmosphere,
-    );
+    final updated = models.mars(widget.snapshot);
     updated.root
       ..name = 'title-mars'
       ..position = mars.root.position
       ..scale = mars.root.scale;
-    _orientLimb(updated);
     scene.remove(mars.root);
     scene.add(updated.root);
     _mars = updated;
     _displayedSnapshot = widget.snapshot;
     _animate();
-  }
-
-  void _orientLimb(TitleMarsModel mars) {
-    mars.limb
-      ..rotation = vm.Quaternion.fromTwoVectors(
-        vm.Vector3(0, 0, 1),
-        vm.Vector3(0, 6, 14).normalized(),
-      )
-      ..scale = vm.Vector3.all(1.085);
   }
 
   void _tick(Duration elapsed) {
@@ -233,26 +241,25 @@ class _TitleSceneState extends State<TitleScene>
 
   void _animate() {
     final motion = TitleSceneMotion(_seconds);
-    _stars?.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(0, 0, 1),
-      motion.starAngle,
+    _cosmos?.update(_seconds);
+    _models?.updateView(
+      cameraPosition: _cameraPosition,
+      sunDirection: _sunDirection,
+      sunPosition: _sunPosition,
+      seconds: _seconds,
     );
     _earthGlobe?.rotation = vm.Quaternion.axisAngle(
       vm.Vector3(0, 1, .15),
-      motion.earthAngle,
+      motion.earthAngle - 2.1,
     );
-    _mars?.clouds.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(0, 1, 0),
-      motion.cloudAngle,
-    );
-    final orbit = motion.satelliteAngle;
+    final orbit = motion.satelliteAngle - .6;
     _satellite
       ?..position = vm.Vector3(
-        math.sin(orbit) * 7.8,
-        -2.7 + math.cos(orbit) * 2.6,
-        math.cos(orbit) * 7.2,
+        math.sin(orbit) * 11.2,
+        -3.2 + math.cos(orbit) * 4,
+        math.cos(orbit) * 9.3,
       )
-      ..rotation = vm.Quaternion.euler(-orbit, .9, -.2);
+      ..rotation = vm.Quaternion.euler(.9 - orbit, -.35, -.2);
     final rocket = motion.rocket;
     _rocket?.visible = rocket != null;
     if (rocket != null) {
@@ -286,7 +293,15 @@ class _TitleSceneState extends State<TitleScene>
     _ticker.dispose();
     _scene?.removeAll();
     _scene?.dispose();
+    _scene = null;
     _models = null;
+    _cosmos = null;
+    _mars = null;
+    _earth = null;
+    _earthGlobe = null;
+    _rocket = null;
+    _satellite = null;
+    _asteroids.clear();
     super.dispose();
   }
 
@@ -297,10 +312,15 @@ class _TitleSceneState extends State<TitleScene>
       return ColoredBox(
         color: const Color(0xff030812),
         child: _failed
-            ? const Center(
-                child: Text(
-                  '宇宙の表示を準備できませんでした。\nタップしてゲームを始められます。',
-                  textAlign: TextAlign.center,
+            ? const Align(
+                alignment: Alignment(0, .55),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    '宇宙の表示を準備できませんでした。\nタップしてゲームを始められます。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: Color(0xffb3b9bf)),
+                  ),
                 ),
               )
             : null,
@@ -315,14 +335,15 @@ class _TitleSceneState extends State<TitleScene>
             child: fs.SceneView(
               scene,
               camera: fs.PerspectiveCamera(
-                position: vm.Vector3(0, 1, 14),
+                position: _cameraPosition,
                 target: vm.Vector3(0, 1.8, 0),
                 fovRadiansY: 43 * math.pi / 180,
+                fovNear: .25,
                 fovFar: 240,
               ),
               autoTick: false,
               pixelRatio: MediaQuery.devicePixelRatioOf(context)
-                  .clamp(1, 1.5)
+                  .clamp(1, 2.0)
                   .toDouble(),
             ),
           ),

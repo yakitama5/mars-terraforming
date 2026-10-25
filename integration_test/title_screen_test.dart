@@ -97,6 +97,10 @@ void main() {
         ];
       }
 
+      double starAngle() => (view().scene!.skybox!.source as fs.PreprocessedSky)
+          .parameters
+          .getFloat('sky_yaw');
+
       Future<void> capture(String name) async {
         await wait(const Duration(milliseconds: 500));
         await binding.takeScreenshot(name);
@@ -118,7 +122,7 @@ void main() {
       expect(find.byType(MissionOpening), findsNothing);
       final initialCamera = cameraPose();
       final initialMars = nodePose('title-mars');
-      final initialStars = nodePose('title-stars');
+      final initialStars = starAngle();
       final initialSatellite = nodePose('title-satellite');
       await capture('title-ios-pristine');
       // ignore: avoid_print
@@ -129,7 +133,7 @@ void main() {
       await capture('title-ios-pristine-motion');
       expect(cameraPose(), initialCamera, reason: 'タイトルの視点は時間で移動しない');
       expect(nodePose('title-mars'), initialMars, reason: '火星の地表と姿勢は固定する');
-      expect(nodePose('title-stars'), isNot(initialStars));
+      expect(starAngle(), isNot(initialStars));
       expect(nodePose('title-satellite'), isNot(initialSatellite));
       now = now.add(const Duration(hours: 8));
       await pristine.resume();

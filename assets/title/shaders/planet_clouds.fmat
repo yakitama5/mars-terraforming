@@ -1,0 +1,28 @@
+material {
+  name: "TitleIndependentCloudLayer",
+  shading_model: unlit,
+  blending: alpha,
+  culling: back,
+  depth_write: false,
+  parameters: [
+    { type: sampler2d, name: cloud_map, hint: default_black },
+    { type: vec3, name: sun_direction, default: [-0.7, 0.4, 0.6] },
+    { type: float, name: opacity, default: 0.85 },
+  ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 n = GetWorldNormal();
+    vec3 v = GetViewDirection();
+    float sunlight = dot(n, normalize(material_params.sun_direction));
+    float cloud = texture(cloud_map, GetUV0()).r;
+    float daylight = smoothstep(-0.12, 0.13, sunlight);
+    float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+    vec3 color = mix(vec3(0.015, 0.028, 0.06), vec3(0.95, 0.98, 1.0),
+        daylight * (0.30 + max(sunlight, 0.0) * 0.70));
+    color += vec3(0.06, 0.12, 0.18) * rim * daylight;
+    material.base_color = vec4(color,
+        smoothstep(0.10, 0.92, cloud) * material_params.opacity);
+    PrepareMaterial(material);
+  }
+}

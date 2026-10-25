@@ -7,6 +7,92 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'planet_geometry.dart';
 
+/// NASA MGS/MOLAの標高。ヘッダーMOLA/幅/高さに続く符号付き16bit LE、単位m。
+class MeasuredPlanetHeightField {
+  MeasuredPlanetHeightField(ByteData data) : _data = data {
+    if (data.lengthInBytes < 8 || data.getUint32(0) != 0x4d4f4c41) {
+      throw const FormatException('MOLA height header is invalid');
+    }
+    width = data.getUint16(4, Endian.little);
+    height = data.getUint16(6, Endian.little);
+    if (width < 2 ||
+        height < 2 ||
+        data.lengthInBytes != 8 + width * height * 2) {
+      throw const FormatException('MOLA height dimensions are invalid');
+    }
+  }
+
+  final ByteData _data;
+  late final int width, height;
+
+  double sample(double u, double v) {
+    final x = ((u % 1) * width - .5), y = (v.clamp(0.0, 1.0) * height - .5);
+    final ix = x.floor(),
+        iy = y.floor(),
+        tx = x - x.floor(),
+        ty = y - y.floor();
+    double pixel(int a, int b) => _data
+        .getInt16(
+          8 + ((b.clamp(0, height - 1) * width + a % width) * 2),
+          Endian.little,
+        )
+        .toDouble();
+    final a = pixel(ix, iy), b = pixel(ix + 1, iy);
+    final c = pixel(ix, iy + 1), d = pixel(ix + 1, iy + 1);
+    return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+  }
+
+  double at(double latitude, double longitude) => sample(
+    latitude.abs() >= 90 ? .5 : (longitude + 180) / 360,
+    (90 - latitude) / 180,
+  );
+}
+
+/// 写真のUVと実測標高が一致する球。色の模様や架空の地形は生成しない。
+TitlePlanetMeshData measuredPlanetMeshData({
+  MeasuredPlanetHeightField? heightField,
+  double radius = 3.1,
+  double exaggeration = 1.5,
+  int rows = 192,
+  int columns = 320,
+}) {
+  final positions = <double>[], normals = <double>[], colors = <double>[];
+  final texCoords = <double>[], tangents = <double>[];
+  final indices = <int>[];
+  for (var row = 0; row <= rows; row++) {
+    final latitude = -90 + row / rows * 180;
+    for (var column = 0; column <= columns; column++) {
+      final longitude = -180 + column / columns * 360;
+      final meters = heightField?.at(latitude, longitude) ?? 0;
+      final point = planetPoint(
+        latitude,
+        longitude,
+        radius * (1 + meters / 3396000 * exaggeration),
+      );
+      final normal = point.normalized();
+      final lon = longitude * math.pi / 180;
+      positions.addAll([point.x, point.y, point.z]);
+      normals.addAll([normal.x, normal.y, normal.z]);
+      colors.addAll([1, 1, 1, 1]);
+      texCoords.addAll([column / columns, 1 - row / rows]);
+      tangents.addAll([math.cos(lon), 0, math.sin(lon), 1]);
+      if (row < rows && column < columns) {
+        final a = row * (columns + 1) + column, b = a + columns + 1;
+        if (row > 0) indices.addAll([a, b, a + 1]);
+        if (row < rows - 1) indices.addAll([a + 1, b, b + 1]);
+      }
+    }
+  }
+  return TitlePlanetMeshData(
+    positions: Float32List.fromList(positions),
+    normals: Float32List.fromList(normals),
+    colors: Float32List.fromList(colors),
+    texCoords: Float32List.fromList(texCoords),
+    tangents: Float32List.fromList(tangents),
+    indices: indices,
+  );
+}
+
 /// タイトルのために造形した火星。標高・配色は実測地図ではない。
 /// 周期的な関数と固定クレーターだけを使い、再起動でも地形を保つ。
 class TitleMarsSurface {

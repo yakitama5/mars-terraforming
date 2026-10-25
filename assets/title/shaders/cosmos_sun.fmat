@@ -1,0 +1,47 @@
+material {
+  name: "TitleSolarPhotosphere",
+  shading_model: unlit,
+  parameters: [
+    { type: float, name: time, default: 0.0 },
+    { type: float, name: radiance, default: 6.0 },
+  ],
+  varyings: [
+    { type: vec3, name: solar_local_position },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    solar_local_position = vertex.position;
+  }
+}
+
+fragment {
+  float SolarHash(vec3 p) {
+    p = fract(p * 0.3183099 + vec3(0.17, 0.41, 0.73));
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+
+  float SolarGranulation(vec3 p) {
+    vec3 cell = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(mix(SolarHash(cell), SolarHash(cell + vec3(1, 0, 0)), f.x),
+          mix(SolarHash(cell + vec3(0, 1, 0)), SolarHash(cell + vec3(1, 1, 0)), f.x), f.y),
+      mix(mix(SolarHash(cell + vec3(0, 0, 1)), SolarHash(cell + vec3(1, 0, 1)), f.x),
+          mix(SolarHash(cell + vec3(0, 1, 1)), SolarHash(cell + vec3(1, 1, 1)), f.x), f.y), f.z);
+  }
+
+  void Surface(inout MaterialInputs material) {
+    vec3 p = normalize(solar_local_position);
+    float limb = pow(max(p.z, 0.0), 0.55);
+    float detail = SolarGranulation(p * 18.0 + vec3(material_params.time * 0.006, 0, 0));
+    float finer = SolarGranulation(p * 75.0);
+    float visible_detail = 1.0 - smoothstep(0.04, 0.12, length(fwidth(p)));
+    float granules = mix(1.0, 0.93 + detail * 0.09 + finer * 0.03, visible_detail);
+    vec3 photosphere = mix(vec3(1.0, 0.80, 0.57), vec3(1.0, 0.96, 0.89), limb);
+    material.base_color = vec4(photosphere * material_params.radiance * (0.44 + 0.56 * limb) * granules, 1.0);
+  }
+}

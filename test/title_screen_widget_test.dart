@@ -111,6 +111,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Creditsは開始せず出典とCC BYを表示し、閉じた後に開始できる', (tester) async {
+    var starts = 0;
+    await _mountTitle(tester, reduceMotion: true, onStart: () => starts++);
+    await tester.tap(find.widgetWithText(TextButton, 'Credits'));
+    await tester.pumpAndSettle();
+    expect(starts, 0);
+    expect(find.text('素材のクレジット'), findsOneWidget);
+    final credits = tester.widget<SelectableText>(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(SelectableText),
+      ),
+    );
+    expect(credits.data, contains('ESO/S. Brunier'));
+    expect(
+      credits.data,
+      contains('https://www.eso.org/public/images/eso0932a/'),
+    );
+    expect(credits.data, contains('Creative Commons Attribution 4.0'));
+    expect(
+      credits.data,
+      contains('https://creativecommons.org/licenses/by/4.0/'),
+    );
+    await tester.tap(find.widgetWithText(TextButton, '閉じる'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(starts, 0, reason: '閉じる操作を背後の開始へ伝えない');
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pump();
+    expect(starts, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('暗転中に画面を破棄しても開始や例外を残さない', (tester) async {
     var starts = 0;
     await _mountTitle(tester, onStart: () => starts++);
