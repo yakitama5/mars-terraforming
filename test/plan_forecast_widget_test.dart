@@ -46,6 +46,7 @@ void main() {
         });
         await tester.pumpWidget(
           MarsApp(
+            showTitle: false,
             showIntroduction: false,
             controller: controller,
             sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
@@ -158,6 +159,7 @@ void main() {
           await controller.initialize(startTimer: false);
           await tester.pumpWidget(
             MarsApp(
+              showTitle: false,
               showIntroduction: false,
               controller: controller,
               sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
@@ -232,6 +234,7 @@ void main() {
     final contract = controller.state.currentPlanFor('factory')!;
     await tester.pumpWidget(
       MarsApp(
+        showTitle: false,
         showIntroduction: false,
         controller: controller,
         sceneBuilder: (_, _, _, _) => const SizedBox.expand(),

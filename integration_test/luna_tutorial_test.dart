@@ -70,6 +70,8 @@ void main() {
     });
     await tester.pumpWidget(MarsApp(controller: controller));
     await settle();
+    await tester.tap(find.byKey(const Key('title-start')));
+    await settle();
     expect(
       controller.state.firstRunTutorial,
       FirstRunTutorialStep.placeHousing,

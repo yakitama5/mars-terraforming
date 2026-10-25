@@ -42,6 +42,8 @@ void main() {
         await wait(const Duration(milliseconds: 350));
       }
 
+      await tap('title-start');
+
       for (
         var i = 0;
         i < 120 && find.byKey(const Key('cinematic-pause')).evaluate().isEmpty;

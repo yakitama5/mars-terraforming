@@ -21,6 +21,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: GameScreen(
+            showTitle: false,
             controller: controller,
             showIntroduction: false,
             renderScene: false,

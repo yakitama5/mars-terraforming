@@ -47,7 +47,13 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
       const intro = target.getByRole('button', { name: '物語をスキップ', exact: true });
       const game = target.getByRole('button', { name: '設備・進行', exact: true });
       const movie = target.getByRole('button', { name: '物語へ', exact: true });
-      await movie.or(intro).or(game).or(firstRunControl(target)).first().waitFor({ timeout: 60000 });
+      const title = target.getByRole('button', { name: 'タップまたはクリックしてスタート', exact: true });
+      const playable = movie.or(intro).or(game).or(firstRunControl(target));
+      await title.or(playable).first().waitFor({ timeout: 60000 });
+      if (await title.count()) {
+        await title.click();
+        await playable.first().waitFor({ timeout: 60000 });
+      }
       if (await movie.count()) {
         await movie.click();
         await intro.waitFor();

@@ -51,6 +51,7 @@ Widget _reviewApp({
 }) => Builder(
   builder: (context) {
     final product = MarsApp(
+      showTitle: false,
       controller: controller,
       renderScene: false,
       showIntroduction: false,
@@ -213,6 +214,7 @@ void main() {
           controller: controller,
           boundaryKey: key,
           child: GameScreen(
+            showTitle: false,
             controller: controller,
             renderScene: false,
             showIntroduction: false,
@@ -301,6 +303,7 @@ void main() {
           boundaryKey: key,
           textScale: 1.4,
           child: GameScreen(
+            showTitle: false,
             controller: controller,
             renderScene: false,
             showIntroduction: false,

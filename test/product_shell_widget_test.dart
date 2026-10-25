@@ -29,6 +29,7 @@ void main() {
             child: child!,
           ),
           home: GameScreen(
+            showTitle: false,
             showIntroduction: false,
             controller: controller,
             renderScene: false,
