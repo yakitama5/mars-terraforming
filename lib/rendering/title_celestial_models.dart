@@ -178,7 +178,7 @@ class TitleCelestialModels {
     required vm.Vector3 sunDirection,
     required double seconds,
     vm.Vector3? sunPosition,
-    vm.Quaternion? inertialToBody,
+    vm.Quaternion? inertialToView,
   }) {
     final sun = sunDirection.normalized();
     for (final material in _materials.skip(1)) {
@@ -200,8 +200,8 @@ class TitleCelestialModels {
         vm.Vector3(0, 1, 0),
         seconds * (earth ? .026 : .0015),
       );
-      node.rotation = earth && inertialToBody != null
-          ? inertialToBody * rotation
+      node.rotation = earth && inertialToView != null
+          ? inertialToView * rotation
           : rotation;
     }
   }

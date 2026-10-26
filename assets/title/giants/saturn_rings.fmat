@@ -1,0 +1,60 @@
+material {
+  name: "TitleSaturnIcyRings",
+  shading_model: unlit,
+  blending: alpha,
+  culling: none,
+  depth_write: false,
+  parameters: [
+    { type: sampler2d, name: ring_map, hint: default_black },
+    { type: vec3, name: sun_local, default: [-20.0, 8.0, 10.0] },
+    { type: vec3, name: camera_local, default: [0.0, 0.0, 20.0] },
+    { type: float, name: polar_ratio, default: 0.902038 },
+    { type: float, name: sunlight, default: 2.1 },
+  ],
+  varyings: [
+    { type: vec3, name: ring_local_position },
+  ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    ring_local_position = vertex.position;
+  }
+}
+fragment {
+  float PlanetVisibility(vec3 p, vec3 l, float light_distance) {
+    // Root-local ellipsoid axes are (1, polar_ratio, 1). The ring has no Y
+    // flattening, so apply the planet's polar radius exactly once here.
+    vec3 axes = vec3(1.0, material_params.polar_ratio, 1.0);
+    vec3 q = p / axes;
+    vec3 d = l / axes;
+    float t = -dot(q, d) / dot(d, d);
+    if (t <= 0.0 || t >= light_distance) return 1.0;
+    vec3 closest = q + d * t;
+    // A narrow analytic penumbra prevents a harsh pixel staircase at distance.
+    return smoothstep(0.98, 1.02, dot(closest, closest));
+  }
+
+  void Surface(inout MaterialInputs material) {
+    vec4 profile = texture(ring_map, vec2(GetUV0().x, 0.5));
+    float tau = -log(max(1.0 - profile.a, 0.015)) * 0.45;
+    vec3 p = ring_local_position;
+    vec3 to_sun = material_params.sun_local - p;
+    vec3 l = normalize(to_sun);
+    vec3 v = normalize(material_params.camera_local - p);
+    float mu_sun = max(abs(l.y), 0.025);
+    float mu_view = max(abs(v.y), 0.035);
+    float opacity = 1.0 - exp(-tau / mu_view);
+    float reflected = mu_sun / (mu_sun + mu_view) *
+        (1.0 - exp(-tau * (1.0 / mu_sun + 1.0 / mu_view)));
+    float transmitted = exp(-tau / mu_sun) * opacity;
+    float illuminated = l.y * v.y > 0.0
+        ? 0.18 + reflected * 0.95
+        : 0.025 + transmitted * 1.2;
+    float shadow = PlanetVisibility(p, l, length(to_sun));
+    vec3 albedo = SRGBToLinear(profile.rgb);
+    vec3 color = albedo * (0.012 +
+        illuminated * material_params.sunlight * shadow);
+    material.base_color = vec4(color, opacity);
+    PrepareMaterial(material);
+  }
+}

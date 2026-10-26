@@ -33,6 +33,7 @@ flutter:
     - flutter_scene_generated/
     - assets/title/planets/
     - assets/title/cosmos/
+    - assets/title/giants/
     - assets/audio/
     - assets/audio/luna/
     - assets/images/blue_horizon.png
