@@ -45,6 +45,21 @@ class PlannedTask {
   /// Staff remain committed until this paid iteration completes, even paused.
   int iterationSpecialists = 0;
 
+  /// Unpaid construction and research saved before v11 require a new explicit
+  /// start. The plan retains its destination and never blocks regular work.
+  bool requiresManualStart = false;
+
+  bool get isImmediateAction =>
+      definition.unique ||
+      definition.districtId != null ||
+      definition.developmentId != null ||
+      relocation ||
+      [
+        'build_habitat',
+        'earth_expansion',
+        'relocate_base_lab',
+      ].contains(taskId);
+
   /// Null means an explicitly selected unlimited repeat. Zero means finished.
   int? remainingRepeats;
   int completedRuns = 0;
@@ -82,6 +97,7 @@ class PlannedTask {
     'remainingMs': remainingMs,
     'iterationDurationMs': iterationDurationMs,
     'iterationSpecialists': iterationSpecialists,
+    'requiresManualStart': requiresManualStart,
     'cityId': cityId,
     'plotIndex': plotIndex,
     'targetLevel': targetLevel,
@@ -130,6 +146,7 @@ class PlannedTask {
                 ['lab', 'factory'].contains(plan.definition.facilityId)
             ? GameContent.baselineDepartmentStaff
             : 0);
+    plan.requiresManualStart = json['requiresManualStart'] as bool? ?? false;
     if (![
           'queued',
           'running',
@@ -140,7 +157,8 @@ class PlannedTask {
         plan.remainingMs < 0 ||
         plan.iterationDurationMs < 0 ||
         plan.iterationSpecialists < 0 ||
-        plan.iterationSpecialists > GameContent.maxSpecialists ||
+        (plan.requiresManualStart &&
+            (plan.status != 'queued' || !plan.isImmediateAction)) ||
         (!['lab', 'factory'].contains(plan.definition.facilityId) &&
             plan.iterationSpecialists != 0) ||
         (plan.status == 'running' &&
@@ -279,20 +297,55 @@ class GameState {
       specialistCount - developmentWorkers - reservedIndustrialWorkers;
   int get labResearchers =>
       math.max(0, researchers - specializedResearchers - reservedResearchers);
+  // Specialist fields above remain only for reading old snapshots. Operating
+  // capacity now belongs to buildings, not assignable pools of people.
+  int get totalPopulation => population + marsResidents;
+  int get moneyCapacity =>
+      GameContent.moneyBaseCapacity +
+      totalPopulation * GameContent.moneyCapacityPerResident;
+  int get researchPointCapacity =>
+      GameContent.researchPointBaseCapacity +
+      totalPopulation * GameContent.researchPointCapacityPerResident;
+  bool get isMoneyAtCapacity => moneyUnits >= moneyCapacity * moneyScale;
+  bool get isResearchAtCapacity =>
+      researchPointUnits >= researchPointCapacity * researchPointScale;
+
+  /// Preserve an older balance above capacity. Only subsequent positive
+  /// accrual is limited; normal upkeep and purchases continue to spend it.
+  int addMoneyUnits(int amount) {
+    final before = moneyUnits;
+    if (amount <= 0) {
+      moneyUnits = math.max(0, moneyUnits + amount);
+    } else {
+      moneyUnits += math.min(
+        amount,
+        math.max(0, moneyCapacity * moneyScale - moneyUnits),
+      );
+    }
+    return moneyUnits - before;
+  }
+
+  int addResearchPointUnits(int amount) {
+    if (amount < 0) throw ArgumentError.value(amount, 'amount');
+    final added = math.min(
+      amount,
+      math.max(
+        0,
+        researchPointCapacity * researchPointScale - researchPointUnits,
+      ),
+    );
+    researchPointUnits += added;
+    return added;
+  }
+
   double get researchPoints => researchPointUnits / researchPointScale;
-  int get researchPointUnitsPerMs => _researchPointUnitsPerMsFor(researchers);
+  int get researchPointUnitsPerMs => _researchPointUnitsPerMsFor();
   double get researchPointsPerMinute =>
       researchPointUnitsPerMs * 60000 / researchPointScale;
+  double get researchPointsPerHour => researchPointsPerMinute * 60;
   double researchPointsPerMinuteForResearchers(int count) =>
-      _researchPointUnitsPerMsFor(count) * 60000 / researchPointScale;
-  int _researchPointUnitsPerMsFor(int count) {
-    if (count < minAssignableResearchers || count > maxAssignableResearchers) {
-      return 0;
-    }
-    final baseCount = math.max(
-      0,
-      count - specializedResearchers - reservedResearchers,
-    );
+      researchPointsPerMinute;
+  int _researchPointUnitsPerMsFor() {
     final modifier =
         100 +
         math
@@ -300,22 +353,18 @@ class GameState {
               facilityBonusCap('lab'),
               districtEffects.research +
                   researchEfficiencyBonus('lab') +
-                  staffEfficiencyBonusFor('lab', count) +
                   partnershipEfficiencyBonus('lab') +
                   developmentEfficiencyBonus('lab'),
             )
             .toInt();
     var rate = facilities['lab']!
-        ? baseCount *
-              GameContent.researchPointsPerResearcherPerMinute *
-              modifier
+        ? GameContent.baseResearchPointsPerMinute * modifier
         : 0;
-    for (final entry in developmentResearchers.entries) {
-      if (isDevelopmentOperational(entry.key)) {
+    for (final id in developments) {
+      if (isDevelopmentOperational(id)) {
         rate +=
-            entry.value *
-            GameContent.developmentResearchRate(
-              developmentTechnologyId(entry.key),
+            GameContent.developmentResearchPointsPerMinute(
+              developmentTechnologyId(id),
             ) *
             modifier;
       }
@@ -349,28 +398,9 @@ class GameState {
         ResearchUnlockEffect.income || ResearchUnlockEffect.partnership => '',
       };
       if (target != facilityId) continue;
-      final capacity = developmentResearchCapacityFor(id);
-      final assigned = developmentResearchers[id] ?? 0;
-      if (target == 'lab') {
-        // An empty specialist laboratory has no autonomous RP or synergy.
-        result += capacity == 0
-            ? 0
-            : GameContent.developmentEfficiencyBonus(
-                    developmentTechnologyId(id),
-                  ) *
-                  assigned ~/
-                  capacity;
-      } else {
-        result += capacity == 0
-            ? GameContent.developmentEfficiencyBonus(
-                developmentTechnologyId(id),
-              )
-            : GameContent.developmentEfficiencyBonus(
-                    developmentTechnologyId(id),
-                  ) *
-                  (capacity - assigned) ~/
-                  capacity;
-      }
+      result += GameContent.developmentEfficiencyBonus(
+        developmentTechnologyId(id),
+      );
     }
     return result;
   }
@@ -432,7 +462,7 @@ class GameState {
     }
     return city.terrainAt(plotIndex) == 'ice'
         ? '氷層の採水適性を確認。ここで開始する現地採水の原水+${GameContent.surveyedIceYieldBonus}/工程。'
-        : '地質と搬入条件を記録済み。この区画の調査成果は共通RPへ反映済みです。';
+        : '地質と搬入条件を記録済み。この区画の調査は完了し、RP報酬の再取得はありません。';
   }
 
   int cityBatteryCharge(String cityId) => cityStock(cityId, 'charge');
@@ -507,10 +537,6 @@ class GameState {
   }
 
   Map<String, int> buildingLocalOutputs(String id, TaskDefinition task) {
-    final capacity = task.id.startsWith('building_import_')
-        ? 0
-        : developmentResearchCapacityFor(id);
-    final available = capacity - (developmentResearchers[id] ?? 0);
     final location = buildingLocations[id];
     final surveyBonus =
         task.workAction == 'mineIce' &&
@@ -521,12 +547,7 @@ class GameState {
         : 0;
     return {
       for (final e in task.localOutputs.entries)
-        e.key: capacity == 0
-            ? e.value + (e.key == 'rawWater' ? surveyBonus : 0)
-            : ((e.value + (e.key == 'rawWater' ? surveyBonus : 0)) * available +
-                      capacity -
-                      1) ~/
-                  capacity,
+        e.key: e.value + (e.key == 'rawWater' ? surveyBonus : 0),
     };
   }
 
@@ -549,13 +570,6 @@ class GameState {
     }
     final cityReason = cityLockReason(cityId);
     if (cityReason != null) return cityReason;
-    if (task.workAction != 'survey' &&
-        !task.id.startsWith('building_import_') &&
-        developmentResearchCapacityFor(id) > 0 &&
-        (developmentResearchers[id] ?? 0) >=
-            developmentResearchCapacityFor(id)) {
-      return '研究者を生産運転へ戻してください';
-    }
     if (task.workAction == 'survey') {
       final target = buildingSurveyTarget(id, targetPlotIndex);
       if (target < 0 || target >= city.plotCount) return '調査する区画を選んでください';
@@ -1317,6 +1331,7 @@ class GameState {
         GameContent.researchPointCost(id) * researchPointScale -
         researchPointUnits;
     if (gap <= 0) return 0;
+    if (GameContent.researchPointCost(id) > researchPointCapacity) return null;
     final rate = researchPointUnitsPerMs;
     return rate <= 0 ? null : (gap + rate - 1) ~/ rate;
   }
@@ -1406,28 +1421,11 @@ class GameState {
     return state;
   }
   String? staffAllocationReason(int count) {
-    if (count < 0 || count > specialistCount) return '専門職の総数内で配分してください';
-    if (count < minAssignableResearchers) {
-      return '研究と専門設備に$minAssignableResearchers名を確保中です。先に設備の配属を見直してください';
-    }
-    if (specialistCount - count - developmentWorkers <
-        reservedIndustrialWorkers) {
-      return '支払済みの製造・建設に$reservedIndustrialWorkers名を確保中です。完了まで減らせません';
-    }
-    return null;
+    return '人員の育成・配置は不要になりました。施設への投資で能力を伸ばせます';
   }
 
   int staffEfficiencyBonusFor(String facilityId, int researchCount) {
-    if (researchCount < 0 || researchCount > specialistCount) {
-      throw ArgumentError.value(researchCount, 'researchCount');
-    }
-    final assigned = switch (facilityId) {
-      'lab' => researchCount,
-      'factory' => specialistCount - researchCount - developmentWorkers,
-      _ => GameContent.baselineDepartmentStaff,
-    };
-    return (assigned - GameContent.baselineDepartmentStaff) *
-        GameContent.staffEfficiencyPerPerson;
+    return 0;
   }
 
   int staffEfficiencyBonus(String facilityId) =>
@@ -2201,6 +2199,7 @@ class GameState {
         json['schemaVersion'] == schemaVersion &&
         [
           GameContent.version,
+          'district-10',
           'district-9',
           'district-8',
           'district-7',
@@ -2240,6 +2239,7 @@ class GameState {
     state.habitatChoice = json['habitatChoice'] as String?;
     final currentAgency =
         json['contentVersion'] == GameContent.version ||
+        json['contentVersion'] == 'district-10' ||
         json['contentVersion'] == 'district-9' ||
         json['contentVersion'] == 'district-8' ||
         json['contentVersion'] == 'district-7' ||
@@ -2346,7 +2346,19 @@ class GameState {
         (p) => PlannedTask.fromJson(Map<String, dynamic>.from(p as Map)),
       ),
     );
-    if (!json.containsKey('researchPointUnits') &&
+    for (final plan in state.plans) {
+      if (plan.status == 'queued' && plan.isImmediateAction) {
+        plan.requiresManualStart = true;
+        plan.stopReason = '着手待ち：内容を確認して開始してください';
+      }
+    }
+    final strandedTutorialResearch =
+        json['contentVersion'] != GameContent.version &&
+        state.firstRunTutorial == FirstRunTutorialStep.startResearch &&
+        state.plans.any(
+          (plan) => plan.taskId == 'life_support' && plan.status == 'queued',
+        );
+    if ((!json.containsKey('researchPointUnits') || strandedTutorialResearch) &&
         state.firstRunTutorial != FirstRunTutorialStep.completed &&
         !state.research.contains('life_support') &&
         !state.plans.any(
@@ -2354,8 +2366,10 @@ class GameState {
         )) {
       // The old protected walkthrough cannot advance its clock to earn RP.
       // Carry only its unused starter research budget, once, into the new bank.
-      state.researchPointUnits =
-          GameContent.researchPointCost('life_support') * researchPointScale;
+      state.researchPointUnits = math.max(
+        state.researchPointUnits,
+        GameContent.researchPointCost('life_support') * researchPointScale,
+      );
     }
     state.log.addAll((json['log'] as List).cast<String>());
     // Optional additions keep existing saves playable without replaying history.
@@ -2441,26 +2455,19 @@ class GameState {
                       state.developmentTechnologyId(id),
                     )) ||
           assigned < 0 ||
-          assigned > state.developmentResearchCapacityFor(id) ||
-          (state.developmentEnabled[id] != true && assigned != 0) ||
           (state.developmentEnabled[id] == true &&
               state.facilities[state.developmentFacilityFor(id)] != true)) {
         throw const FormatException('設備の導入先または配属が不正です');
       }
     }
-    if (state.specializedResearchers + state.reservedResearchers >
-            state.researchers ||
-        state.developments.where(state.isDevelopmentOperational).length >
-            GameContent.maxOperationalDevelopments) {
-      throw const FormatException('専門設備の配属または稼働数が不正です');
+    if (state.developments.where(state.isDevelopmentOperational).length >
+        GameContent.maxOperationalDevelopments) {
+      throw const FormatException('専門設備の稼働数が不正です');
     }
-    if (state.specialistCount < GameContent.initialSpecialists ||
-        state.specialistCount > GameContent.maxSpecialists ||
+    if (state.specialistCount < 0 ||
         state.researchers < 0 ||
-        state.researchers > state.specialistCount ||
-        state.researchers < state.reservedResearchers ||
-        state.industrialWorkers < state.reservedIndustrialWorkers) {
-      throw const FormatException('専門職の配分・確保人数が不正です');
+        state.researchers > state.specialistCount) {
+      throw const FormatException('過去の専門職記録が不正です');
     }
     for (final entry in state.partnershipChoices.entries) {
       final event = GameContent.partnerships[entry.key];

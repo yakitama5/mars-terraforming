@@ -5,7 +5,8 @@ import 'dart:math';
 import 'package:mars_terraforming/domain/game_content.dart';
 import 'package:mars_terraforming/domain/game_engine.dart';
 import 'package:mars_terraforming/domain/game_state.dart';
-import 'package:mars_terraforming/domain/onboarding_guide.dart';
+
+import 'city_progression_route.dart';
 
 /// Reproducible balance check using public player commands and event time only.
 /// Run with `dart tools/verify_progression.dart`; failure returns nonzero even
@@ -24,8 +25,10 @@ void main() {
         'parallelStrategy': runParallelStrategyComparison(),
       }),
     );
-  } catch (error) {
-    stderr.writeln(jsonEncode({'status': 'failed', 'error': '$error'}));
+  } catch (error, stack) {
+    stderr.writeln(
+      jsonEncode({'status': 'failed', 'error': '$error', 'stack': '$stack'}),
+    );
     exitCode = 1;
   }
 }
@@ -44,7 +47,7 @@ class ProgressionVerification {
     'status': 'passed',
     'contentVersion': GameContent.version,
     'startingMoney': GameContent.initialMoney,
-    'measurement': 'Simulated calendar time; active play time is not measured.',
+    'measurement': 'Simulated calendar time after the real protected walkthrough, including its normal first-house construction help; opening reading and active play time are not measured.',
     'scope': includesFrontiers
         ? 'A selected habitation and six-frontier route, not all research or the global-environment ending.'
         : 'A selected habitation route with its discovered prerequisites; other branches remain optional.',
@@ -66,269 +69,73 @@ class ProgressionVerification {
 ProgressionVerification runProgressionVerification({
   bool includeFrontiers = false,
 }) {
-  final game = GameEngine(GameState.initial(DateTime.utc(2026, 10, 13)));
+  final game = GameEngine(GameState.initial(DateTime.utc(2026, 10, 26)));
   final milestones = <Map<String, Object>>[];
-  void require(bool condition, String reason) {
-    if (!condition) throw StateError(reason);
-  }
-
-  void command(String? reason) {
-    if (reason != null) throw StateError(reason);
-  }
-
-  void advanceUntil(bool Function() condition) {
-    var events = 0;
-    while (!condition()) {
-      final running = game.state.plans.where(
-        (plan) =>
-            plan.status == 'running' &&
-            game.state.facilities[plan.definition.facilityId] == true,
-      );
-      final waits = [
-        ...running.map((plan) => plan.remainingMs),
-        for (final plan in game.state.plans.where(
-          (plan) => !plan.isFinished && plan.definition.unique,
-        ))
-          if (game.state.researchWaitMs(plan.taskId) case final int milliseconds
-              when milliseconds > 0)
-            milliseconds,
-      ];
-      require(
-        waits.isNotEmpty,
-        'Route is blocked: ${game.state.plans.where((p) => !p.isFinished).map((p) => '${p.taskId}: ${p.stopReason}').join(' / ')}',
-      );
-      game.advanceBy(Duration(milliseconds: waits.reduce(min)));
-      require(++events < 200000, 'Too many completion events');
-      require(
-        game.state.simulatedMs < const Duration(days: 30).inMilliseconds,
-        'The selected habitation route exceeded its 30-day watchdog; this is not an all-research or global-ending target',
-      );
-    }
-  }
-
-  void record(String step) {
-    milestones.add({
-      'step': step,
-      'elapsedHours': game.state.simulatedMs / Duration.millisecondsPerHour,
-      'money': game.state.money,
-      'researchEfficiency': game.state.researchBonusPercent,
-      'factoryEfficiency': game.state.factoryBonusPercent,
-      'launchEfficiency': game.state.launchBonusPercent,
-      'marsEfficiency': game.state.marsBonusPercent,
-    });
-  }
-
-  void research(String id) {
-    _studyPublicResearch(
-      game,
-      id,
-      command: command,
-      waitUntil: advanceUntil,
-      onCompleted: record,
-    );
-  }
-
-  void prioritize(PlannedTask plan) {
-    final candidates = game.state
-        .upcomingPlansFor(plan.definition.facilityId)
-        .where((p) => p.id != plan.id)
-        .toList();
-    if (candidates.isNotEmpty) {
-      command(
-        game.reorderPlan(
-          plan.id,
-          relativeToPlanId: candidates.first.id,
-          before: true,
-        ),
-      );
-    }
-  }
-
-  void job(String id) {
-    command(game.enqueue(id));
-    final plan = game.state.plans.last;
-    prioritize(plan);
-    advanceUntil(() => plan.isFinished);
-    record(id);
-  }
-
-  void district(String cityId, int plotIndex, String districtId) {
-    command(game.enqueueDistrict(cityId, plotIndex, districtId));
-    final plan = game.state.plans.last;
-    prioritize(plan);
-    advanceUntil(() => plan.isFinished);
-    record('$cityId:$plotIndex:$districtId');
-  }
-
-  void replaceContract(String oldId, String nextId) {
-    final old = game.state.plans.firstWhere(
-      (plan) => plan.taskId == oldId && !plan.isFinished,
-    );
-    command(game.cancelQueued(old.id));
-    command(game.enqueue(nextId, repeats: null));
-  }
-
-  command(game.enqueue('factory_contract', repeats: null));
-  command(game.enqueue('launch_contract', repeats: null));
-  research('life_support');
-  research('urban_planning');
+  final route = CityProgressionRoute(
+    game,
+    onEvent: (kind, step) {
+      if (kind != 'completion') return;
+      milestones.add({
+        'step': step,
+        'elapsedHours': game.state.simulatedMs / Duration.millisecondsPerHour,
+        'money': game.state.money,
+        'population': game.state.totalPopulation,
+        'researchEfficiency': game.state.researchBonusPercent,
+        'factoryEfficiency': game.state.factoryBonusPercent,
+        'launchEfficiency': game.state.launchBonusPercent,
+        'marsEfficiency': game.state.marsBonusPercent,
+      });
+    },
+  );
+  route.introduction();
+  route.earnings();
+  route.research('life_support');
+  route.research('deployable_solar_arrays');
+  route.research('urban_planning');
+  route.accessMars();
+  route.habitats(1);
   for (final id in [
     'process_design',
     'cargo_packaging',
     'habitat_operations',
+    'automated_fabrication',
+    'reusable_launch',
+    'orbital_logistics',
+    'closed_ecology',
+    'local_resources',
+    'intercity_logistics',
+    'industrial_network',
+    'regional_habitats',
   ]) {
-    research(id);
+    route.research(id);
   }
-  district('earth_highland', 0, 'campus');
-  district('earth_highland', 1, 'solar');
-  district('earth_highland', 3, 'industry');
-  for (var supply = 0; supply < 2; supply++) {
-    job('habitat_kit');
-    job('moon_delivery');
-  }
-  district('moon_south_pole', 2, 'moon_outpost');
-  district('moon_south_pole', 3, 'moon_spaceport');
-  job('mars_probe');
-  job('habitat_kit');
-  job('mars_delivery');
-  command(game.chooseHabitat('dome'));
-  district('mars_arcadia', 2, 'mars_habitat');
-  research('automated_fabrication');
-  replaceContract('factory_contract', 'precision_contract');
-  research('reusable_launch');
-  district('earth_delta', 0, 'spaceport');
-  research('orbital_logistics');
-  replaceContract('launch_contract', 'orbital_contract');
-  job('batch_habitat_kit');
-  job('cargo_delivery');
-  district('mars_elysium', 3, 'mars_habitat');
-  research('closed_ecology');
-  district('mars_arcadia', 0, 'greenhouse');
-  research('local_resources');
-  district('mars_arcadia', 1, 'extractor');
-  research('intercity_logistics');
-  research('industrial_network');
-  research('regional_habitats');
-
+  route.habitats(2);
   if (includeFrontiers) {
-    // A real local laboratory consumes one of the remaining imported kits.
-    // Optional research remains an investment after the established route,
-    // so its arrival times can still be compared without rewriting history.
-    district('mars_arcadia', 4, 'mars_lab');
+    route.district('mars_lab');
     for (final id in GameContent.optionalFrontierResearchIds) {
-      research(id);
+      route.research(id);
     }
   }
-
-  require(
-    game.state.research.containsAll([
-      'life_support',
-      'urban_planning',
-      'process_design',
-      'cargo_packaging',
-      'habitat_operations',
-      'automated_fabrication',
-      'reusable_launch',
-      'orbital_logistics',
-      'closed_ecology',
-      'local_resources',
-      'intercity_logistics',
-      'industrial_network',
-      'regional_habitats',
-      if (includeFrontiers) ...GameContent.optionalFrontierResearchIds,
-    ]),
-    'The selected route or a requested frontier was not reachable',
-  );
-  require(
-    game.state.research.length < ResearchCatalog.purchasableTechnologies.length,
-    'Habitation must leave other research branches available',
-  );
-  require(
-    game.state.developedMarsCityIds.length == 2,
-    'Expected two Mars cities',
-  );
-  require(game.state.marsHabitats == 2, 'Expected two completed habitats');
-  require(
-    game.state.marsKits == (includeFrontiers ? 2 : 3),
-    'Cargo was duplicated or lost',
-  );
+  if (game.state.developedMarsCityIds.length != 2 ||
+      game.state.marsHabitats != 2 ||
+      game.state.research.length >=
+          ResearchCatalog.purchasableTechnologies.length) {
+    throw StateError(
+      'The selected two-city habitation route was not preserved',
+    );
+  }
   final snapshot = jsonEncode(game.state.toJson());
-  final restored = GameEngine(
+  final loaded = GameEngine(
     GameState.fromJson(jsonDecode(snapshot) as Map<String, dynamic>),
   );
-  require(
-    jsonEncode(restored.state.toJson()) == snapshot,
-    'Reload changed state',
-  );
+  if (jsonEncode(loaded.state.toJson()) != snapshot) {
+    throw StateError('Reload changed the completed city, balances or rewards');
+  }
   return ProgressionVerification(
     game.state,
     milestones,
     includesFrontiers: includeFrontiers,
   );
-}
-
-/// Visit only the exposed research frontier. Dependencies determine the chosen
-/// goal, while hidden roots are reached by completing affordable visible work
-/// in the same field. No knowledge, points, money or facilities are injected.
-void _studyPublicResearch(
-  GameEngine game,
-  String id, {
-  required void Function(String? reason) command,
-  required void Function(bool Function()) waitUntil,
-  required void Function(String id) onCompleted,
-}) {
-  if (game.state.research.contains(id)) return;
-  final target = GameContent.researchTechnologies[id]!;
-  for (final parent in target.prerequisiteIds) {
-    _studyPublicResearch(
-      game,
-      parent,
-      command: command,
-      waitUntil: waitUntil,
-      onCompleted: onCompleted,
-    );
-  }
-  if (target.alternativePrerequisiteIds.isNotEmpty &&
-      !target.alternativePrerequisiteIds.any(game.state.research.contains)) {
-    _studyPublicResearch(
-      game,
-      target.alternativePrerequisiteIds.first,
-      command: command,
-      waitUntil: waitUntil,
-      onCompleted: onCompleted,
-    );
-  }
-  var discoverySteps = 0;
-  while (!game.state.isResearchDiscovered(id)) {
-    final candidates =
-        GameContent.researchTechnologies.values
-            .where(
-              (candidate) =>
-                  candidate.isPurchasable &&
-                  candidate.field == target.field &&
-                  game.state.isResearchDiscovered(candidate.id) &&
-                  !game.state.research.contains(candidate.id) &&
-                  game.researchRequirementReasons(candidate.id).isEmpty,
-            )
-            .toList()
-          ..sort((a, b) {
-            final cost = GameContent.researchPointCost(a.id)
-                .compareTo(GameContent.researchPointCost(b.id));
-            return cost != 0 ? cost : a.catalogId.compareTo(b.catalogId);
-          });
-    if (candidates.isEmpty || ++discoverySteps > 30) {
-      throw StateError('No exposed research can reveal ${target.catalogId}');
-    }
-    final candidate = candidates.first;
-    command(game.enqueue(candidate.id));
-    waitUntil(() => game.state.research.contains(candidate.id));
-    onCompleted(candidate.id);
-  }
-  if (!game.state.research.contains(id)) {
-    command(game.enqueue(id));
-    waitUntil(() => game.state.research.contains(id));
-    onCompleted(id);
-  }
 }
 
 enum EarlyInvestmentOrder { industryOnly, industryFirst, housingFirst }
@@ -373,6 +180,7 @@ class OnboardingVerification {
     'status': 'passed',
     'measurement':
         'Scripted decision opportunities in ${state.simulatedMs ~/ Duration.millisecondsPerMinute} simulated minutes; '
+        'includes the normal tutorial construction help, excludes opening reading; '
         'not measured active play time or an optimal route.',
     'startingMoney': GameContent.initialMoney,
     'elapsedMinutes': state.simulatedMs / Duration.millisecondsPerMinute,
@@ -421,10 +229,9 @@ OnboardingVerification runOnboardingVerification({
   ).run();
 }
 
-/// A reproducible first-hour policy. It reacts to exposed knowledge, actual
-/// completions and earned money. Research production runs alongside other work;
-/// paid training consumes the laboratory and its researchers instead of an
-/// obsolete research timer. No state is injected into these playable routes.
+/// Event-driven public decisions. New construction waits for an idle facility
+/// and its full budget; research is purchased explicitly after RP and city
+/// conditions are met. Background earnings and started work continue normally.
 class _FirstHourRoute {
   _FirstHourRoute({
     this.parallelCargo = true,
@@ -435,16 +242,12 @@ class _FirstHourRoute {
   final bool parallelCargo;
   final EarlyInvestmentOrder investmentOrder;
   final String? partnershipChoice;
-  final game = GameEngine(GameState.initial(DateTime.utc(2026, 10, 14)));
+  final Duration horizon;
+  final game = GameEngine(GameState.initial(DateTime.utc(2026, 10, 26)));
   final events = <Map<String, Object>>[];
   final projects = <String, PlannedTask>{};
   final reported = <String>{};
-  final Duration horizon;
-  bool firstCohortAllocated = false;
-  bool secondCohortAllocated = false;
-  bool stoppedContractForStaff = false;
-  bool thirdCohortAllocated = false;
-  bool fourthCohortAllocated = false;
+  bool analysisEnabled = false;
 
   bool booked(String label) => projects.containsKey(label);
   bool done(String label) => projects[label]?.status == 'completed';
@@ -459,15 +262,14 @@ class _FirstHourRoute {
       'money': game.state.money,
       'researchPoints': game.state.researchPoints,
       'researchPointsPerMinute': game.state.researchPointsPerMinute,
-      'researchers': game.state.researchers,
-      'industrialWorkers': game.state.industrialWorkers,
+      'population': game.state.totalPopulation,
       'completedDistricts': game.state.districts.length,
       'researchCount': game.state.research.length,
       if (game.state.researchPointsPerMinute > 0 &&
           (factory?.definition.districtId != null ||
               mars?.definition.districtId != null))
         'parallelWork': {
-          'research': 'Common RP production',
+          'research': 'Facility RP production',
           if (factory?.definition.districtId != null)
             'factory': factory!.taskId,
           if (mars?.definition.districtId != null) 'mars': mars!.taskId,
@@ -475,281 +277,198 @@ class _FirstHourRoute {
     });
   }
 
-  void command(String? reason, String action) {
-    if (reason != null) throw StateError('$action: $reason');
-    record('decision', action);
-  }
-
-  void prioritize(PlannedTask plan, {bool first = false}) {
-    final others = game.state
-        .upcomingPlansFor(plan.definition.facilityId)
-        .where(
-          (other) =>
-              other.id != plan.id &&
-              (first || other.taskId.endsWith('_contract')),
-        )
-        .toList();
-    if (others.isNotEmpty) {
-      command(
-        game.reorderPlan(
-          plan.id,
-          relativeToPlanId: others.first.id,
-          before: true,
-        ),
-        'Prioritize ${plan.taskId} over future work',
-      );
+  bool prepare(String facility, int cost) {
+    if (game.state.money < cost) return false;
+    if (game.state.facilities[facility] != true) {
+      final reason = game.setFacilityEnabled(facility, true);
+      if (reason != null) return false;
+      record('decision', 'Resume $facility');
     }
+    final current = game.state.currentPlanFor(facility);
+    if (current == null) return true;
+    if (current.remainingRepeats == null) {
+      final reason = game.cancelQueued(current.id);
+      if (reason != null) throw StateError(reason);
+      record('decision', 'Finish current ${current.taskId} before investment');
+    }
+    return false;
   }
 
-  void track(
-    String label,
-    String? result,
-    String action, {
-    bool first = false,
-  }) {
-    command(result, action);
-    final plan = game.state.plans.last;
-    projects[label] = plan;
-    prioritize(plan, first: first);
-  }
-
-  void task(String label, String id, {bool first = false}) =>
-      track(label, game.enqueue(id), 'Reserve $id', first: first);
-  void district(String label, String city, int plot, String type) => track(
-    label,
-    game.enqueueDistrict(city, plot, type),
-    'Develop $city:$plot:$type',
-  );
-  void upgradeHousing() => track(
-    'Original coastal housing upgraded',
-    game.upgradeDistrict('earth_delta', 0),
-    'Upgrade coastal housing',
-  );
-
-  void collectCompletions() {
-    for (final project in projects.entries) {
-      if (done(project.key) && reported.add(project.key)) {
-        record('completion', project.key);
+  void task(String label, String id) {
+    if (booked(label)) return;
+    final task = GameContent.tasks[id]!;
+    String? reason;
+    if (task.unique) {
+      if (game.researchRequirementReasons(id).isNotEmpty ||
+          game.state.researchPoints < GameContent.researchPointCost(id)) {
+        return;
       }
+      reason = game.unlockResearch(id);
+    } else {
+      if (!prepare(task.facilityId, game.state.taskCost(task))) return;
+      reason = game.enqueue(id);
     }
+    if (reason != null) return;
+    projects[label] = game.state.plans.last;
+    record('decision', task.unique ? 'Unlock $id' : 'Start $id');
   }
 
-  // Do not let a queued investment cut off the contracts that fund it. Move
-  // earnings ahead while cash is short, then put the selected project back
-  // ahead of the next unpaid repetition once its budget is available.
-  void fundQueuedProjects() {
-    for (final facility in ['factory', 'launch']) {
-      final queue = game.state.upcomingPlansFor(facility);
-      final contract = queue
-          .where(
-            (plan) =>
-                plan.taskId.endsWith('_contract') &&
-                plan.remainingRepeats == null,
-          )
-          .firstOrNull;
-      final project = queue
-          .where((plan) => !plan.taskId.endsWith('_contract'))
-          .firstOrNull;
-      if (contract == null || project == null) continue;
-      final affordable = game.state.money >= game.state.plannedCost(project);
-      final first = affordable ? project : contract;
-      if (queue.first.id == first.id) continue;
-      command(
-        game.reorderPlan(
-          first.id,
-          relativeToPlanId: queue.first.id,
-          before: true,
-        ),
-        affordable
-            ? 'Resume funded project ${project.taskId}'
-            : 'Earn the budget for ${project.taskId}',
-      );
+  void district(String label, String city, int plot, String type) {
+    if (booked(label)) return;
+    final quote = game.state.districtPreview(city, plot, type);
+    if (!quote.isValid) return;
+    final planet = GameContent.districts[type]!.planet;
+    if (!prepare(planet == 'earth' ? 'factory' : planet, quote.cost)) return;
+    final reason = game.enqueueDistrict(city, plot, type);
+    if (reason != null) throw StateError('$label: $reason');
+    projects[label] = game.state.plans.last;
+    record('decision', 'Develop $city:$plot:$type');
+  }
+
+  void upgradeHousing() {
+    const label = 'Original coastal housing upgraded';
+    if (booked(label)) return;
+    final quote = game.state.districtPreview(
+      'earth_delta',
+      0,
+      'housing',
+      upgrade: true,
+    );
+    if (!quote.isValid || !prepare('factory', quote.cost)) return;
+    final reason = game.upgradeDistrict('earth_delta', 0);
+    if (reason != null) throw StateError(reason);
+    projects[label] = game.state.plans.last;
+    record('decision', 'Upgrade coastal housing');
+  }
+
+  void analysisLab() {
+    const label = 'Next research installation';
+    if (booked(label) || !game.state.research.contains('local_resources')) {
+      return;
+    }
+    final quote = game.state.buildingPreview(
+      'local_resources',
+      cityId: 'earth_delta',
+      plotIndex: 10,
+    );
+    if (!quote.isValid || !prepare('lab', quote.cost)) return;
+    final reason = game.enqueueMapBuilding(
+      'local_resources',
+      cityId: 'earth_delta',
+      plotIndex: 10,
+    );
+    if (reason != null) throw StateError(reason);
+    projects[label] = game.state.plans.last;
+    record('decision', 'Build local resource analysis laboratory');
+  }
+
+  void earnings() {
+    for (final entry in {
+      'factory': 'factory_contract',
+      'launch': 'launch_contract',
+    }.entries) {
+      if (game.state.currentPlanFor(entry.key) != null ||
+          game.state.plans.any(
+            (p) => !p.isFinished && p.definition.facilityId == entry.key,
+          )) {
+        continue;
+      }
+      if (game.state.facilities[entry.key] != true &&
+          game.state.money >=
+              GameContent.facilities[entry.key]!.upkeepPerMinute) {
+        final reason = game.setFacilityEnabled(entry.key, true);
+        if (reason != null) continue;
+      }
+      final reason = game.enqueue(entry.value, repeats: null);
+      if (reason == null) record('decision', 'Earn with ${entry.value}');
     }
   }
 
   OnboardingVerification run() {
-    command(
-      game.enqueue('factory_contract', repeats: null),
-      'Fund development with the factory',
+    final introduction = CityProgressionRoute(game, onEvent: record);
+    introduction.introduction();
+    projects['First coastal housing'] = game.state.plans.firstWhere(
+      (p) => p.taskId == 'district_housing',
     );
-    command(
-      game.enqueue('launch_contract', repeats: null),
-      'Fund development with launch services',
+    projects['Life support'] = game.state.plans.firstWhere(
+      (p) => p.taskId == 'life_support',
     );
-    task('Life support', 'life_support');
-    task('Solar research', 'deployable_solar_arrays');
-    district('First coastal housing', 'earth_delta', 0, 'housing');
+    reported.addAll(['First coastal housing', 'Life support']);
+    earnings();
     var iterations = 0;
     while (game.state.simulatedMs < horizon.inMilliseconds) {
       if (++iterations > 5000) {
-        throw StateError('The first-hour policy did not converge');
+        throw StateError('First-hour policy did not converge');
       }
-      collectCompletions();
-      if (done('Solar research') && !booked('Urban planning')) {
-        task('Urban planning', 'urban_planning');
+      for (final project in projects.entries) {
+        if (done(project.key) && reported.add(project.key)) {
+          record('completion', project.key);
+        }
       }
-      if (done('Urban planning') && !booked('Resource survey')) {
-        task('Resource survey', 'local_resources');
-      }
-      if (done('Resource survey') && !booked('Greenhouse research')) {
+      task('Solar research', 'deployable_solar_arrays');
+      if (done('Solar research')) task('Urban planning', 'urban_planning');
+      if (done('Urban planning')) task('Resource survey', 'local_resources');
+      if (done('Resource survey')) {
         task('Greenhouse research', 'orbital_gardens');
       }
-      if (done('First coastal housing') &&
-          parallelCargo &&
-          !booked('First habitat kit')) {
+      if (done('First coastal housing') && parallelCargo) {
         task('First habitat kit', 'habitat_kit');
       }
       if (done('First coastal housing') &&
-          (!parallelCargo || done('First habitat kit')) &&
-          !booked('Second coastal housing')) {
+          (!parallelCargo || done('First habitat kit'))) {
         district('Second coastal housing', 'earth_delta', 5, 'housing');
       }
-      if (done('Second coastal housing') &&
-          !booked('Power supports the campus')) {
+      if (done('Second coastal housing')) {
         district('Power supports the campus', 'earth_delta', 2, 'solar');
       }
-      if (done('Power supports the campus') &&
-          done('Urban planning') &&
-          !booked('First specialist cohort')) {
-        task('First specialist cohort', 'train_specialists', first: true);
-      }
-      if (done('First specialist cohort') && !firstCohortAllocated) {
-        // Keep the six researchers already supporting paid laboratory work;
-        // the first new cohort becomes industrial capacity immediately.
-        command(
-          game.assignResearchers(6),
-          'Keep six researchers and add industrial capacity',
-        );
-        firstCohortAllocated = true;
-      }
-      if (done('Urban planning') && !booked('Campus adjoining both houses')) {
-        district('Campus adjoining both houses', 'earth_delta', 1, 'campus');
-      }
-      if (partnershipChoice != null && done('Urban planning')) {
-        for (final offer in game.state.availablePartnerships.toList()) {
-          command(
-            game.choosePartnership(offer.id, partnershipChoice!),
-            'Choose $partnershipChoice for ${offer.id}',
-          );
+      if (done('Urban planning')) {
+        if (!parallelCargo || booked('First Mars kit')) {
+          district('Campus adjoining both houses', 'earth_delta', 1, 'campus');
         }
-      }
-      if (done('Urban planning') &&
-          firstCohortAllocated &&
-          !booked('Second specialist cohort')) {
-        task('Second specialist cohort', 'train_specialists', first: true);
-      }
-      if (done('Second specialist cohort') && !secondCohortAllocated) {
-        if (game.state.staffAllocationReason(8) == null) {
-          command(
-            game.assignResearchers(8),
-            'Assign eight researchers and eight industrial workers',
-          );
-          secondCohortAllocated = true;
-          if (stoppedContractForStaff) {
-            command(
-              game.enqueue('factory_contract', repeats: null),
-              'Resume factory earnings after preserving paid staffing',
-            );
+        if (partnershipChoice != null) {
+          for (final offer in game.state.availablePartnerships.toList()) {
+            final reason = game.choosePartnership(offer.id, partnershipChoice!);
+            if (reason != null) throw StateError(reason);
+            record('decision', 'Choose $partnershipChoice for ${offer.id}');
           }
-        } else if (!stoppedContractForStaff) {
-          final contract = game.state.plans.firstWhere(
-            (plan) => plan.taskId == 'factory_contract' && !plan.isFinished,
-          );
-          command(
-            game.cancelQueued(contract.id),
-            'Finish paid factory work before reallocating trained staff',
-          );
-          stoppedContractForStaff = true;
         }
       }
-      if (done('Greenhouse research') &&
-          secondCohortAllocated &&
-          !booked('Next robotics knowledge')) {
-        task('Next robotics knowledge', 'autonomous_rovers');
-      }
-      if (partnershipChoice != null &&
-          booked('Next robotics knowledge') &&
-          !done('Next robotics knowledge') &&
-          !booked('Third specialist cohort') &&
-          game.state.researchPoints >=
-              GameContent.researchPointCost('autonomous_rovers') / 2) {
-        task('Third specialist cohort', 'train_specialists', first: true);
-      }
-      if (partnershipChoice == null &&
-          done('First Mars settlement') &&
-          !booked('Third specialist cohort')) {
-        task('Third specialist cohort', 'train_specialists', first: true);
-      }
-      if (done('Third specialist cohort') &&
-          !thirdCohortAllocated &&
-          game.state.staffAllocationReason(10) == null) {
-        command(
-          game.assignResearchers(10),
-          'Invest the third cohort in faster common RP production',
-        );
-        thirdCohortAllocated = true;
-      }
-      if (partnershipChoice != null &&
-          thirdCohortAllocated &&
-          done(
-            partnershipChoice == 'funding'
-                ? 'Next robotics knowledge'
-                : 'First Mars settlement',
-          ) &&
-          !booked('Fourth specialist cohort')) {
-        task('Fourth specialist cohort', 'train_specialists', first: true);
-      }
-      if (done('Fourth specialist cohort') &&
-          !fourthCohortAllocated &&
-          game.state.staffAllocationReason(12) == null) {
-        command(
-          game.assignResearchers(12),
-          'Assign the fourth cohort to future common research',
-        );
-        fourthCohortAllocated = true;
-      }
-      if (done('Next robotics knowledge') && !booked('Next research project')) {
-        task('Next research project', 'automated_fabrication');
-      }
-      if (done('Campus adjoining both houses') &&
-          !parallelCargo &&
-          !booked('First habitat kit')) {
+      if (done('Campus adjoining both houses') && !parallelCargo) {
         task('First habitat kit', 'habitat_kit');
       }
-      if (done('First habitat kit') && !booked('First Moon delivery')) {
+      if (done('First habitat kit')) {
         task('First Moon delivery', 'moon_delivery');
       }
-      if (done('First Moon delivery') && !booked('Moon outpost')) {
+      if (done('First Moon delivery')) {
         district('Moon outpost', 'moon_south_pole', 2, 'moon_outpost');
-        task('Second Moon kit', 'habitat_kit', first: true);
+        task('Second Moon kit', 'habitat_kit');
       }
-      if (done('Second Moon kit') && !booked('Second Moon delivery')) {
+      if (done('Second Moon kit')) {
         task('Second Moon delivery', 'moon_delivery');
       }
-      if (done('Moon outpost') &&
-          done('Second Moon delivery') &&
-          !booked('Moon launch base')) {
+      if (done('Moon outpost') && done('Second Moon delivery')) {
         district('Moon launch base', 'moon_south_pole', 3, 'moon_spaceport');
       }
-      if (done('Moon launch base') && !booked('Mars exploration')) {
+      if (done('Moon launch base')) {
         task('Mars exploration', 'mars_probe');
-        task('First Mars kit', 'habitat_kit', first: true);
+        task('First Mars kit', 'habitat_kit');
       }
-      if (done('Mars exploration') &&
-          done('First Mars kit') &&
-          !booked('First Mars delivery')) {
+      if (done('Mars exploration') && done('First Mars kit')) {
         task('First Mars delivery', 'mars_delivery');
       }
-      if (done('First Mars delivery') && !booked('First Mars settlement')) {
-        command(game.chooseHabitat('dome'), 'Choose dome habitation on plains');
+      if (done('First Mars delivery')) {
+        if (game.state.habitatChoice == null) {
+          final reason = game.chooseHabitat('dome');
+          if (reason != null) throw StateError(reason);
+          record('decision', 'Choose dome habitation');
+        }
         district('First Mars settlement', 'mars_arcadia', 2, 'mars_habitat');
       }
       if (done('Campus adjoining both houses') &&
-          (parallelCargo || booked('First habitat kit'))) {
+          booked('First Mars settlement')) {
         if (investmentOrder == EarlyInvestmentOrder.housingFirst) {
-          if (!booked('Original coastal housing upgraded')) upgradeHousing();
-          if (done('Original coastal housing upgraded') &&
-              !booked('Mineral industry demonstration')) {
+          upgradeHousing();
+          if (done('Original coastal housing upgraded')) {
             district(
               'Mineral industry demonstration',
               'earth_delta',
@@ -758,104 +477,70 @@ class _FirstHourRoute {
             );
           }
         } else {
-          if (!booked('Mineral industry demonstration')) {
-            district(
-              'Mineral industry demonstration',
-              'earth_delta',
-              8,
-              'industry',
-            );
-          }
+          district(
+            'Mineral industry demonstration',
+            'earth_delta',
+            8,
+            'industry',
+          );
           if (investmentOrder == EarlyInvestmentOrder.industryFirst &&
-              booked('Mineral industry demonstration') &&
-              !booked('Original coastal housing upgraded')) {
+              done('Mineral industry demonstration')) {
             upgradeHousing();
           }
         }
       }
-      final nextSupplyBudget =
-          GameContent.tasks['habitat_kit']!.cost +
-          GameContent.tasks['mars_delivery']!.cost +
-          game.state.districtPreview('mars_arcadia', 3, 'mars_habitat').cost;
-      if (partnershipChoice != null &&
-          done('Next robotics knowledge') &&
-          booked('Original coastal housing upgraded') &&
-          booked('Mineral industry demonstration') &&
-          game.state.money >= nextSupplyBudget &&
-          !booked('Second habitat kit')) {
-        task('Second habitat kit', 'habitat_kit');
+      if (done('Mineral industry demonstration') &&
+          done('Greenhouse research')) {
+        task('Next robotics knowledge', 'autonomous_rovers');
       }
-      if (partnershipChoice != null &&
-          done('Original coastal housing upgraded') &&
-          booked('Second habitat kit') &&
-          !booked('Second Mars settlement')) {
-        district('Second Mars settlement', 'mars_arcadia', 3, 'mars_habitat');
+      if (booked('First Mars settlement') &&
+          booked('Campus adjoining both houses')) {
+        analysisLab();
       }
-      if (done('Second habitat kit') && !booked('Second Mars delivery')) {
-        task('Second Mars delivery', 'mars_delivery');
+      if (done('Next research installation') && !analysisEnabled) {
+        final instance =
+            projects['Next research installation']!.buildingInstanceId!;
+        final reason = game.setDevelopmentEnabled(instance, true);
+        if (reason == null) {
+          analysisEnabled = true;
+          record('decision', 'Operate the resource analysis laboratory');
+        }
       }
-      fundQueuedProjects();
-      final waits = <int>[
+      if (analysisEnabled) {
+        task('Next resource knowledge', 'subsurface_ice_mapping');
+      }
+      earnings();
+      var wait = mathMin(
         horizon.inMilliseconds - game.state.simulatedMs,
         const Duration(minutes: 1).inMilliseconds,
-        if (partnershipChoice != null &&
-            booked('Next robotics knowledge') &&
-            !done('Next robotics knowledge') &&
-            !booked('Third specialist cohort') &&
-            game.state.researchPointUnitsPerMs > 0 &&
-            game.state.researchPoints <
-                GameContent.researchPointCost('autonomous_rovers') / 2)
-          ((GameContent.researchPointCost('autonomous_rovers') *
-                          GameState.researchPointScale ~/
-                          2 -
-                      game.state.researchPointUnits) +
-                  game.state.researchPointUnitsPerMs -
-                  1) ~/
-              game.state.researchPointUnitsPerMs,
-        for (final plan in game.state.plans.where(
-          (plan) =>
-              plan.status == 'running' &&
-              game.state.facilities[plan.definition.facilityId] == true,
-        ))
-          plan.remainingMs,
-        for (final plan in game.state.plans.where(
-          (plan) => !plan.isFinished && plan.definition.unique,
-        ))
-          if (game.state.researchWaitMs(plan.taskId) case final int milliseconds
-              when milliseconds > 0)
-            milliseconds,
-      ];
-      game.advanceBy(Duration(milliseconds: waits.reduce(min)));
+      );
+      for (final plan in game.state.plans.where((p) => p.status == 'running')) {
+        if (game.state.facilities[plan.definition.facilityId] == true) {
+          wait = mathMin(wait, plan.remainingMs);
+        }
+      }
+      if (game.state.introductionPausesClock) {
+        throw StateError(
+          'First-hour time cannot advance during the protected introduction',
+        );
+      }
+      game.advanceBy(Duration(milliseconds: wait));
     }
-    collectCompletions();
+    for (final project in projects.entries) {
+      if (done(project.key) && reported.add(project.key)) {
+        record('completion', project.key);
+      }
+    }
     record(
       'checkpoint',
-      '${horizon.inMinutes}-minute handoff to reserved offline work',
+      '${horizon.inMinutes}-minute handoff to started offline work',
     );
-    if (!OnboardingGuide.fromState(game.state).isComplete ||
-        game.state.districtCount('moon_outpost') != 1 ||
-        game.state.districtCount('moon_spaceport') != 1 ||
-        game.state.districts.values
-                .where(
-                  (district) =>
-                      GameContent.cities[district.cityId]?.planet == 'earth',
-                )
-                .length <
-            3 ||
-        game.state.marsHabitats != 1 ||
+    if (game.state.marsHabitats != 1 ||
         game.state.marsResidents != 24 ||
         game.state.districts.length < 5 ||
-        (horizon > const Duration(hours: 1) &&
-            !done('Mineral industry demonstration')) ||
-        !secondCohortAllocated ||
-        game.state.specialistCount != (partnershipChoice == null ? 18 : 20) ||
-        !thirdCohortAllocated ||
-        (partnershipChoice != null && !fourthCohortAllocated) ||
         !game.state.research.containsAll([
           'life_support',
           'deployable_solar_arrays',
-          'local_resources',
-          'orbital_gardens',
           'urban_planning',
         ])) {
       throw StateError(
@@ -867,12 +552,12 @@ class _FirstHourRoute {
       GameState.fromJson(jsonDecode(snapshot) as Map<String, dynamic>),
     );
     if (jsonEncode(loaded.state.toJson()) != snapshot) {
-      throw StateError(
-        'The first-hour reload changed money, RP, staff, districts or rewards',
-      );
+      throw StateError('First-hour reload changed progress');
     }
     return OnboardingVerification(game.state, events);
   }
+
+  int mathMin(int a, int b) => a < b ? a : b;
 }
 
 /// All three routes start with the same unmodified initial save and public
@@ -1059,11 +744,8 @@ Map<String, Object> runParallelStrategyComparison() {
         route.key: {
           ...route.value.toJson(),
           'investmentPolicy': route.key == 'funding'
-              ? 'Reserve industry before upgrading housing; train four staff '
-                    'cohorts while common research points accrue.'
-              : 'Upgrade housing before reserving industry; train three staff '
-                    'cohorts, then invest in a fourth after habitation. Preserve '
-                    'paid factory work before reallocating new researchers.',
+              ? 'Start industry before upgrading housing; facility RP accrues alongside construction.'
+              : 'Upgrade housing before starting industry, then invest in a research installation.',
           'unfinishedDevelopment': route.value.state.plans
               .where(
                 (plan) =>
@@ -1081,9 +763,7 @@ Map<String, Object> runParallelStrategyComparison() {
           'meaningfulCompletionCount': route.value.events
               .where((event) => event['kind'] == 'completion')
               .length,
-          'specialists': route.value.state.specialistCount,
-          'researchers': route.value.state.researchers,
-          'industrialWorkers': route.value.state.industrialWorkers,
+          'population': route.value.state.totalPopulation,
           'partnershipChoices': route.value.state.partnershipChoices,
           'researchEfficiency': route.value.state.researchBonusPercent,
           'factoryEfficiency': route.value.state.factoryBonusPercent,

@@ -70,9 +70,20 @@ void main() {
       copy(game).state.firstRunTutorial,
       FirstRunTutorialStep.finishConstruction,
     );
-    final queued = GameEngine(GameState.initial(epoch));
-    queued.state.facilities['factory'] = false;
-    queued.enqueueDistrict('earth_delta', 0, 'housing');
+    final queuedState = GameState.initial(epoch)
+      ..firstRunTutorial = FirstRunTutorialStep.finishConstruction
+      ..firstRunTutorialPlanId = 'old-house'
+      ..nextPlanId = 2;
+    queuedState.plans.add(
+      PlannedTask(
+        id: 'old-house',
+        taskId: 'district_housing',
+        cityId: 'earth_delta',
+        plotIndex: 0,
+        targetLevel: 1,
+      ),
+    );
+    final queued = GameEngine(queuedState);
     expect(copy(queued).state.plans.single.status, 'queued');
     game.advanceBy(const Duration(minutes: 5));
     expect(copy(game).state.firstRunTutorial, FirstRunTutorialStep.income);
@@ -87,7 +98,7 @@ void main() {
         ..money = 10000
         ..researchPointUnits = 0,
     );
-    expect(game.enqueue('life_support'), isNull);
+    expect(game.enqueue('life_support'), isNotNull);
     expect(game.enqueue('launch_contract', repeats: 3), isNull);
     final price = game.state.districtPreview('earth_delta', 0, 'housing').cost;
     final beforeCost = game.state.moneyUnits;
@@ -132,10 +143,23 @@ void main() {
   });
 
   test('help cannot finish an unpaid queued house or an unrelated plan', () {
-    final game = GameEngine(GameState.initial(epoch)..money = 10000);
-    game.state.facilities['factory'] = false;
-    expect(game.enqueueDistrict('earth_delta', 0, 'housing'), isNull);
+    final state = GameState.initial(epoch)
+      ..money = 10000
+      ..firstRunTutorial = FirstRunTutorialStep.finishConstruction
+      ..firstRunTutorialPlanId = 'old-house'
+      ..nextPlanId = 2;
+    state.plans.add(
+      PlannedTask(
+        id: 'old-house',
+        taskId: 'district_housing',
+        cityId: 'earth_delta',
+        plotIndex: 0,
+        targetLevel: 1,
+      ),
+    );
+    final game = GameEngine(state);
     expect(game.state.plans.single.status, 'queued');
+    expect(game.state.plans.single.requiresManualStart, isTrue);
     final queued = game.state.toJson();
     expect(game.completeTutorialConstruction(), isNotNull);
     expect(game.state.toJson(), queued);

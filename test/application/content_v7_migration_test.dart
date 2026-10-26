@@ -91,7 +91,7 @@ void main() {
         expect(paid.iterationSpecialists, 6);
         expect(first.state.reservedResearchers, 6);
         expect(first.state.labResearchers, 0);
-        expect(first.state.researchPointsPerMinute, 0);
+        expect(first.state.researchPointsPerMinute, greaterThan(0));
         expect(first.state.toJson()['contentVersion'], GameContent.version);
         final migrated = first.state.toJson();
         expect((await repository().load()).data, migrated);
@@ -110,7 +110,7 @@ void main() {
         expect(finished.state.plans.single.status, 'completed');
         expect(finished.state.plans.single.completedRuns, 1);
         expect(finished.state.research, {'oxygen_pilot', 'life_support'});
-        expect(finished.state.researchPointUnits, 0);
+        expect(finished.state.researchPointUnits, greaterThan(0));
         expect(finished.state.reservedResearchers, 0);
         expect(finished.state.developments, isEmpty);
         final completed = finished.state.toJson();
@@ -121,7 +121,10 @@ void main() {
         expect(repeat.error, isNull);
         expect(repeat.state.toJson(), completed);
         expect(repeat.engine!.unlockResearch('life_support'), isNotNull);
-        expect(repeat.state.researchPointUnits, 0);
+        expect(
+          repeat.state.researchPointUnits,
+          finished.state.researchPointUnits,
+        );
         expect(repeat.state.plans.single.completedRuns, 1);
       },
     );
@@ -139,6 +142,9 @@ void main() {
     expect(state.moneyUnits, money);
     expect(state.research, {'oxygen_pilot'});
     engine.advanceBy(const Duration(days: 1));
+    expect(state.research, {'oxygen_pilot'});
+    expect(state.plans.single.requiresManualStart, isTrue);
+    expect(engine.startPlan(state.plans.single.id), isNull);
     expect(state.research, {'oxygen_pilot', 'life_support'});
     expect(state.plans.single.completedRuns, 1);
     expect(state.plans.single.status, 'completed');

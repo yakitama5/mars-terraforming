@@ -179,36 +179,33 @@ void main() {
     expect(copy(g.state).toJson(), g.state.toJson());
   });
 
-  test(
-    'local production pays inputs once and staff share RP with production',
-    () {
-      final g = ready();
-      final id = build(g, 'orbital_gardens');
-      work(g, id, 'building_import_water');
-      expect(g.state.cityStock('earth_delta', 'water'), 4);
-      expect(g.assignDevelopmentResearchers(id, 2), isNull);
-      final p = start(g, id, 'building_grow_food');
-      expect(g.state.cityStock('earth_delta', 'water'), 3);
-      expect(g.assignDevelopmentResearchers(id, 0), contains('支払済み'));
-      final restored = GameEngine(copy(g.state));
-      final paid = restored.state.plans.last;
-      expect(restored.setDevelopmentEnabled(id, false), isNull);
-      restored.advanceBy(const Duration(minutes: 10));
-      expect(paid.remainingMs, p.remainingMs);
-      expect(restored.state.cityStock('earth_delta', 'food'), 0);
-      expect(restored.setDevelopmentEnabled(id, true), isNull);
-      finish(restored, paid);
-      expect(restored.state.cityStock('earth_delta', 'food'), 2);
-      expect(restored.state.cityStock('earth_delta', 'water'), 3);
-      restored.advanceBy(const Duration(minutes: 1));
-      expect(restored.state.cityStock('earth_delta', 'food'), 2);
-      expect(restored.assignDevelopmentResearchers(id, 4), isNull);
-      expect(
-        restored.state.buildingWorkLockReason(id, 'building_grow_food'),
-        contains('研究者'),
-      );
-    },
-  );
+  test('local production pays inputs once without research staffing', () {
+    final g = ready();
+    final id = build(g, 'orbital_gardens');
+    work(g, id, 'building_import_water');
+    expect(g.state.cityStock('earth_delta', 'water'), 4);
+    expect(g.assignDevelopmentResearchers(id, 2), isNotNull);
+    final p = start(g, id, 'building_grow_food');
+    expect(g.state.cityStock('earth_delta', 'water'), 3);
+    expect(g.assignDevelopmentResearchers(id, 0), isNotNull);
+    final restored = GameEngine(copy(g.state));
+    final paid = restored.state.plans.last;
+    expect(restored.setDevelopmentEnabled(id, false), isNull);
+    restored.advanceBy(const Duration(minutes: 10));
+    expect(paid.remainingMs, p.remainingMs);
+    expect(restored.state.cityStock('earth_delta', 'food'), 0);
+    expect(restored.setDevelopmentEnabled(id, true), isNull);
+    finish(restored, paid);
+    expect(restored.state.cityStock('earth_delta', 'food'), 3);
+    expect(restored.state.cityStock('earth_delta', 'water'), 3);
+    restored.advanceBy(const Duration(minutes: 1));
+    expect(restored.state.cityStock('earth_delta', 'food'), 3);
+    expect(restored.assignDevelopmentResearchers(id, 4), isNotNull);
+    expect(
+      restored.state.buildingWorkLockReason(id, 'building_grow_food'),
+      isNull,
+    );
+  });
 
   test(
     'batteries store existing power and high-demand jobs spend finite charge',
@@ -415,9 +412,19 @@ void main() {
     expect(g.enqueue('factory_contract'), isNull);
     expect(
       g.relocateMapBuilding(id, cityId: 'earth_delta', plotIndex: 8),
-      isNull,
+      contains('作業中'),
     );
-    final move = g.state.plans.last;
+    final move = PlannedTask(
+      id: 'plan-${g.state.nextPlanId++}',
+      taskId: GameContent.developmentTaskId('orbital_gardens'),
+      developmentCityId: 'earth_delta',
+      buildingInstanceId: id,
+      buildingPlotIndex: 8,
+      buildingSlotIndex: 0,
+      relocation: true,
+    )..requiresManualStart = true;
+    g.state.plans.add(move);
+    g.advanceBy(Duration.zero);
     expect(move.status, 'queued');
     expect(
       g.state.cityBuildings('earth_delta').where((b) => b.id == id),
@@ -589,15 +596,16 @@ void main() {
     final before = g.state.moneyUnits;
     expect(
       g.enqueueMapBuilding('orbital_gardens', cityId: city, plotIndex: 12),
+      contains('現在0基'),
+    );
+    expect(g.state.moneyUnits, before);
+    expect(g.state.plans, isEmpty);
+    g.state.moonKits = 1;
+    expect(
+      g.enqueueMapBuilding('orbital_gardens', cityId: city, plotIndex: 12),
       isNull,
     );
     final p = g.state.plans.last;
-    expect(p.status, 'queued');
-    expect(p.stopReason, contains('現在0基'));
-    expect(g.state.moneyUnits, before);
-    expect(g.state.cityBuildings(city).single.workLabel, contains('資源不足'));
-    g.state.moonKits = 1;
-    g.advanceBy(Duration.zero);
     expect(p.status, 'running');
     expect(g.state.moonKits, 0);
     expect(g.state.plannedInputResources(p), {'moonKits': 1});
@@ -641,13 +649,17 @@ void main() {
     const city = 'mars_arcadia';
     expect(
       g.enqueueMapBuilding('orbital_gardens', cityId: city, plotIndex: 12),
+      contains('資源不足'),
+    );
+    expect(g.state.plans, isEmpty);
+    g.state.marsKits = 2;
+    expect(
+      g.enqueueMapBuilding('orbital_gardens', cityId: city, plotIndex: 12),
       isNull,
     );
     final p = g.state.plans.last;
-    expect(p.status, 'queued');
+    expect(p.status, 'running');
     expect(g.state.plannedInputResources(p), {'marsKits': 1});
-    g.state.marsKits = 2;
-    g.advanceBy(Duration.zero);
     expect(g.state.marsKits, 1);
     finish(g, p);
     expect(g.state.marsKits, 1);

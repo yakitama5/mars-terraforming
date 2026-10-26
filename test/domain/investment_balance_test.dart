@@ -178,35 +178,36 @@ void main() {
   });
 
   test(
-    'reordering chooses the first setup payer; preview and paid work agree',
+    'explicit starts choose the first setup payer and agree with previews',
     () {
       final game = ready();
-      game.setFacilityEnabled('factory', false);
-      expect(game.enqueueDistrict('earth_highland', 2, 'housing'), isNull);
-      final housing = game.state.plans.last;
+      final solarQuote = game.state.districtPreview(
+        'earth_highland',
+        0,
+        'solar',
+      );
+      final before = game.state.moneyUnits;
       expect(game.enqueueDistrict('earth_highland', 0, 'solar'), isNull);
       final solar = game.state.plans.last;
       expect(
-        game.reorderPlan(solar.id, relativeToPlanId: housing.id, before: true),
-        isNull,
+        game.state.moneyUnits,
+        before - solarQuote.cost * GameState.moneyScale,
       );
-      expect(game.state.cityDevelopment('earth_highland').reservedPlots, 2);
-      expect(game.state.cityDevelopment('earth_highland').availablePlots, 23);
-      final before = game.state.moneyUnits;
-      final solarQuote = game.state.plannedCost(solar);
-      final solarDuration = game.state.plannedDurationMs(solar);
-      game.setFacilityEnabled('factory', true);
-      expect(game.state.moneyUnits, before - solarQuote * GameState.moneyScale);
-      expect(solar.iterationDurationMs, solarDuration);
+      expect(solar.iterationDurationMs, solarQuote.durationMs);
       final net = game.state.netPerMinute;
-      game.advanceBy(Duration(milliseconds: solarDuration));
+      final rejected = game.state.toJson();
+      expect(game.enqueueDistrict('earth_highland', 2, 'housing'), isNotNull);
+      expect(game.state.toJson(), rejected);
+      game.advanceBy(Duration(milliseconds: solar.remainingMs));
+      expect(game.enqueueDistrict('earth_highland', 2, 'housing'), isNull);
+      final housing = game.state.plans.last;
       expect(housing.status, 'running');
       expect(game.state.plannedCost(housing), 392);
       expect(
         game.state.moneyUnits,
         before -
-            (solarQuote + 392) * GameState.moneyScale +
-            net * solarDuration,
+            (solarQuote.cost + 392) * GameState.moneyScale +
+            net * solarQuote.durationMs,
       );
       expect(game.state.cityDevelopment('earth_highland').completedPlots, 1);
       expect(game.state.cityDevelopment('earth_highland').reservedPlots, 1);
@@ -226,9 +227,18 @@ void main() {
       one.state.habitatChoice = 'dome';
       one.state.marsKits = 3;
       one.enqueueDistrict('earth_highland', 0, 'solar');
-      one.enqueueDistrict('earth_highland', 2, 'housing');
       one.enqueueDistrict('mars_elysium', 3, 'mars_habitat');
-      one.enqueueDistrict('mars_elysium', 6, 'mars_habitat');
+      one.advanceBy(
+        Duration(
+          milliseconds: one.state.currentPlanFor('factory')!.remainingMs,
+        ),
+      );
+      final marsWork = one.state.currentPlanFor('mars');
+      if (marsWork != null) {
+        one.advanceBy(Duration(milliseconds: marsWork.remainingMs));
+      }
+      expect(one.enqueueDistrict('earth_highland', 2, 'housing'), isNull);
+      expect(one.enqueueDistrict('mars_elysium', 6, 'mars_habitat'), isNull);
       var split = restore(one);
       const total = Duration(hours: 2);
       one.advanceBy(total);

@@ -28,12 +28,7 @@ void main() {
     for (final task in ['factory_contract', 'launch_contract']) {
       expect(one.enqueue(task, repeats: 3), isNull);
     }
-    for (final task in [
-      'life_support',
-      'habitat_kit',
-      'mars_delivery',
-      'build_habitat',
-    ]) {
+    for (final task in ['life_support', 'habitat_kit', 'mars_delivery']) {
       expect(
         one.enqueue(task, repeats: task == 'life_support' ? 1 : 2),
         isNull,
@@ -50,12 +45,18 @@ void main() {
     expect(split.state.toJson(), one.state.toJson());
     expect(one.state.marsKits, 2);
     expect(one.state.marsHabitats, 0);
-    expect(one.state.plans.last.stopReason, contains('分岐待ち'));
+    expect(one.enqueue('build_habitat'), contains('分岐待ち'));
+    expect(split.enqueue('build_habitat'), contains('分岐待ち'));
     expect(one.chooseHabitat('dome'), isNull);
     expect(split.chooseHabitat('dome'), isNull);
+    expect(one.enqueue('build_habitat'), isNull);
+    expect(split.enqueue('build_habitat'), isNull);
+    one.advanceTo(epoch.add(const Duration(minutes: 17)));
+    expect(one.enqueue('build_habitat'), isNull);
     one.advanceTo(epoch.add(const Duration(minutes: 20)));
     for (var i = 1; i <= 30; i++) {
       split.advanceTo(epoch.add(Duration(seconds: 900 + i * 10)));
+      if (i == 12) expect(split.enqueue('build_habitat'), isNull);
     }
     expect(split.state.toJson(), one.state.toJson());
     expect(one.state.marsHabitats, 2);
@@ -98,25 +99,27 @@ void main() {
   });
 
   test(
-    'unlimited stops at an unselected branch without stopping other work',
+    'unselected branch rejects construction while independent work continues',
     () {
       final engine = fresh(money: 5000);
       engine.state.marsKits = 2;
       engine.state.achievements.add('first_landing');
-      engine.enqueue('build_habitat', repeats: null);
-      engine.enqueue('factory_contract', repeats: 3);
+      final before = engine.state.toJson();
+      expect(engine.enqueue('build_habitat'), contains('分岐待ち'));
+      expect(engine.state.toJson(), before);
+      expect(engine.enqueue('build_habitat', repeats: null), isNotNull);
+      expect(engine.enqueue('factory_contract', repeats: 3), isNull);
       engine.advanceTo(epoch.add(const Duration(minutes: 5)));
-      expect(engine.state.plans.first.stopReason, contains('分岐待ち'));
-      expect(engine.state.plans.first.completedRuns, 0);
-      expect(engine.state.plans.last.completedRuns, 3);
-      engine.chooseHabitat('underground');
+      expect(engine.state.plans.single.completedRuns, 3);
+      expect(engine.chooseHabitat('underground'), isNull);
+      expect(engine.enqueue('build_habitat'), isNull);
+      engine.advanceTo(epoch.add(const Duration(minutes: 7)));
+      expect(engine.enqueue('build_habitat'), isNull);
       engine.advanceTo(epoch.add(const Duration(minutes: 10)));
-      expect(engine.state.plans.first.completedRuns, 2);
-      expect(engine.state.plans.first.remainingRepeats, isNull);
-      expect(engine.state.plans.first.stopReason, contains('資源不足'));
       expect(engine.state.marsResidents, 24);
       expect(engine.state.achievements, contains('underground_habitat'));
       expect(engine.state.achievements, isNot(contains('main_ending')));
+      expect(engine.enqueue('build_habitat'), contains('資源不足'));
     },
   );
 
@@ -240,7 +243,7 @@ void main() {
     final engine = fresh(money: 0);
     engine.advanceTo(epoch.add(const Duration(days: 3650)));
     expect(engine.state.simulatedMs, const Duration(days: 3650).inMilliseconds);
-    expect(engine.state.money, 3650 * 24 * 60 * 2);
+    expect(engine.state.money, engine.state.moneyCapacity);
   });
 
   test(
@@ -297,7 +300,7 @@ void main() {
       one.enqueue('launch_contract', repeats: 1 + random.nextInt(3));
       one.state.achievements.addAll(['first_launch', 'mars_route_open']);
       one.enqueue('mars_delivery', repeats: null);
-      one.enqueue('build_habitat', repeats: null);
+      one.enqueue('build_habitat');
       final split = GameEngine(roundTrip(state));
       const totalMs = 7200000;
       one.advanceTo(epoch.add(const Duration(milliseconds: totalMs)));

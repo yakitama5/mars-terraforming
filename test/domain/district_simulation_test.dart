@@ -114,31 +114,33 @@ void main() {
     },
   );
 
-  test('construction shares paid factory work; cancel releases only unstarted target', () {
-    final game = ready();
-    game.enqueue('factory_contract', repeats: null);
-    final paid = game.state.currentPlanFor('factory')!;
-    game.enqueueDistrict('earth_delta', 0, 'housing');
-    final cancelled = game.state.plans.last;
-    final paidMoney = game.state.moneyUnits;
-    expect(cancelled.stopReason, '共用設備の順番待ち');
-    expect(game.cancelQueued(cancelled.id), isNull);
-    expect(game.state.moneyUnits, paidMoney);
-    expect(game.enqueueDistrict('earth_delta', 0, 'solar'), isNull);
-    final building = game.state.plans.last;
-    expect(
-      game.reorderPlan(building.id, relativeToPlanId: paid.id, before: true),
-      isNull,
-    );
-    expect(paid.remainingMs, 90000);
-    game.advanceBy(const Duration(seconds: 90));
-    expect(game.state.currentPlanFor('factory'), building);
-    expect(game.cancelQueued(building.id), isNull); // Paid building completes.
-    expect(game.enqueueDistrict('earth_delta', 0, 'housing'), contains('予約済み'));
-    game.advanceBy(Duration(milliseconds: building.remainingMs));
-    expect(game.state.districtAt('earth_delta', 0)!.districtId, 'solar');
-    expect(game.state.currentPlanFor('factory'), paid);
-  });
+  test(
+    'construction requires a free factory and paid work remains protected',
+    () {
+      final game = ready();
+      game.enqueue('factory_contract', repeats: null);
+      final paid = game.state.currentPlanFor('factory')!;
+      final before = game.state.toJson();
+      expect(
+        game.enqueueDistrict('earth_delta', 0, 'housing'),
+        contains('作業中'),
+      );
+      expect(game.state.toJson(), before);
+      expect(game.cancelQueued(paid.id), isNull);
+      game.advanceBy(Duration(milliseconds: paid.remainingMs));
+      expect(game.enqueueDistrict('earth_delta', 0, 'solar'), isNull);
+      final building = game.state.plans.last;
+      expect(building.status, 'running');
+      expect(game.cancelQueued(building.id), isNull);
+      expect(
+        game.enqueueDistrict('earth_delta', 0, 'housing'),
+        contains('予約済み'),
+      );
+      game.advanceBy(Duration(milliseconds: building.remainingMs));
+      expect(game.state.districtAt('earth_delta', 0)!.districtId, 'solar');
+      expect(game.state.currentPlanFor('factory'), isNull);
+    },
+  );
 
   test(
     'housing upgrades unlock early, retain level until completion and persist',
@@ -191,6 +193,9 @@ void main() {
     expect(game.upgradeDistrict('earth_delta', 2), contains('前提研究'));
     expect(game.upgradeDistrict('earth_delta', 0), isNull);
     game.state.research.add('automated_fabrication');
+    game.advanceBy(
+      Duration(milliseconds: game.state.currentPlanFor('factory')!.remainingMs),
+    );
     expect(game.upgradeDistrict('earth_delta', 1), isNull);
     game.advanceBy(const Duration(hours: 1));
     expect(game.state.districtAt('earth_delta', 0)!.level, 2);
@@ -242,16 +247,11 @@ void main() {
     );
     restored.advanceBy(Duration(milliseconds: research.remainingMs));
     expect(restored.state.research, contains('closed_ecology'));
-    // Training is still a paid, timed lab job. The newly completed campus
-    // changes its next start without rewriting the legacy research iteration.
-    expect(restored.enqueue('train_specialists'), isNull);
+    expect(restored.enqueue('train_specialists'), isNotNull);
+    expect(restored.state.currentPlanFor('lab'), isNull);
     expect(
-      restored.state.currentPlanFor('lab')!.iterationDurationMs,
-      restored.state.currentTaskDurationMs('train_specialists'),
-    );
-    expect(
-      restored.state.currentPlanFor('lab')!.iterationDurationMs,
-      lessThan(GameContent.tasks['train_specialists']!.durationMs),
+      restored.state.researchPointsPerMinute,
+      greaterThan(GameContent.baseResearchPointsPerMinute),
     );
   });
 
@@ -313,17 +313,22 @@ void main() {
       ResearchCatalog.idForCatalog('M17'),
       ResearchCatalog.idForCatalog('M18'),
     ]);
+    for (final (city, plot, district) in [
+      ('earth_highland', 0, 'campus'),
+      ('earth_highland', 1, 'solar'),
+      ('earth_highland', 3, 'industry'),
+      ('mars_arcadia', 0, 'extractor'),
+      ('mars_arcadia', 1, 'mars_habitat'),
+      ('mars_arcadia', 5, 'greenhouse'),
+      ('mars_elysium', 3, 'mars_habitat'),
+    ]) {
+      expect(one.enqueueDistrict(city, plot, district), isNull);
+      final plan = one.state.plans.last;
+      one.advanceBy(Duration(milliseconds: plan.remainingMs));
+    }
+    one.state.research.addAll(['industrial_network', 'regional_habitats']);
     one.enqueue('precision_contract');
-    one.enqueueDistrict('earth_highland', 0, 'campus');
-    one.enqueueDistrict('earth_highland', 1, 'solar');
-    one.enqueueDistrict('earth_highland', 3, 'industry');
     one.enqueue('factory_contract', repeats: 3);
-    one.enqueueDistrict('mars_arcadia', 0, 'extractor');
-    one.enqueueDistrict('mars_arcadia', 1, 'mars_habitat');
-    one.enqueueDistrict('mars_arcadia', 5, 'greenhouse');
-    one.enqueueDistrict('mars_elysium', 3, 'mars_habitat');
-    expect(one.enqueue('industrial_network'), isNull);
-    expect(one.enqueue('regional_habitats'), isNull);
     one.enqueue('orbital_contract', repeats: 3);
     var split = GameEngine(copy(one.state));
     const total = Duration(days: 4);
