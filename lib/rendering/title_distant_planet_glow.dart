@@ -86,6 +86,7 @@ class TitleDistantPlanetGlow {
       _ => throw ArgumentError.value(body, 'body', 'Unknown distant planet'),
     };
     node.visible = false;
+    material.parameters.setFloat('strength', 0);
     if (!_finite(position) ||
         !_finite(cameraPosition) ||
         !_finite(cameraTarget) ||

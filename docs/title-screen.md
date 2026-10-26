@@ -10,8 +10,10 @@ NASAの観測画像と実測標高、詳細な宇宙機モデル、ESOの全天�
 ユーザーから「モデルはすごくいい」と採用評価を得た。追加依頼で運動と読込中の操作を変更し、
 ゲーム内の全球表示にもモデルを共有する。都市開発の近接箱庭は現在のトゥーン調を維持する。
 続く「めっちゃいい」との評価を受け、火星の地表も自転して見える視点へ変更し、木星と土星を遠景へ追加する。
-その後のサイズ感の見直しで、遠景の角径は実半径・実距離へ合わせる。従来の大きな惑星円盤は履歴として区別する。
-[見かけの大きさの基準](title-apparent-scale.md)のとおり、現在は地球/木星/土星が小さな光点となる。
+その後のサイズ感の見直しで、実半径・実距離を角径の基準にした。
+最新のユーザー回答では、惑星同士の比率を保った一律拡大を採用したため、地球/木星/土星に共通128倍を適用する。
+[見かけの大きさの基準](title-apparent-scale.md)から模様や環が少し分かるサイズへ拡大し、太陽1倍と主火星は維持する。
+従来の大きな惑星円盤と、直前の1倍の光点版は履歴として区別する。
 
 ## 起動と操作
 
@@ -53,7 +55,8 @@ Figmaやゲームのスクリーンショットは描画素材に使わない。
 | 小惑星 | NASA公開のBennu形状に全球実測モザイクを貼り、補助normalを加えたモデル |
 
 Saturn Vがそのまま火星へ飛んだ、という歴史上の説明は追加しない。
-遠景の角径は実半径・実AU距離へ合わせる。公転/自転の周期と初期配置、機体の縮尺・経路・速度、未来の開発はタイトルの演出である。
+遠景の物理角径を実半径・実AU距離から求め、地球/木星/土星には共通128倍、太陽には1倍を適用する。
+公転/自転の周期と初期配置、機体の縮尺・経路・速度、未来の開発はタイトルの演出である。
 NASA/ESOの原素材へ本作のMITを適用せず、各素材の条件とクレジットを保持する。
 
 出典、画像の座標/変換、同梱ファイルのSHA-256、変更範囲は以下を参照する。
@@ -138,7 +141,32 @@ MROは元GLBが約4MB、変換後のScene binaryが約39MBで、配布物では�
 
 ## 検証の現在地
 
-### 2026-10-26: 遠景の角径を実半径・距離へ合わせる
+### 2026-10-26: 惑星の比率を保つ共通拡大
+
+ユーザーの明示回答を採用し、3惑星の角径へ同じ128倍、太陽へ1倍を適用する。
+モデルの倍率を独立に調整せず、実際の見かけの比率と距離による変化を保つ。
+PSFは球の投影直径が0.5 render px以下でfull、1.5 px以上でoff、その間はlinear fade。
+この判定には共通128倍を適用した後の投影直径を使い、表示できる球/環へ点像を重ねない。
+最初の64倍では細部が弱かったため、実画面で128倍へ調整した。
+
+- 整形・静的解析・依存/内容検査と全684テスト成功。
+- iPhone 17 Pro Max / iOS26.1 Simulatorの実GPU試験で3ケースと後片付けが全成功、exit0。
+  4時点の各球のworld半径/距離から角径を独立に求め、3惑星128倍・太陽1倍と惑星同士の比率を照合。
+  土星の環/本体比2.330901、分解できる円盤のPSF非表示とstrength=0も確認した。
+  主火星/地表施設の自転、全球/近接表示、開始/再開/保存の既存検証も維持し成功した。
+  初回のpipeline作成警告は最大998ms。実機の継続性能を示す値とは扱わない。
+- Web releaseと独立Chromeで大小画面・実描画・動き・クリック/キー開始・既存継続・
+  オフライン/保存維持・外部取得なしが成功。実画像でも木星の帯と土星の環を確認した。
+
+今回の実表示: [iOS初期](screenshots/title-magnified-ios-pristine.png)、
+[iOS公転後](screenshots/title-magnified-ios-phase.png)、
+[Web](screenshots/title-magnified-web.png)、[Web小画面](screenshots/title-magnified-web-small.png)。
+Android実機・長時間の熱/電池/ピークメモリ・Safari/Firefoxは未確認。
+
+### 前回: 遠景の角径を実半径・距離へ合わせる（全対象1倍）
+
+以下はmain `b5a459318d8ba88e67ceb5aba4816ce67338481c`へ反映した1倍版の検証履歴。
+現在の共通128倍版の結果とは区別する。
 
 - 全684テスト・整形・静的解析・依存/内容検査が成功。実角径/圧縮距離/元球半径の換算を含む10件を追加。
 - 初回のiOS実GPUは3ケースと後片付けが成功、exit0。実globeのworld半径とカメラ距離からの角径を、
@@ -150,12 +178,12 @@ MROは元GLBが約4MB、変換後のScene binaryが約39MBで、配布物では�
 - モデルの形状/画像、主火星の自転/施設、ゲームの全球/近接表示、開始/再開/保存は既存の検査を維持。
 - Web release/独立Chromeで大小画面、実描画、動き、クリック/キー開始、既存継続、オフライン/保存維持、外部取得なしが成功。
 
-今回の実表示: [iOS・初期](screenshots/title-angular-ios-pristine.png)、
+前回の1倍版の実表示: [iOS・初期](screenshots/title-angular-ios-pristine.png)、
 [iOS・太陽の位相](screenshots/title-angular-ios-phase.png)、
 [Web](screenshots/title-angular-web.png)、[Web小画面](screenshots/title-angular-web-small.png)。
 
 詳細と一次資料は[遠景の見かけの大きさ](title-apparent-scale.md)を参照する。
-下記の数度の円盤が見えるスクリーンショットは前回の演出サイズの履歴である。
+下記の大きな円盤が見えるスクリーンショットは、共通倍率を導入する前に天体ごとに大きさを決めていた演出の履歴である。
 
 ### 前回: 自転する火星と木星・土星
 
@@ -176,7 +204,7 @@ MROは元GLBが約4MB、変換後のScene binaryが約39MBで、配布物では�
 - Web releaseと独立Chromeでも成功。大小画面・自転する背景・クリック→OP・既存継続・Enter/Space・
   オフライン/保存維持・外部取得なしを確認し、木星・土星/環と火星を実画像でも確認した。
 
-今回の実表示: [初期の木星・土星](screenshots/title-giants-ios-pristine.png)、
+旧演出サイズの実表示: [初期の木星・土星](screenshots/title-giants-ios-pristine.png)、
 [火星の自転](screenshots/title-giants-ios-rotation.png)、
 [地表に付いて回る施設](screenshots/title-giants-ios-facilities.png)、
 [巡って現れた地球・太陽](screenshots/title-giants-ios-solar-phase.png)、
@@ -249,11 +277,45 @@ iPhone 17 Pro Max / iOS 26.1 Simulatorで最終のGPU通し試験が成功し、
 
 ## 反映と次の確認
 
-### 遠景の実角径への反映（今回）
+### 共通倍率で拡大した惑星への反映（今回）
 
-全684テスト、Web/Chrome、最終iOS実GPUと結果保存を確認し、develop→mainの順に反映する。
-確定HEADのCI・差分・CLEANを確認し、内部配信は配信先の状態とbuild/commit/runを照合する。
-確定記録は両PR本文とローカルdocsへ追記し、記録だけの追加main pushはしない。
+共通128倍版は検証中で、今回のdevelop→main反映・内部配信は未確定。
+ユーザー回答を反映した最終iOS/Webを確認し、確定HEADのCI・差分・CLEAN後にdevelop→mainへ反映する。
+確定記録は両PR本文とローカルdocsへ残し、記録だけの追加main pushはしない。
+
+### 前回の遠景の実角径への反映
+
+全684テスト、Web/Chrome、最終iOS実GPUと結果保存を確認し、develop→mainの順に反映した。
+[PR #54](https://github.com/yakitama5/mars-terraforming/pull/54)の確定HEAD
+`34eca9ed5e514759bbb6658991b8526c4414cd0f`で全4check成功・CLEAN後、
+develop `05320d7e71303b31832f4998d6b73d70cdf68b88`へ反映した。検証featureとの全ファイルtree一致。
+[PR #55](https://github.com/yakitama5/mars-terraforming/pull/55)も全6check成功・CLEAN後にmainへ反映した。
+main `b5a459318d8ba88e67ceb5aba4816ce67338481c`と検証feature/developの全ファイルtreeが一致。
+mainの[Prototype run40272058027](https://github.com/yakitama5/mars-terraforming/actions/runs/40272058027)と
+[Pages run40272058075](https://github.com/yakitama5/mars-terraforming/actions/runs/40272058075)は全job成功。
+各headと公開deployment.jsonのmain/develop/runも確定SHAと40272058075に一致。
+[内部配信run40272058073](https://github.com/yakitama5/mars-terraforming/actions/runs/40272058073)も全4job成功。
+headは上記main全SHAと一致し、run16/attempt1の両recordを照合した。
+公開試遊版053のChrome試験は実描画/大小画面/開始/継続/オフライン/保存維持まで成功した。
+公開通常版b5aも同じChrome試験が成功し、実画像で拡大された惑星円盤がない新縮尺を確認した。
+公開試験の保存keyは通常版`mars_terraforming.save.mars-terraforming-main_normal`、
+試遊版`mars_terraforming.save.mars-terraforming-develop_development`を指定した。
+内部配信は配信先の状態とbuild/commit/runを照合済み。
+確定記録は両PR本文とローカルdocsへ残し、記録だけの追加main pushはしない。
+
+- Android **1601**: Play internal/completed/versionCode1601をfresh readで確認。
+  recordのplatform・app ID・main全SHA・run・build・配信先が一致。
+  確認時刻2026-10-26T05:11:14Z（14:11:14 JST）。artifact12628937715のZIP/API/uploadログのSHA-256が
+  `50b5b072cf2a879989b037c2d9505da36b2964e7552805f6c8df74507bee7941`で一致。
+  署名材料削除・WIF credential cleanup成功。実機動作は未確認。
+- iOS **0.1.0 (16.1)**: CIのfresh Apple API照合で
+  VALID / IN_BETA_TESTING / expired=false / group_member=trueを確認。
+  recordのplatform・app ID・main全SHA・run・build・配信先が一致。
+  確認時刻2026-10-26T05:17:17Z（14:17:17 JST）。artifact12629146759のZIP/API/uploadログのSHA-256が
+  `b50de3ebe1767c01b9407c9a3f60b3791113fef8eb3cd51febfe03e03cc69322`で一致。
+  keychain削除actionと署名材料削除jobは成功。profile削除は成功したensure処理とsourceで確認し、runner FSの別検査は行っていない。
+
+次の確認はユーザーによるAndroid1601の実機評価。配信の照合を実機の描画・負荷・熱・電池の測定とは扱わない。
 
 ### 前回の火星の自転と木星・土星の反映
 

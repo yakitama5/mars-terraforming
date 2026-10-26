@@ -92,7 +92,7 @@ void main() {
       TitleDistantBody.mars.semiMajorAxisAu,
     );
     final sunRadius = sun.renderedSphereRadius(120);
-    for (final magnification in [1.0, 20.0, 100.0]) {
+    for (final magnification in [1.0, 20.0, 64.0, 100.0, 128.0]) {
       for (final planet in planets) {
         final angle = math.asin(
           planet.renderedSphereRadius(155, magnification: magnification) / 155,

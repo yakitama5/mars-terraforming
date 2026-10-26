@@ -16,6 +16,10 @@ import 'title_scene_snapshot.dart';
 
 /// 火星の地形の自転と、その周囲を巡る宇宙を固定した構図で望むタイトル。
 class TitleScene extends StatefulWidget {
+  /// 実半径と距離から求めた惑星同士の角径比を保つ、タイトル専用の共通倍率。
+  /// 太陽の光球と主火星には適用しない。
+  static const distantPlanetMagnification = 128.0;
+
   const TitleScene({
     super.key,
     required this.snapshot,
@@ -296,15 +300,20 @@ class _TitleSceneState extends State<TitleScene>
       ApparentBody body,
       double distance, {
       double modelRadius = 1,
+      double magnification = TitleScene.distantPlanetMagnification,
     }) {
       node
         ?..position = body.cameraAnchoredPosition(_cameraPosition, distance)
         ..scale = vm.Vector3.all(
-          body.modelScale(renderDistance: distance, modelRadius: modelRadius),
+          body.modelScale(
+            renderDistance: distance,
+            modelRadius: modelRadius,
+            magnification: magnification,
+          ),
         );
     }
 
-    place(_sun, sun, TitleSceneMotion.sunDistance);
+    place(_sun, sun, TitleSceneMotion.sunDistance, magnification: 1);
     place(_earth, earth, TitleSceneMotion.earthDistance, modelRadius: 3.1);
     place(_jupiter, jupiter, TitleSceneMotion.jupiterDistance);
     place(_saturn, saturn, TitleSceneMotion.saturnDistance);
@@ -353,11 +362,21 @@ class _TitleSceneState extends State<TitleScene>
       double outerRadiusRatio = 1,
     }) {
       if (node == null) return;
-      // 未分解天体の光学的な点像。球や環の実角径を最低pixel数へ拡大しない。
+      final diameterPixels =
+          body.angularRadius *
+          2 *
+          TitleScene.distantPlanetMagnification *
+          _viewportHeightPixels /
+          (2 * math.tan(_verticalFieldOfView / 2));
+      // 像を分解できる球には点像を重ねず、小さい場合だけ補う。
+      final unresolvedWeight = (1.5 - diameterPixels).clamp(0.0, 1.0);
       // quadは画面平行なので、斜めの視線でも球の前へ面全体を出す。
       final alignment = body.direction.dot(_cameraForward);
       final front =
-          body.renderedSphereRadius(distance) *
+          body.renderedSphereRadius(
+            distance,
+            magnification: TitleScene.distantPlanetMagnification,
+          ) *
           outerRadiusRatio *
           1.04 /
           math.max(alignment, .01);
@@ -368,7 +387,7 @@ class _TitleSceneState extends State<TitleScene>
         cameraTarget: _cameraTarget,
         verticalFieldOfViewRadians: _verticalFieldOfView,
         viewportHeightPixels: _viewportHeightPixels,
-        brightness: _glowBrightness(body, toSunAu),
+        brightness: _glowBrightness(body, toSunAu) * unresolvedWeight,
       );
     }
 
