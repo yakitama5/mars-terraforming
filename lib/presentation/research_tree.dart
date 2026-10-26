@@ -610,7 +610,9 @@ class _ResearchTreeState extends State<ResearchTree>
     final detail = plan?.status == 'running'
         ? '残り ${gameDuration(plan!.remainingMs)}${paused ? ' · 再開待ち' : ''}'
         : plan != null
-        ? '予約 ${queueIndex + 1}番目 · ${plan.stopReason.isEmpty ? 'RPを蓄積中' : plan.stopReason}'
+        ? plan.requiresManualStart
+              ? '要着手 · 条件を確認して解放'
+              : '待機 ${queueIndex + 1}番目 · ${plan.stopReason}'
         : researchUnlockSummary(game, task);
     return Semantics(
       key: Key('research-semantics-${task.id}'),
@@ -831,9 +833,10 @@ String researchStatus(
     (plan) => plan.taskId == task.id && !plan.isFinished,
   );
   if (plans.any((plan) => plan.status == 'running')) return '研究中';
-  if (plans.isNotEmpty) return '予約済み';
+  if (plans.any((plan) => plan.requiresManualStart)) return '要着手';
+  if (plans.isNotEmpty) return '待機中';
   if (!game.isResearchDiscovered(task.id)) return '未発見';
-  if (unmetRequirements.isNotEmpty) return '未解放';
+  if (unmetRequirements.isNotEmpty) return '条件未達';
   return game.researchWaitMs(task.id) == 0 ? '研究可能' : 'RP待ち';
 }
 

@@ -80,12 +80,12 @@ void main() {
       );
       expect(find.text('共通研究ポイント'), findsOneWidget);
       expect(find.text('研究ポイントの生産'), findsOneWidget);
-      expect(find.textContaining('建設・製造には別途投資'), findsOneWidget);
+      expect(find.textContaining('都市条件がそろう'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets('staff allocation previews RP and retains industrial tradeoff', (
+  testWidgets('city foundation explains storage and fixed research capacity', (
     tester,
   ) async {
     final controller = await initialize();
@@ -105,18 +105,10 @@ void main() {
         ),
       ),
     );
-    final before = controller.state.researchers;
-    await tester.ensureVisible(find.byKey(const Key('staff-research-more')));
-    await tester.tap(find.byKey(const Key('staff-research-more')));
-    await tester.pump();
-    expect(find.textContaining('RP/分'), findsWidgets);
-    expect(
-      find.text(
-        '研究 ${before + 1}人 / 工業 ${controller.state.specialistCount - controller.state.developmentWorkers - before - 1}人',
-      ),
-      findsOneWidget,
-    );
-    expect(controller.state.researchers, before);
+    expect(find.byKey(const Key('agency-foundation')), findsOneWidget);
+    expect(find.byKey(const Key('staff-research-more')), findsNothing);
+    expect(find.textContaining('RP/時'), findsWidgets);
+    expect(find.textContaining('保有上限が広がります'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 }

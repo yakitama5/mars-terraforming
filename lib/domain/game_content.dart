@@ -89,7 +89,13 @@ class TaskDefinition {
 }
 
 abstract final class GameContent {
-  static const version = 'district-10';
+  static const version = 'district-11';
+  // Provisional city-scale reserves. Capacity never deletes existing balances.
+  static const researchPointBaseCapacity = 240;
+  static const researchPointCapacityPerResident = 40;
+  static const moneyBaseCapacity = 10000;
+  static const moneyCapacityPerResident = 1000;
+  static const baseResearchPointsPerMinute = 6;
   // Provisional progression and transport investment tuning. Discounts are
   // operational game effects, not estimates of real launch economics.
   static const moonDeliveryCost = 140;
@@ -132,14 +138,14 @@ abstract final class GameContent {
       id: 'base_lab',
       name: '基礎研究所',
       catalogId: 'base_lab',
-      description: '本部の既存研究所。基礎研究者と共通RPの発生元。追加購入は不要です。',
+      description: '本部の既存研究所。維持費を賄って稼働すると共通RPを生産します。追加購入は不要です。',
       isBaseLab: true,
     ),
     'orbital_gardens': MapBuildingDefinition(
       id: 'orbital_gardens',
       name: '水耕温室',
       catalogId: 'B01',
-      description: '処理水から食品を生産。実験へ研究者を配分すると生産量が下がります。',
+      description: '処理水と電力を使って食品を生産します。研究の解放条件となる栽培設備です。',
       workTaskIds: ['building_import_water', 'building_grow_food'],
     ),
     'space_food_quality': MapBuildingDefinition(
@@ -323,7 +329,7 @@ abstract final class GameContent {
       localInputs: {'water': 1},
       localOutputs: {'food': 3},
       powerDemand: 1,
-      description: '処理水を使い食品を生産。実験への配属が増えると生産量が下がります。',
+      description: '処理水と電力を使って食品を3単位生産します。',
     ),
     'building_inspect_food': TaskDefinition(
       id: 'building_inspect_food',
@@ -439,7 +445,7 @@ abstract final class GameContent {
       facilityId: 'factory',
       durationSeconds: 120,
       cost: 0,
-      description: '基礎研究所の資産と研究者を保持して都市内の建設枠へ移設します。',
+      description: '基礎研究所の資産を保持して都市内の建設枠へ移設します。',
     ),
     'building_connect_grid': TaskDefinition(
       id: 'building_connect_grid',
@@ -525,6 +531,325 @@ abstract final class GameContent {
   static const initialResearchPoints = 24;
   static const researchPointsPerResearcherPerMinute = 1;
   static const researchPointCostsByStage = [120, 2400, 24000];
+  // Foundations rise at research tiers, rather than at every individual node.
+  // The four starter ideas remain accessible with the initial settlement.
+  static const researchPopulationByStage = [180, 240, 600];
+  static int researchPopulationRequirement(String id) {
+    final technology = researchTechnologies[id];
+    if (technology == null || !technology.isPurchasable) return 0;
+    return starterResearchCatalogIds.contains(technology.catalogId)
+        ? initialPopulation
+        : researchPopulationByStage[technology.stage];
+  }
+
+  // Only research installations produce passive RP. Production, commercial
+  // and transport installations retain their distinct work instead of also
+  // receiving their former maximum assigned-researcher output.
+  static const developmentResearchPointsByStage = [8, 18, 36];
+  static int developmentResearchPointsPerMinute(String id) =>
+      developmentEffect(id) == ResearchUnlockEffect.research
+      ? developmentResearchPointsByStage[technology(id).stage]
+      : 0;
+
+  // Each discovered idea explains a small, relevant piece of city development.
+  // Keys reference stable catalog IDs; counts include completed installations
+  // at legacy sites, while capacity tests use the current operating city.
+  static const cityResearchRequirementsByCatalog =
+      <String, CityResearchRequirements>{
+        'B01': CityResearchRequirements(),
+        'B02': CityResearchRequirements(developmentCatalogCounts: {'B01': 1}),
+        'B03': CityResearchRequirements(developmentCatalogCounts: {'B01': 1}),
+        'B04': CityResearchRequirements(developmentCatalogCounts: {'B01': 1}),
+        'B05': CityResearchRequirements(developmentCatalogCounts: {'B01': 1}),
+        'B06': CityResearchRequirements(developmentCatalogCounts: {'B05': 1}),
+        'B07': CityResearchRequirements(developmentCatalogCounts: {'B05': 1}),
+        'B08': CityResearchRequirements(
+          developmentCatalogCounts: {'B05': 1},
+          minimumResearchPointsPerHour: 1200,
+        ),
+        'B09': CityResearchRequirements(developmentCatalogCounts: {'B01': 1}),
+        'B10': CityResearchRequirements(developmentCatalogCounts: {'B09': 1}),
+        'B11': CityResearchRequirements(developmentCatalogCounts: {'B01': 1}),
+        'B12': CityResearchRequirements(
+          developmentCatalogCounts: {'B01': 1, 'R07': 1},
+        ),
+        'B13': CityResearchRequirements(achievements: ['first_launch']),
+        'B14': CityResearchRequirements(developmentCatalogCounts: {'B13': 1}),
+        'B15': CityResearchRequirements(
+          developmentCatalogCounts: {'B13': 1},
+          minimumResearchPointsPerHour: 1200,
+        ),
+        'B16': CityResearchRequirements(
+          developmentCatalogCounts: {'B15': 1},
+          minimumResearchPointsPerHour: 1800,
+        ),
+        'B17': CityResearchRequirements(minimumSurveyedSites: 2),
+        'B18': CityResearchRequirements(
+          developmentCatalogCounts: {'B17': 1},
+          districtCounts: {'industry': 1},
+        ),
+        'B19': CityResearchRequirements(developmentCatalogCounts: {'B18': 1}),
+        'B20': CityResearchRequirements(
+          developmentCatalogCounts: {'B18': 1},
+          districtCounts: {'industry': 2},
+        ),
+        'B21': CityResearchRequirements(
+          developmentCatalogCounts: {'B05': 1},
+          districtCounts: {'industry': 1},
+        ),
+        'B22': CityResearchRequirements(
+          developmentCatalogCounts: {'B01': 1},
+          districtCounts: {'industry': 1},
+        ),
+        'B23': CityResearchRequirements(
+          developmentCatalogCounts: {'B05': 1},
+          minimumResearchPointsPerHour: 1200,
+        ),
+        'B24': CityResearchRequirements(
+          developmentCatalogCounts: {'B23': 1},
+          districtCounts: {'industry': 1},
+        ),
+        'M01': CityResearchRequirements(districtCounts: {'industry': 1}),
+        'M02': CityResearchRequirements(
+          developmentCatalogCounts: {'M01': 1},
+          minimumResearchPointsPerHour: 720,
+        ),
+        'M03': CityResearchRequirements(
+          developmentCatalogCounts: {'M01': 1},
+          minimumSurveyedSites: 1,
+        ),
+        'M04': CityResearchRequirements(
+          developmentCatalogCounts: {'M01': 1},
+          districtCounts: {'industry': 2},
+        ),
+        'M05': CityResearchRequirements(districtCounts: {'industry': 1}),
+        'M06': CityResearchRequirements(
+          developmentCatalogCounts: {'M01': 1},
+          achievements: ['first_landing'],
+        ),
+        'M07': CityResearchRequirements(
+          districtCounts: {'industry': 1},
+          minimumSurveyedSites: 2,
+        ),
+        'M08': CityResearchRequirements(
+          districtCounts: {'industry': 2},
+          minimumResearchPointsPerHour: 1200,
+        ),
+        'M09': CityResearchRequirements(achievements: ['first_launch']),
+        'M10': CityResearchRequirements(
+          developmentCatalogCounts: {'M09': 1},
+          districtCounts: {'spaceport': 1},
+        ),
+        'M11': CityResearchRequirements(
+          districtCounts: {'spaceport': 1},
+          minimumPower: 12,
+        ),
+        'M12': CityResearchRequirements(
+          districtCounts: {'spaceport': 2},
+          minimumPower: 16,
+        ),
+        'M25': CityResearchRequirements(
+          districtCounts: {'industry': 1},
+          achievements: ['first_launch'],
+        ),
+        'M26': CityResearchRequirements(
+          districtCounts: {'spaceport': 1, 'industry': 1},
+        ),
+        'M27': CityResearchRequirements(
+          districtCounts: {'spaceport': 1},
+          minimumMarsHabitats: 1,
+        ),
+        'M13': CityResearchRequirements(
+          districtCounts: {'moon_outpost': 1},
+          achievements: ['first_launch'],
+        ),
+        'M14': CityResearchRequirements(
+          districtCounts: {'spaceport': 1, 'industry': 2},
+        ),
+        'M15': CityResearchRequirements(
+          developmentCatalogCounts: {'E10': 1},
+          districtCounts: {'spaceport': 1},
+        ),
+        'M16': CityResearchRequirements(
+          developmentCatalogCounts: {'M13': 1},
+          districtCounts: {'moon_outpost': 1, 'moon_spaceport': 1},
+        ),
+        'M17': CityResearchRequirements(achievements: ['first_launch']),
+        'M18': CityResearchRequirements(developmentCatalogCounts: {'M17': 1}),
+        'M19': CityResearchRequirements(
+          developmentCatalogCounts: {'M17': 1},
+          districtCounts: {'moon_outpost': 1},
+        ),
+        'M20': CityResearchRequirements(
+          developmentCatalogCounts: {'M17': 1},
+          districtCounts: {'industry': 2},
+        ),
+        'M21': CityResearchRequirements(districtCounts: {'housing': 1}),
+        'M22': CityResearchRequirements(),
+        'M23': CityResearchRequirements(
+          districtCounts: {'housing': 2},
+          minimumSurveyedSites: 1,
+        ),
+        'M24': CityResearchRequirements(
+          districtCounts: {'industry': 1},
+          minimumMarsHabitats: 1,
+        ),
+        'R01': CityResearchRequirements(),
+        'R02': CityResearchRequirements(developmentCatalogCounts: {'R01': 1}),
+        'R03': CityResearchRequirements(
+          developmentCatalogCounts: {'R01': 1},
+          minimumSurveyedSites: 2,
+        ),
+        'R04': CityResearchRequirements(
+          developmentCatalogCounts: {'R01': 1},
+          minimumSurveyedSites: 1,
+        ),
+        'R05': CityResearchRequirements(
+          developmentCatalogCounts: {'R01': 1},
+          minimumPower: 6,
+        ),
+        'R06': CityResearchRequirements(
+          districtCounts: {'solar': 1, 'industry': 1},
+        ),
+        'R07': CityResearchRequirements(
+          developmentCatalogCounts: {'R01': 1},
+          districtCounts: {'industry': 1},
+        ),
+        'R08': CityResearchRequirements(
+          developmentCatalogCounts: {'R07': 1},
+          minimumPower: 12,
+        ),
+        'R09': CityResearchRequirements(developmentCatalogCounts: {'R01': 1}),
+        'R10': CityResearchRequirements(
+          developmentCatalogCounts: {'R09': 1},
+          minimumPower: 6,
+        ),
+        'R11': CityResearchRequirements(
+          developmentCatalogCounts: {'R09': 1},
+          districtCounts: {'industry': 1},
+        ),
+        'R12': CityResearchRequirements(
+          districtCounts: {'industry': 2},
+          minimumPower: 12,
+        ),
+        'R13': CityResearchRequirements(
+          districtCounts: {'industry': 1},
+          minimumSurveyedSites: 2,
+        ),
+        'R14': CityResearchRequirements(
+          developmentCatalogCounts: {'R01': 1},
+          districtCounts: {'industry': 1},
+        ),
+        'R15': CityResearchRequirements(districtCounts: {'industry': 1}),
+        'R16': CityResearchRequirements(
+          developmentCatalogCounts: {'R15': 1},
+          districtCounts: {'industry': 2},
+        ),
+        'R17': CityResearchRequirements(
+          developmentCatalogCounts: {'R01': 1},
+          districtCounts: {'housing': 1},
+        ),
+        'R18': CityResearchRequirements(
+          districtCounts: {'industry': 1},
+          minimumSurveyedSites: 2,
+        ),
+        'R19': CityResearchRequirements(
+          districtCounts: {'industry': 1},
+          minimumPower: 6,
+        ),
+        'R20': CityResearchRequirements(
+          districtCounts: {'housing': 2, 'industry': 2},
+        ),
+        'R21': CityResearchRequirements(
+          developmentCatalogCounts: {'R01': 1},
+          minimumResearchPointsPerHour: 720,
+        ),
+        'R22': CityResearchRequirements(
+          developmentCatalogCounts: {'R09': 1},
+          minimumResearchPointsPerHour: 720,
+        ),
+        'R23': CityResearchRequirements(
+          developmentCatalogCounts: {'R01': 1},
+          minimumResearchPointsPerHour: 1800,
+        ),
+        'R24': CityResearchRequirements(
+          developmentCatalogCounts: {'R01': 1},
+          districtCounts: {'industry': 2},
+          minimumResearchPointsPerHour: 2400,
+        ),
+        'E01': CityResearchRequirements(),
+        'E02': CityResearchRequirements(districtCounts: {'solar': 2}),
+        'E03': CityResearchRequirements(
+          districtCounts: {'solar': 1, 'moon_outpost': 1},
+        ),
+        'E04': CityResearchRequirements(
+          districtCounts: {'solar': 1},
+          minimumSurveyedSites: 2,
+        ),
+        'E05': CityResearchRequirements(
+          districtCounts: {'industry': 1},
+          minimumPower: 10,
+        ),
+        'E07': CityResearchRequirements(
+          developmentCatalogCounts: {'E05': 1},
+          minimumResearchPointsPerHour: 1200,
+        ),
+        'E08': CityResearchRequirements(
+          developmentCatalogCounts: {'E05': 1},
+          minimumPower: 14,
+        ),
+        'E09': CityResearchRequirements(districtCounts: {'solar': 1}),
+        'E10': CityResearchRequirements(
+          developmentCatalogCounts: {'E09': 1},
+          minimumPower: 6,
+        ),
+        'E11': CityResearchRequirements(developmentCatalogCounts: {'E10': 1}),
+        'E12': CityResearchRequirements(
+          developmentCatalogCounts: {'E10': 1},
+          districtCounts: {'spaceport': 1},
+        ),
+        'E13': CityResearchRequirements(districtCounts: {'solar': 1}),
+        'E14': CityResearchRequirements(developmentCatalogCounts: {'E13': 1}),
+        'E15': CityResearchRequirements(
+          developmentCatalogCounts: {'E13': 1},
+          districtCounts: {'solar': 2},
+        ),
+        'E16': CityResearchRequirements(
+          developmentCatalogCounts: {'E13': 1},
+          districtCounts: {'solar': 3},
+        ),
+        'E17': CityResearchRequirements(
+          developmentCatalogCounts: {'E13': 1},
+          minimumPower: 16,
+          minimumResearchPointsPerHour: 1200,
+        ),
+        'E18': CityResearchRequirements(
+          developmentCatalogCounts: {'E17': 1, 'M01': 1},
+        ),
+        'E19': CityResearchRequirements(
+          developmentCatalogCounts: {'E17': 1, 'M17': 1},
+        ),
+        'E20': CityResearchRequirements(
+          developmentCatalogCounts: {'E17': 1},
+          achievements: ['first_launch'],
+        ),
+        'E21': CityResearchRequirements(districtCounts: {'housing': 1}),
+        'E22': CityResearchRequirements(
+          districtCounts: {'housing': 2},
+          minimumPower: 6,
+        ),
+        'E23': CityResearchRequirements(
+          districtCounts: {'industry': 1},
+          minimumPower: 10,
+        ),
+        'E24': CityResearchRequirements(
+          districtCounts: {'solar': 2, 'housing': 2},
+        ),
+      };
+
+  static CityResearchRequirements cityResearchRequirements(String id) =>
+      cityResearchRequirementsByCatalog[technology(id).catalogId] ??
+      const CityResearchRequirements();
   static const developmentCostsByStage = [1200, 12000, 85000];
   static const developmentDurationsByStage = [300, 1800, 14400];
   static const developmentUpkeepByStage = [3, 12, 35];
@@ -695,9 +1020,9 @@ abstract final class GameContent {
 
   static String developmentBenefitLabel(String id) {
     final bonus = developmentEfficiencyBonus(id);
-    final capacity = developmentResearchCapacity(id);
+    final points = developmentResearchPointsPerMinute(id);
     final effect = switch (developmentEffect(id)) {
-      ResearchUnlockEffect.research => '研究者配置時の研究運営能力 最大+$bonus%',
+      ResearchUnlockEffect.research => '研究運営能力 +$bonus%',
       ResearchUnlockEffect.production => '製造能力 +$bonus%',
       ResearchUnlockEffect.transport => '輸送運営能力 +$bonus%',
       ResearchUnlockEffect.construction => '現地建設能力 +$bonus%',
@@ -706,9 +1031,7 @@ abstract final class GameContent {
       ResearchUnlockEffect.partnership =>
         '共同事業収入 +${developmentIncomePerMinute(id)}ドル/分（提携合意が必要）',
     };
-    final research = capacity > 0
-        ? '。実験へ最大$capacity名、基準${developmentResearchRate(id)}RP/人・分（生産能力と配分）'
-        : '';
+    final research = points > 0 ? '。基準$points RP/分（都市・研究・提携の効果を適用）' : '';
     return '稼働中：$effect$research。部署の能力上限内で適用';
   }
 
@@ -758,7 +1081,7 @@ abstract final class GameContent {
     requiredResearch: technology.id,
     developmentId: technology.id,
     description:
-        '${technology.unlockDescription}\n${developmentScopeLabel(technology.id)}。完成後は休止状態で保有し、稼働と人員を配分します。',
+        '${technology.unlockDescription}\n${developmentScopeLabel(technology.id)}。完成後は電力・資金・資材を確認して稼働します。',
     science: technology.science,
   );
   static TaskDefinition _developmentOperation(ResearchTechnology technology) {
@@ -1390,7 +1713,7 @@ abstract final class GameContent {
   static const agencyMetricDescriptions = {
     'fame': '知名度：研究1件+4、完成地区1区画+2、居住・輸送実績1件+8、提携選択1件+3。上限100。提携の解禁と活動の目安に使います。独立した収益効果はありません。',
     'technology':
-        '技術力：研究1件+6、完成地区の総レベル+1ずつ。上限100。提携解禁に使います。実際の効率は各研究・地区・人員・提携の効果で決まります。',
+        '技術力：研究1件+6、完成地区の総レベル+1ずつ。上限100。提携解禁に使います。実際の効率は各研究・地区・設備・提携の効果で決まります。',
     'friendship': '友好度：初期10＋選択した提携・支援の加点。上限100。宇宙支援の解禁に使います。追加の割引・自動支援はありません。',
     'spaceContribution': '宇宙支援貢献：宇宙輸送・居住・現地運営の研究1件+3、輸送・居住実績1件+8、火星地区総レベル×2、提携選択の加点。上限100。宇宙支援の解禁に使います。追加報酬は自動発生しません。',
   };
@@ -2001,4 +2324,24 @@ class ResearchRequirementStatus {
   final String label, unmetReason;
   final int current, required;
   bool get isMet => current >= required;
+}
+
+/// City-scale prerequisites are checked only when knowledge is purchased.
+/// Owned knowledge is never revoked when population or operating rates change.
+class CityResearchRequirements {
+  const CityResearchRequirements({
+    this.developmentCatalogCounts = const {},
+    this.districtCounts = const {},
+    this.achievements = const [],
+    this.minimumPower = 0,
+    this.minimumResearchPointsPerHour = 0,
+    this.minimumSurveyedSites = 0,
+    this.minimumMarsHabitats = 0,
+  });
+  final Map<String, int> developmentCatalogCounts, districtCounts;
+  final List<String> achievements;
+  final int minimumPower,
+      minimumResearchPointsPerHour,
+      minimumSurveyedSites,
+      minimumMarsHabitats;
 }

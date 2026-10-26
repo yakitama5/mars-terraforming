@@ -28,15 +28,6 @@ class CommandHud extends StatelessWidget {
       final wide = constraints.maxWidth >= 1100;
       final compactActions = constraints.maxWidth < 1000;
       final status = game.agencyStatus;
-      // Domain getters already separate equipment crews, paid work and the
-      // researchers left in the main lab. Only combine their display totals.
-      final usedResearchers =
-          game.minAssignableResearchers +
-          (game.facilities['lab'] == true ? game.labResearchers : 0);
-      final usedIndustrialWorkers =
-          game.developmentWorkers + game.reservedIndustrialWorkers;
-      final industrialDepartment =
-          game.industrialWorkers + game.developmentWorkers;
       return Container(
         key: const Key('command-resource-hud'),
         height: MediaQuery.textScalerOf(context).scale(14) > 18
@@ -77,9 +68,11 @@ class CommandHud extends StatelessWidget {
               flex: 18,
               child: _Resource(
                 label: '資金',
-                value: '${_hudNumber(game.money)}ドル',
+                value:
+                    '${_hudNumber(game.money)}/${_hudNumber(game.moneyCapacity)}ドル',
                 valueKey: const Key('money'),
-                description: '資金 ${dollars(game.money)}',
+                description:
+                    '資金 ${dollars(game.money)} / 上限 ${dollars(game.moneyCapacity)}。人口で上限が広がります',
                 color: strategyMint,
                 onTap: onOpenResources,
               ),
@@ -101,10 +94,11 @@ class CommandHud extends StatelessWidget {
               flex: 13,
               child: _Resource(
                 label: wide ? '研究ポイント' : '研究RP',
-                value: '${_hudNumber(game.researchPoints, fraction: true)} RP',
+                value:
+                    '${_hudNumber(game.researchPoints, fraction: true)}/${_hudNumber(game.researchPointCapacity)} RP',
                 valueKey: const Key('hud-research-points'),
                 description:
-                    '研究ポイント ${game.researchPoints.toStringAsFixed(1)} RP · 毎分 ${game.researchPointsPerMinute.toStringAsFixed(1)} RP',
+                    '研究ポイント ${game.researchPoints.toStringAsFixed(1)} RP / 上限 ${game.researchPointCapacity} RP · 毎時 ${game.researchPointsPerHour.toStringAsFixed(1)} RP',
                 color: strategyBenefit,
                 onTap: onOpenResources,
               ),
@@ -112,24 +106,22 @@ class CommandHud extends StatelessWidget {
             Expanded(
               flex: 12,
               child: _Resource(
-                label: '研究者',
-                value:
-                    '${_hudNumber(usedResearchers)}/${_hudNumber(game.researchers)}',
-                valueKey: const Key('hud-researchers'),
-                description:
-                    '研究者 使用中 $usedResearchers人 / 研究部門 ${game.researchers}人。研究所・専門設備の配属と支払済み研究で確保した人員',
+                label: '総人口',
+                value: '${_hudNumber(game.totalPopulation)}人',
+                valueKey: const Key('hud-population'),
+                description: '全都市の人口 ${game.totalPopulation}人。研究と資金の保有上限を支えます',
                 onTap: onOpenResources,
               ),
             ),
             Expanded(
               flex: 12,
               child: _Resource(
-                label: '工業員',
+                label: '研究能力',
                 value:
-                    '${_hudNumber(usedIndustrialWorkers)}/${_hudNumber(industrialDepartment)}',
-                valueKey: const Key('hud-industrial-workers'),
+                    '${_hudNumber(game.researchPointsPerHour, fraction: true)} RP/時',
+                valueKey: const Key('hud-research-rate'),
                 description:
-                    '工業員 使用中 $usedIndustrialWorkers人 / 工業部門 $industrialDepartment人。専門設備の配属と支払済み製造・建設で確保した人員',
+                    '稼働中の研究施設による生産能力 ${game.researchPointsPerHour.toStringAsFixed(1)} RP/時',
                 onTap: onOpenResources,
               ),
             ),

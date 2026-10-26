@@ -77,6 +77,11 @@ void main() {
     until(() => plan.isFinished);
   }
 
+  // A city foundation is now part of research. Build it with the normal
+  // starting budget before choosing either specialist facility.
+  command(game.enqueueDistrict('earth_delta', 1, 'housing'));
+  final housing = game.state.plans.last;
+  until(() => housing.isFinished);
   contract(30);
   final greenhouse = build('B01', 12, 0);
   final analysis = build('R01', 12, 1);
@@ -86,7 +91,6 @@ void main() {
       game.state.cityStock('earth_delta', 'water') != 3) {
     throw StateError('温室の入力消費と食品産出が成立していません');
   }
-  command(game.assignDevelopmentResearchers(analysis, 1));
   work(analysis, 'building_survey', targetPlot: 8);
   if (game.enqueueBuildingWork(
         analysis,
@@ -124,7 +128,7 @@ void main() {
   }
   stdout.writeln(
     jsonEncode({
-      'route': '初期予算→受注→研究→同一区画の温室/分析所→食品生産/一度限り調査',
+      'route': '初期予算→住宅の都市基盤→受注→研究→同一区画の温室/分析所→食品生産/一度限り調査',
       'elapsedMinutes': game.state.simulatedMs / 60000,
       'money': game.state.money,
       'food': game.state.cityStock('earth_delta', 'food'),

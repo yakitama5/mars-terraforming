@@ -39,7 +39,7 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
       children: [
         const StrategyHeading(
           '研究を街と航路へ',
-          '解放した設計を都市へ導入します。完成後に稼働と人員を決め、受注・輸送・研究へ配分します。',
+          '解放した設計を都市へ導入します。施設の能力・維持費・役割を比べて、次の投資を選びます。',
         ),
         Wrap(
           spacing: 6,
@@ -136,7 +136,7 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
           ] else
             Text(
               existing.workState == 'none'
-                  ? '保有済み・配属と仕事は地図で操作'
+                  ? '保有済み・稼働と仕事は地図で操作'
                   : existing.workLabel,
               style: const TextStyle(fontSize: 12, color: strategyMint),
             ),
@@ -182,7 +182,7 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
           ),
           const SizedBox(height: 4),
           const Text(
-            '地図で区画と位置を選び、費用・適地を確認して予約します。',
+            '地図で区画と位置を選び、費用・適地を確認して着工します。',
             style: TextStyle(fontSize: 11, color: strategyMuted),
           ),
         ],
@@ -213,8 +213,6 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
         ? proposed
         : cities.firstOrNull?.id;
     final builtCity = game.developmentCityIds[id];
-    final assigned = game.developmentResearchers[id] ?? 0;
-    final capacity = GameContent.developmentResearchCapacity(id);
     final operationId = GameContent.developmentOperationTaskId(id);
     final operation = GameContent.tasks[operationId];
     return StrategyCard(
@@ -303,13 +301,22 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
                   '稼働時の維持費',
                   '${dollars(GameContent.developmentUpkeepPerMinute(id))}/分',
                 ),
-                StrategyStat(
-                  '稼働に使う工業員',
-                  '${GameContent.developmentCrewRequirement(id)}人',
-                ),
               ],
             ),
             const SizedBox(height: 10),
+            if (!owned &&
+                activePlan == null &&
+                game.money < game.taskCost(task))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  game.taskCost(task) > game.moneyCapacity
+                      ? '必要な導入費が資金の保有上限を超えています。人口を増やして資金の保有上限を広げましょう。'
+                      : '必要な導入費を蓄えてから開始できます。',
+                  key: Key('development-funding-reason-$id'),
+                  style: const TextStyle(fontSize: 12, color: strategyCopper),
+                ),
+              ),
             if (!owned && activePlan == null) ...[
               if (cities.isNotEmpty)
                 DropdownButtonFormField<String>(
@@ -349,7 +356,7 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
                           ),
                         ),
                   icon: const Icon(Icons.construction_outlined, size: 18),
-                  label: const Text('導入を予約'),
+                  label: const Text('導入を開始'),
                 ),
               ),
             ],
@@ -357,8 +364,19 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
               Text(
                 activePlan.status == 'running'
                     ? '導入中 · ${gameDuration(activePlan.remainingMs)}'
-                    : '導入を予約済み · ${activePlan.stopReason}',
+                    : '要着手 · ${activePlan.stopReason}',
                 style: const TextStyle(fontSize: 12, color: strategyCopper),
+              ),
+            if (activePlan?.requiresManualStart == true)
+              FilledButton.tonalIcon(
+                key: Key('start-development-${activePlan!.id}'),
+                onPressed: controller.busy
+                    ? null
+                    : () => controller.command(
+                        (engine) => engine.startPlan(activePlan.id),
+                      ),
+                icon: const Icon(Icons.play_arrow_outlined, size: 18),
+                label: const Text('導入を開始'),
               ),
             if (owned) ...[
               if (builtCity != null)
@@ -372,10 +390,10 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
                 title: Text(enabled ? '稼働する' : '休止中'),
                 subtitle: Text(
                   game.isDevelopmentOperational(id)
-                      ? '人員と維持費を使い、設備が働いています。'
+                      ? '維持費を使い、設備が働いています。'
                       : enabled
-                      ? '人員・共用設備などの稼働条件を確認してください。'
-                      : '維持費と稼働人員の割当を止めています。',
+                      ? '共用設備・電力などの稼働条件を確認してください。'
+                      : '設備の稼働と維持費を止めています。',
                   style: const TextStyle(fontSize: 12),
                 ),
                 value: enabled,
@@ -385,43 +403,6 @@ class _ResearchDevelopmentsState extends State<ResearchDevelopments> {
                         (engine) => engine.setDevelopmentEnabled(id, value),
                       ),
               ),
-              if (capacity > 0)
-                Wrap(
-                  spacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text('実験に配分：$assigned人 / 設備枠$capacity人'),
-                    IconButton(
-                      key: Key('development-research-minus-$id'),
-                      tooltip: '実験担当を1人減らす',
-                      onPressed: controller.busy || assigned <= 0
-                          ? null
-                          : () => controller.command(
-                              (engine) => engine.assignDevelopmentResearchers(
-                                id,
-                                assigned - 1,
-                              ),
-                            ),
-                      icon: const Icon(Icons.remove_circle_outline),
-                    ),
-                    IconButton(
-                      key: Key('development-research-plus-$id'),
-                      tooltip: '研究所から実験担当を1人配分',
-                      onPressed:
-                          controller.busy ||
-                              !game.isDevelopmentOperational(id) ||
-                              assigned >= capacity
-                          ? null
-                          : () => controller.command(
-                              (engine) => engine.assignDevelopmentResearchers(
-                                id,
-                                assigned + 1,
-                              ),
-                            ),
-                      icon: const Icon(Icons.add_circle_outline),
-                    ),
-                  ],
-                ),
               if (operation != null) ...[
                 const SizedBox(height: 8),
                 Text(

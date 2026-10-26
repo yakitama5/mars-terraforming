@@ -122,7 +122,7 @@ void main() {
     expect(engine.state.research, {bio, energy});
   });
 
-  test('future research stays unavailable even with enough points and grows after its parent', () {
+  test('future research stays unavailable and discovered children retain urban conditions', () {
     final engine = fresh();
     givePoints(engine.state, 1000000);
     final parent = idFor('B01');
@@ -135,7 +135,8 @@ void main() {
     expect(engine.unlockResearch(parent), isNull);
     expect(engine.state.discoveredResearchIds, contains(child));
     expect(engine.state.discoveredResearchIds, isNot(contains(hidden)));
-    expect(engine.unlockResearch(child), isNull);
+    expect(engine.unlockResearch(child), isNotNull);
+    expect(engine.state.research, isNot(contains(child)));
   });
 
   test(
@@ -151,24 +152,30 @@ void main() {
     },
   );
 
-  test('paused lab and zero researchers stop RP without deleting its bank', () {
-    final engine = fresh();
-    engine.state.researchPointUnits = 53;
-    expect(engine.setFacilityEnabled('lab', false), isNull);
-    expect(engine.state.researchPointsPerMinute, 0);
-    engine.advanceBy(const Duration(minutes: 5));
-    expect(engine.state.researchPointUnits, 53);
-    expect(engine.setFacilityEnabled('lab', true), isNull);
-    expect(engine.assignResearchers(0), isNull);
-    expect(engine.state.researchPointsPerMinute, 0);
-    engine.advanceBy(const Duration(minutes: 5));
-    expect(engine.state.researchPointUnits, 53);
-  });
+  test(
+    'paused lab stops RP while deprecated staffing never changes its output',
+    () {
+      final engine = fresh();
+      engine.state.researchPointUnits = 53;
+      expect(engine.setFacilityEnabled('lab', false), isNull);
+      expect(engine.state.researchPointsPerMinute, 0);
+      engine.advanceBy(const Duration(minutes: 5));
+      expect(engine.state.researchPointUnits, 53);
+      expect(engine.setFacilityEnabled('lab', true), isNull);
+      final rate = engine.state.researchPointsPerMinute;
+      expect(engine.assignResearchers(0), isNotNull);
+      engine.state.researchers = 0;
+      expect(engine.state.researchPointsPerMinute, rate);
+      engine.advanceBy(const Duration(minutes: 5));
+      expect(engine.state.researchPointUnits, greaterThan(53));
+    },
+  );
 
-  test('RP waiting boundary and unrelated contracts match irregular catch-up partitions', () {
+  test('RP accrual and contracts match partitions without automatically starting research', () {
     final one = fresh();
     one.state.researchPointUnits = 0;
-    expect(one.enqueue('life_support'), isNull);
+    expect(one.enqueue('life_support'), contains('不足'));
+    expect(one.state.plans, isEmpty);
     expect(one.enqueue('factory_contract', repeats: 3), isNull);
     expect(one.enqueue('launch_contract', repeats: 2), isNull);
     final split = GameEngine(copy(one.state));
@@ -181,7 +188,8 @@ void main() {
     }
     split.advanceTo(epoch.add(duration));
     expect(split.state.toJson(), one.state.toJson());
-    expect(one.state.research, contains('life_support'));
+    expect(one.state.research, isNot(contains('life_support')));
+    expect(one.unlockResearch('life_support'), isNull);
     expect(
       one.state.plans
           .where((plan) => plan.taskId == 'life_support')
@@ -268,38 +276,38 @@ void main() {
     expect(engine.enqueueDevelopment(id, cityId: cityFor(id)), isNotNull);
   });
 
-  test(
-    'specialist research allocation is shared with the lab and survives reload',
-    () {
-      final engine = fresh();
-      final id = idFor('B01');
-      givePoints(engine.state, GameContent.researchPointCost(id));
-      expect(engine.unlockResearch(id), isNull);
-      buildDevelopment(engine, id);
-      expect(GameContent.developmentResearchCapacity(id), greaterThan(0));
-      expect(engine.setDevelopmentEnabled(id, true), isNull);
-      expect(engine.assignDevelopmentResearchers(id, 1), isNull);
-      expect(engine.state.developmentResearchers[id], 1);
-      expect(engine.state.labResearchers, engine.state.researchers - 1);
-      expect(engine.state.isDevelopmentOperational(id), isTrue);
-      expect(engine.state.developmentUpkeepPerMinute, greaterThan(0));
-      expect(engine.assignResearchers(0), isNotNull);
-      expect(
-        engine.assignDevelopmentResearchers(
-          id,
-          GameContent.developmentResearchCapacity(id) + 1,
-        ),
-        isNotNull,
-      );
-      expect(engine.state.developmentResearchers[id], 1);
-      expect(copy(engine.state).toJson(), engine.state.toJson());
-      expect(engine.setDevelopmentEnabled(id, false), isNull);
-      expect(engine.state.isDevelopmentOperational(id), isFalse);
-      expect(engine.state.developmentUpkeepPerMinute, 0);
-    },
-  );
+  test('operational research facilities produce RP without allocation and survive reload', () {
+    final engine = fresh();
+    final id = idFor('R01');
+    givePoints(engine.state, GameContent.researchPointCost(id));
+    expect(engine.unlockResearch(id), isNull);
+    buildDevelopment(engine, id);
+    final baseline = engine.state.researchPointsPerMinute;
+    expect(engine.setDevelopmentEnabled(id, true), isNull);
+    expect(engine.state.researchPointsPerMinute, greaterThan(baseline));
+    final runningRate = engine.state.researchPointsPerMinute;
+    expect(engine.assignDevelopmentResearchers(id, 1), isNotNull);
+    engine.state.developmentResearchers[id] = 4;
+    engine.state.researchers = 0;
+    expect(engine.state.researchPointsPerMinute, runningRate);
+    expect(engine.state.isDevelopmentOperational(id), isTrue);
+    expect(engine.state.developmentUpkeepPerMinute, greaterThan(0));
+    expect(engine.assignResearchers(0), isNotNull);
+    expect(
+      engine.assignDevelopmentResearchers(
+        id,
+        GameContent.developmentResearchCapacity(id) + 1,
+      ),
+      isNotNull,
+    );
+    expect(engine.state.developmentResearchers[id], 4);
+    expect(copy(engine.state).toJson(), engine.state.toJson());
+    expect(engine.setDevelopmentEnabled(id, false), isNull);
+    expect(engine.state.isDevelopmentOperational(id), isFalse);
+    expect(engine.state.developmentUpkeepPerMinute, 0);
+  });
 
-  test('equipment cannot take industrial staff already committed to paid factory work', () {
+  test('operating equipment needs no staff reserved by paid factory work', () {
     final engine = fresh();
     final id = idFor('M25');
     engine.state.research.add(id);
@@ -308,8 +316,9 @@ void main() {
     expect(engine.enqueue('factory_contract'), isNull);
     final contract = engine.state.plans.last;
     expect(contract.status, 'running');
-    expect(engine.setDevelopmentEnabled(id, true), isNotNull);
-    expect(engine.state.developmentEnabled[id], isFalse);
+    expect(contract.iterationSpecialists, 0);
+    expect(engine.setDevelopmentEnabled(id, true), isNull);
+    expect(engine.state.developmentEnabled[id], isTrue);
     engine.advanceBy(Duration(milliseconds: contract.remainingMs));
     expect(engine.setDevelopmentEnabled(id, true), isNull);
     expect(engine.state.developmentWorkers, greaterThan(0));
@@ -317,7 +326,7 @@ void main() {
   });
 
   test(
-    'pausing a shared facility cannot restore an over-allocated research crew',
+    'pausing a shared facility resumes without hidden staffing constraints',
     () {
       final engine = fresh();
       final id = idFor('B01');
@@ -325,16 +334,13 @@ void main() {
       expect(engine.unlockResearch(id), isNull);
       buildDevelopment(engine, id);
       expect(engine.setDevelopmentEnabled(id, true), isNull);
-      expect(engine.assignDevelopmentResearchers(id, 1), isNull);
+      engine.state.developmentResearchers[id] = 4;
       final facilityId = GameContent.developmentFacilityId(id);
       expect(engine.setFacilityEnabled(facilityId, false), isNull);
-      engine.assignResearchers(0);
+      engine.state.researchers = 0;
       engine.setFacilityEnabled(facilityId, true);
-      expect(
-        engine.state.specializedResearchers + engine.state.reservedResearchers,
-        lessThanOrEqualTo(engine.state.researchers),
-      );
-      expect(engine.state.labResearchers, greaterThanOrEqualTo(0));
+      expect(engine.setDevelopmentEnabled(id, true), isNull);
+      expect(engine.state.isDevelopmentOperational(id), isTrue);
       expect(() => copy(engine.state), returnsNormally);
     },
   );

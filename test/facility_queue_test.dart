@@ -116,14 +116,16 @@ void main() {
   );
 
   testWidgets(
-    'RP research reservation shows its point bank without a cash bill or timer',
+    'preserved research shows its point bank and requires manual start',
     (tester) async {
       final controller = GameController(QueueMemorySave(), now: () => epoch);
       await controller.initialize(startTimer: false);
       addTearDown(controller.dispose);
       controller.state.researchPointUnits = 0;
-      await controller.command((engine) => engine.enqueue('life_support'));
-      final plan = controller.state.plans.single;
+      final plan = PlannedTask(id: 'preserved-research', taskId: 'life_support')
+        ..requiresManualStart = true
+        ..stopReason = '着手待ち：研究ポイント不足';
+      controller.state.plans.add(plan);
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -149,7 +151,53 @@ void main() {
         find.byKey(const Key('lab-common-research-points')),
         findsOneWidget,
       );
-      expect(find.textContaining('研究ポイント待ち'), findsWidgets);
+      expect(find.byKey(Key('start-plan-${plan.id}')), findsOneWidget);
+      expect(find.textContaining('要着手'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'the preserved research action explicitly unlocks and disappears',
+    (tester) async {
+      final controller = GameController(QueueMemorySave(), now: () => epoch);
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      final plan =
+          PlannedTask(id: 'preserved-ready-research', taskId: 'life_support')
+            ..requiresManualStart = true
+            ..stopReason = '着手待ち';
+      controller.state.plans.add(plan);
+      final before = controller.state.researchPointUnits;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ListenableBuilder(
+              listenable: controller,
+              builder: (_, _) => SingleChildScrollView(
+                child: FacilityQueueCard(
+                  controller: controller,
+                  facilityId: 'lab',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(controller.state.research, isNot(contains('life_support')));
+      final action = find.byKey(Key('start-plan-${plan.id}'));
+      await tester.ensureVisible(action);
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+      expect(controller.state.research, contains('life_support'));
+      expect(plan.status, 'completed');
+      expect(
+        controller.state.researchPointUnits,
+        before -
+            GameContent.researchPointCost('life_support') *
+                GameState.researchPointScale,
+      );
+      expect(action, findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -312,7 +360,11 @@ void main() {
       await controller.command((engine) => engine.enqueue('habitat_kit'));
       controller.state.achievements.addAll(['first_launch', 'mars_route_open']);
       await controller.command((engine) => engine.enqueue('mars_delivery'));
-      await controller.command((engine) => engine.enqueue('build_habitat'));
+      controller.state.plans.add(
+        PlannedTask(id: 'preserved-habitat', taskId: 'build_habitat')
+          ..requiresManualStart = true
+          ..stopReason = '火星輸送後に居住方式を選択',
+      );
       final current = controller.state.plans[0];
       final kit = controller.state.plans[1];
       await tester.pumpWidget(
@@ -359,7 +411,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(card, findsOneWidget);
       }
-      expect(find.textContaining('火星輸送後に居住方式を選択'), findsWidgets);
+      expect(find.byKey(const Key('manual-preserved-habitat')), findsOneWidget);
+      expect(
+        find.byKey(const Key('start-plan-preserved-habitat')),
+        findsOneWidget,
+      );
       expect(find.textContaining('資源不足'), findsWidgets);
       expect(tester.takeException(), isNull);
     });

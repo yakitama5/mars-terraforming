@@ -98,7 +98,7 @@ class MapBuildingChoice extends StatelessWidget {
                         ? existing.workState == 'none'
                               ? '保有済み・地図で確認'
                               : existing.workLabel.isEmpty
-                              ? '工事を予約済み'
+                              ? '要着手の計画'
                               : existing.workLabel
                         : owned
                         ? '保有済み・配置先を選ぶ'
@@ -186,6 +186,16 @@ class MapBuildingInspector extends StatelessWidget {
         definition.isBaseLab ||
         (building != null && game.developments.contains(building!.id));
     final reserving = building != null && building!.workState != 'none';
+    final manualPlan = building == null
+        ? null
+        : game.plans
+              .where(
+                (plan) =>
+                    !plan.isFinished &&
+                    plan.requiresManualStart &&
+                    plan.buildingInstanceId == building!.id,
+              )
+              .firstOrNull;
     final placement = moving || (!owned && !reserving);
     final preview = game.buildingPreview(
       moving ? building?.id ?? id : id,
@@ -272,7 +282,7 @@ class MapBuildingInspector extends StatelessWidget {
                     ),
                     if (preview.availableKits < preview.requiredKits)
                       const Text(
-                        '着工時に現地キットを使います。予約して通常便の到着を待てます。',
+                        '現地キットの到着後に着工できます。通常便の輸送を進めましょう。',
                         key: Key('building-kit-wait'),
                         style: TextStyle(fontSize: 11, color: strategyCopper),
                       ),
@@ -294,9 +304,14 @@ class MapBuildingInspector extends StatelessWidget {
                   if (hasPlotSelection &&
                       preview.isValid &&
                       game.money < preview.cost)
-                    const Text(
-                      '資金がそろうまで予約は待機します。受注と建設の順番も確認しましょう。',
-                      style: TextStyle(fontSize: 12, color: strategyCopper),
+                    Text(
+                      preview.cost > game.moneyCapacity
+                          ? '必要な建設費が資金の保有上限を超えています。人口を増やして資金の保有上限を広げましょう。'
+                          : '必要な資金を用意してから着工できます。受注や税収で資金を蓄えましょう。',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: strategyCopper,
+                      ),
                     ),
                 ] else ...[
                   Text(
@@ -328,7 +343,7 @@ class MapBuildingInspector extends StatelessWidget {
                       _operations(game)
                     else
                       const Text(
-                        '移設の完了後に配属と仕事を操作できます。',
+                        '移設の完了後に稼働と仕事を操作できます。',
                         style: TextStyle(fontSize: 12, color: strategyMuted),
                       ),
                     const SizedBox(height: 8),
@@ -363,6 +378,17 @@ class MapBuildingInspector extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (manualPlan != null)
+                  FilledButton.icon(
+                    key: Key('start-building-plan-${manualPlan.id}'),
+                    onPressed: controller.busy
+                        ? null
+                        : () => controller.command(
+                            (engine) => engine.startPlan(manualPlan.id),
+                          ),
+                    icon: const Icon(Icons.play_arrow_outlined, size: 17),
+                    label: Text(manualPlan.relocation ? '移設を開始' : '着工する'),
+                  ),
                 if (placement)
                   FilledButton.icon(
                     key: const Key('confirm-map-building'),
@@ -370,11 +396,13 @@ class MapBuildingInspector extends StatelessWidget {
                         controller.busy ||
                             !hasPlotSelection ||
                             !preview.isValid ||
+                            game.money < preview.cost ||
+                            preview.availableKits < preview.requiredKits ||
                             !availableSlots.contains(slotIndex)
                         ? null
                         : onConfirm,
                     icon: const Icon(Icons.construction, size: 17),
-                    label: Text(moving ? '移設を予約' : '建設を予約'),
+                    label: Text(moving ? '移設を開始' : '着工する'),
                   ),
                 TextButton(
                   key: const Key('cancel-map-building'),
@@ -396,12 +424,6 @@ class MapBuildingInspector extends StatelessWidget {
     final enabled = base
         ? game.facilities['lab'] == true
         : game.developmentEnabled[id] == true;
-    final assigned = base
-        ? game.researchers
-        : game.developmentResearchers[id] ?? 0;
-    final capacity = base
-        ? game.specialistCount
-        : game.developmentResearchCapacityFor(id);
     final work = game.buildingWorkTasks(id);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -414,10 +436,10 @@ class MapBuildingInspector extends StatelessWidget {
           value: enabled,
           subtitle: Text(
             base
-                ? '本部の研究者が共通RPを生産します。'
+                ? '基礎研究所が共通RPを生産します。'
                 : building?.operational == true
-                ? '担当者と維持費を使っています。'
-                : '稼働条件と人員を確認してください。',
+                ? '施設の能力に応じて稼働しています。'
+                : '電力・資材・維持費を確認してください。',
             style: const TextStyle(fontSize: 11),
           ),
           onChanged: controller.busy
@@ -428,54 +450,15 @@ class MapBuildingInspector extends StatelessWidget {
                       : engine.setDevelopmentEnabled(id, value),
                 ),
         ),
-        if (capacity > 0) ...[
-          Text(
-            base
-                ? '研究部門 $assigned人（本部 ${game.labResearchers}人）'
-                : '実験へ配分 $assigned / $capacity人',
-            style: const TextStyle(fontSize: 12),
+        if (base || game.developmentResearchCapacityFor(id) > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              '全施設の研究能力 ${game.researchPointsPerHour.toStringAsFixed(1)} RP/時',
+              key: const Key('map-building-common-rp'),
+              style: const TextStyle(fontSize: 11, color: strategyMint),
+            ),
           ),
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              IconButton(
-                key: Key('map-building-research-minus-$id'),
-                tooltip: '研究者を1人減らす',
-                onPressed: controller.busy || assigned <= 0
-                    ? null
-                    : () => controller.command(
-                        (engine) => base
-                            ? engine.assignResearchers(assigned - 1)
-                            : engine.assignDevelopmentResearchers(
-                                id,
-                                assigned - 1,
-                              ),
-                      ),
-                icon: const Icon(Icons.remove_circle_outline),
-              ),
-              IconButton(
-                key: Key('map-building-research-plus-$id'),
-                tooltip: '研究者を1人配分',
-                onPressed: controller.busy || !enabled || assigned >= capacity
-                    ? null
-                    : () => controller.command(
-                        (engine) => base
-                            ? engine.assignResearchers(assigned + 1)
-                            : engine.assignDevelopmentResearchers(
-                                id,
-                                assigned + 1,
-                              ),
-                      ),
-                icon: const Icon(Icons.add_circle_outline),
-              ),
-            ],
-          ),
-          Text(
-            '全施設の共通RP ${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
-            key: const Key('map-building-common-rp'),
-            style: const TextStyle(fontSize: 11, color: strategyMint),
-          ),
-        ],
         if (work.isNotEmpty) ...[
           const SizedBox(height: 10),
           const Text(

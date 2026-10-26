@@ -237,14 +237,17 @@ void main() {
       );
       await tap(tester, 'enable-map-building-${analyzer.id}');
       expect(controller.state.developmentEnabled[analyzer.id], isTrue);
-      await tap(tester, 'map-building-research-plus-${analyzer.id}');
-      expect(controller.state.developmentResearchers[analyzer.id], 1);
+      expect(
+        find.byKey(Key('map-building-research-plus-${analyzer.id}')),
+        findsNothing,
+      );
+      expect(controller.state.researchPointsPerMinute, greaterThan(0));
       final saved = GameState.fromJson(repository.data!);
       expect(
         saved.cityBuildings('earth_delta').where((b) => b.plotIndex == 12),
         hasLength(2),
       );
-      expect(saved.developmentResearchers[analyzer.id], 1);
+      expect(saved.isDevelopmentOperational(analyzer.id), isTrue);
       // The development-time command notice expires without advancing game time.
       await tester.pump(const Duration(seconds: 8));
       expect(tester.takeException(), isNull);
@@ -281,7 +284,7 @@ void main() {
   );
 
   testWidgets(
-    'research staffing changes the work quote and production keeps its completed model',
+    'facility production has a fixed quote and keeps its completed model',
     (tester) async {
       final controller = await ready(_BuildingSave());
       await controller.constructMapBuilding(
@@ -299,9 +302,11 @@ void main() {
           .firstWhere((b) => b.technologyId == 'orbital_gardens');
       await tap(tester, 'enable-map-building-${building.id}');
       expect(find.textContaining('出力：食品 3'), findsOneWidget);
-      await tap(tester, 'map-building-research-plus-${building.id}');
-      await tap(tester, 'map-building-research-plus-${building.id}');
-      expect(find.textContaining('出力：食品 2'), findsOneWidget);
+      expect(
+        find.byKey(Key('map-building-research-plus-${building.id}')),
+        findsNothing,
+      );
+      expect(find.textContaining('出力：食品 3'), findsOneWidget);
       await tap(tester, 'repeat-building-work-building_import_water');
       await tap(tester, 'reserve-building-work-building_import_water-5');
       expect(
@@ -371,7 +376,7 @@ void main() {
     ('mars', 'mars_arcadia', 'mars_delivery'),
   ]) {
     testWidgets(
-      '$planet construction shows local kits and reserves before normal cargo arrives',
+      '$planet construction requires local kits and starts only on explicit confirmation',
       (tester) async {
         final repository = _BuildingSave();
         final controller = await ready(repository);
@@ -400,18 +405,10 @@ void main() {
                 find.byKey(const Key('confirm-map-building')),
               )
               .onPressed,
-          isNotNull,
+          isNull,
         );
         final money = controller.state.money;
-        await tap(tester, 'confirm-map-building');
-        final construction = controller.state.plans.lastWhere(
-          (plan) => plan.definition.developmentId == 'orbital_gardens',
-        );
-        expect(construction.status, 'queued');
-        expect(construction.stopReason, isNotEmpty);
-        expect(controller.state.money, money);
-        expect(localKits(), 0);
-        expect(find.text(construction.stopReason), findsOneWidget);
+        expect(controller.state.plans, isEmpty);
         await controller.command((engine) => engine.enqueue(transport));
         final cargo = controller.state.currentPlanFor('launch')!;
         await controller.command((engine) {
@@ -419,7 +416,19 @@ void main() {
           return null;
         });
         await tester.pumpAndSettle();
+        expect(localKits(), 1);
+        expect(
+          controller.state.plans.where(
+            (plan) => plan.definition.developmentId == 'orbital_gardens',
+          ),
+          isEmpty,
+        );
+        await tap(tester, 'confirm-map-building');
+        final construction = controller.state.plans.lastWhere(
+          (plan) => plan.definition.developmentId == 'orbital_gardens',
+        );
         expect(construction.status, 'running');
+        expect(controller.state.money, lessThan(money));
         expect(localKits(), 0);
         expect(
           tester

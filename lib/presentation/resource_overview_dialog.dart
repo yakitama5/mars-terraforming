@@ -29,7 +29,10 @@ class ResourceOverviewDialog extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      StrategyFact('資金', dollars(game.money)),
+                      StrategyFact(
+                        '資金',
+                        '${dollars(game.money)} / ${dollars(game.moneyCapacity)}',
+                      ),
                       StrategyFact(
                         '毎分収支',
                         '${signedDollars(game.netPerMinute)}/分',
@@ -44,26 +47,27 @@ class ResourceOverviewDialog extends StatelessWidget {
                         ),
                       ],
                       const Text(
-                        '受注の報酬と、建設・製造・育成の開始費用は毎分収支に含みません。研究施設の維持費は含みます。',
+                        '受注の報酬と建設・製造の開始費用は毎分収支に含みません。維持費は上限到達後も通常どおり支払います。',
                         style: TextStyle(fontSize: 12, color: strategyMuted),
                       ),
                       const Divider(),
                       StrategyFact(
                         '共通研究ポイント',
-                        '${game.researchPoints.toStringAsFixed(1)} RP',
+                        '${game.researchPoints.toStringAsFixed(1)} / ${game.researchPointCapacity} RP',
                       ),
                       StrategyFact(
                         '研究ポイントの生産',
-                        '${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
+                        '${game.researchPointsPerHour.toStringAsFixed(1)} RP/時',
                       ),
                       const Text(
-                        '研究者を配置した稼働施設でRPを蓄えます。技術の解放には共通RPを使い、設備の建設・製造には別途投資します。',
+                        '稼働中の研究施設がRPを生産します。必要RPと都市条件がそろうと、その場で技術を解放できます。',
                         style: TextStyle(fontSize: 12, color: strategyMuted),
                       ),
                       const SizedBox(height: 10),
-                      StrategyFact(
-                        '研究者 / 工業員',
-                        '${game.researchers}人 / ${game.industrialWorkers}人',
+                      StrategyFact('総人口', '${game.totalPopulation}人'),
+                      const Text(
+                        '人口に応じて資金とRPの保有上限が広がります。人口減少や更新で上限を超えた分は保持し、追加の蓄積だけを止めます。',
+                        style: TextStyle(fontSize: 12, color: strategyMuted),
                       ),
                       StrategyFact('技術力', '${game.agencyStatus.technology}'),
                       StrategyFact('知名度', '${game.agencyStatus.fame}'),
@@ -88,7 +92,7 @@ class ResourceOverviewDialog extends StatelessWidget {
                 Navigator.pop(context);
                 onOpenAgency();
               },
-              child: const Text('人員・提携を開く'),
+              child: const Text('都市基盤・提携を開く'),
             ),
           TextButton(
             onPressed: () => Navigator.pop(context),

@@ -230,23 +230,25 @@ void main() {
   );
 
   testWidgets(
-    'RP-waiting research opens equipment status without a second timer',
+    'preserved research opens manual-start status without a second timer',
     (tester) async {
       final controller = GameController(_GuideSave(), now: () => epoch);
       await controller.initialize(startTimer: false);
       addTearDown(controller.dispose);
       final opened = <String>[];
       controller.state.researchPointUnits = 0;
-      await controller.command((engine) {
-        return engine.enqueue('life_support');
-      });
+      controller.state.plans.add(
+        PlannedTask(id: 'preserved-research', taskId: 'life_support')
+          ..requiresManualStart = true
+          ..stopReason = '着手待ち：条件を確認して手動で開始',
+      );
       await _mount(tester, controller, opened, const Size(844, 390));
-      expect(find.textContaining('予約済み · 研究ポイント待ち'), findsOneWidget);
+      expect(find.textContaining('要着手'), findsOneWidget);
       await tester.tap(find.byKey(const Key('next-goal')));
       expect(opened.last, 'operations:0:lab');
       await tester.tap(find.byKey(const Key('guide-roadmap')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('予約済み · 研究ポイント待ち'), findsWidgets);
+      expect(find.textContaining('要着手'), findsWidgets);
       final queued = find.byKey(const Key('onboarding-open-first_research'));
       await tester.ensureVisible(queued);
       await tester.pumpAndSettle();

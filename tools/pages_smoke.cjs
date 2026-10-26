@@ -56,13 +56,13 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     const main = await page(base);
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     await main.getByRole('button', { name: '機関運営', exact: true }).click();
-    await main.getByRole('button', { name: '研究者を1人増やす', exact: true }).click();
-    await main.getByRole('button', { name: '人員配分を確定', exact: true }).click();
+    await main.getByRole('button', { name: '都市基盤', exact: true }).click();
+    assert.equal(await main.getByRole('button', { name: '研究者を1人増やす', exact: true }).count(), 0);
     await main.waitForTimeout(300);
     const mainBefore = await snapshot(main, mainKey);
-    assert.equal(mainBefore.contentVersion, 'district-8');
-    assert.equal(mainBefore.researchers, 7);
-    assert.equal(mainBefore.specialistCount, 12);
+    assert.equal(mainBefore.contentVersion, 'district-11');
+    assert.ok(mainBefore.population >= 180);
+    assert.ok(mainBefore.researchPointUnits <= (240 + (mainBefore.population + mainBefore.marsResidents) * 40) * 6000000);
     assert.equal(mainBefore.firstRunTutorial, 'completed');
     assert.ok(mainBefore.districts.some(d => d.cityId === 'earth_delta' && d.plotIndex === 1 && d.districtId === 'housing'));
     assert.ok(mainBefore.plans.some(p => p.taskId === 'life_support'));
@@ -121,8 +121,7 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     await inspectGuidance(develop, developKey);
     await develop.getByRole('button', { name: '機関運営', exact: true }).click();
     const devBefore = await snapshot(develop, developKey);
-    assert.equal(devBefore.contentVersion, 'district-8');
-    assert.equal(devBefore.researchers, 6);
+    assert.equal(devBefore.contentVersion, 'district-11');
     assert.notEqual(mainBefore.worldId, devBefore.worldId);
     await develop.getByRole('button', { name: '開発 +5分' }).click();
     await develop.waitForTimeout(300);
@@ -151,22 +150,23 @@ const developKey = 'mars_terraforming.save.mars-terraforming-develop_development
     await ready(develop);
     assert.equal((await snapshot(develop, developKey)).worldId, devBefore.worldId);
     assert.ok((await snapshot(develop, developKey)).simulatedMs >= devAfter.simulatedMs);
-    assert.equal((await snapshot(main, mainKey)).researchers, 7);
-    assert.equal((await snapshot(develop, developKey)).researchers, 6);
+    assert.equal((await snapshot(main, mainKey)).contentVersion, 'district-11');
+    assert.equal((await snapshot(develop, developKey)).contentVersion, 'district-11');
     // Cached releases must retain usable guide and notification entries offline.
     await inspectGuidance(main, mainKey);
     await inspectGuidance(develop, developKey);
     for (const target of [main, develop]) {
       await target.getByRole('button', { name: '機関運営', exact: true }).click();
       await target.getByRole('button', { name: '提携・支援', exact: true }).click();
-      await target.getByRole('button', { name: '人員配分', exact: true }).click();
+      await target.getByRole('button', { name: '都市基盤', exact: true }).click();
+      assert.equal(await target.getByRole('button', { name: '人員配分を確定', exact: true }).count(), 0);
     }
     await main.getByRole('button', { name: '設備・進行', exact: true }).click();
     await develop.getByRole('button', { name: '設備・進行', exact: true }).click();
     assert.equal(await main.getByRole('button', { name: '開発 +5分' }).count(), 0);
     assert.equal(await develop.getByRole('button', { name: '開発 +5分' }).count(), 1);
     assert.deepEqual(errors, []);
-    result = { result: 'PASS', main: base, develop: developUrl, checks: ['first housing and research tutorial completed through UI on both branches', 'facility-first map placement and cancel on both branches', 'six-step onboarding guide and tutorial completion receipt on both branches', 'guide and notification entries work after offline reload', 'district-6 agency UI on both branches', 'staff allocation persists offline and stays isolated', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
+    result = { result: 'PASS', main: base, develop: developUrl, checks: ['first housing and immediate research tutorial completed through UI on both branches', 'facility-first map placement and cancel on both branches', 'six-step onboarding guide and tutorial completion receipt on both branches', 'guide and notification entries work after offline reload', 'district-11 city foundation UI and no staffing controls', 'population-linked RP reserve limit', 'separate saves and locks', 'main has no time skip', 'develop only advances its own world', 'cache namespaces coexist', 'no hidden precache files', 'both reload offline concurrently'], caches: allCaches };
   } finally {
     try {
       // Restore networking and close the context before waiting for browser exit.

@@ -52,51 +52,34 @@ String _value(WidgetTester tester, String key) =>
     tester.widget<Text>(find.byKey(Key(key))).data!;
 
 void main() {
-  testWidgets('HUD shows common RP and used / department staff totals', (
+  testWidgets('HUD shows storage limits, population and research capacity', (
     tester,
   ) async {
     final state = _game();
     state.researchPointUnits =
         24 * GameState.researchPointScale + GameState.researchPointScale ~/ 2;
     await _showHud(tester, state);
-    expect(_value(tester, 'hud-research-points'), '24.5 RP');
-    expect(_value(tester, 'hud-researchers'), '6/6');
-    expect(_value(tester, 'hud-industrial-workers'), '0/6');
+    expect(_value(tester, 'hud-research-points'), startsWith('24.5/'));
+    expect(_value(tester, 'hud-population'), '${state.totalPopulation}人');
+    expect(_value(tester, 'hud-research-rate'), endsWith(' RP/時'));
+    expect(find.byKey(const Key('hud-researchers')), findsNothing);
+    expect(find.byKey(const Key('hud-industrial-workers')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'equipment and paid crews are counted once, including suspension',
-    (tester) async {
-      final state = _game()
-        ..developments.add('orbital_gardens')
-        ..developmentEnabled['orbital_gardens'] = true
-        ..developmentResearchers['orbital_gardens'] = 2;
-      state.plans.addAll([
-        PlannedTask(id: 'legacy-research', taskId: 'life_support')
-          ..status = 'running'
-          ..iterationSpecialists = 2,
-        PlannedTask(id: 'paid-production', taskId: 'factory_contract')
-          ..status = 'running'
-          ..iterationSpecialists = 3,
-      ]);
-      expect(state.labResearchers, 2);
-      expect(state.developmentWorkers, 1);
-      expect(state.industrialWorkers, 5);
-      await _showHud(tester, state);
-      expect(_value(tester, 'hud-researchers'), '6/6');
-      expect(_value(tester, 'hud-industrial-workers'), '4/6');
-
-      state.facilities['lab'] = false;
-      await _showHud(tester, state);
-      expect(_value(tester, 'hud-researchers'), '4/6');
-      state.facilities['factory'] = false;
-      await _showHud(tester, state);
-      expect(_value(tester, 'hud-researchers'), '2/6');
-      expect(_value(tester, 'hud-industrial-workers'), '3/6');
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('facility suspension changes capacity without a staff control', (
+    tester,
+  ) async {
+    final state = _game();
+    await _showHud(tester, state);
+    final activeRate = _value(tester, 'hud-research-rate');
+    state.facilities['lab'] = false;
+    await _showHud(tester, state);
+    expect(_value(tester, 'hud-research-rate'), isNot(activeRate));
+    expect(_value(tester, 'hud-research-rate'), '0.0 RP/時');
+    expect(_value(tester, 'hud-population'), '${state.totalPopulation}人');
+    expect(tester.takeException(), isNull);
+  });
 
   for (final devTools in [false, true]) {
     for (final size in [const Size(873, 393), const Size(568, 320)]) {
@@ -116,8 +99,8 @@ void main() {
           for (final key in [
             'money',
             'hud-research-points',
-            'hud-researchers',
-            'hud-industrial-workers',
+            'hud-population',
+            'hud-research-rate',
           ]) {
             final finder = find.byKey(Key(key));
             expect(finder, findsOneWidget);
@@ -134,8 +117,8 @@ void main() {
             expect(center.dx, inInclusiveRange(40, size.width - 24));
             expect(center.dy, inInclusiveRange(0, 64));
           }
-          expect(_value(tester, 'hud-research-points'), '98.7億 RP');
-          expect(_value(tester, 'money'), '9876.5億ドル');
+          expect(_value(tester, 'hud-research-points'), startsWith('98.7億/'));
+          expect(_value(tester, 'money'), startsWith('9876.5億/'));
           expect(tester.takeException(), isNull);
         },
       );

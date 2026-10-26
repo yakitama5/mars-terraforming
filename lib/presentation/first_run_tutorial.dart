@@ -51,6 +51,7 @@ class FirstRunTutorial extends StatelessWidget {
         .where((plan) => plan.taskId == task.id && !plan.isFinished)
         .firstOrNull;
     final legacyRunning = plan?.status == 'running';
+    final manualStart = plan?.requiresManualStart == true;
     final unlocked = game.research.contains(task.id);
     final pointCost = GameContent.researchPointCost(task.id);
     final facts = legacyRunning
@@ -140,7 +141,7 @@ class FirstRunTutorial extends StatelessWidget {
                               ? legacyRunning
                                     ? '着手済みの研究は、追加RPを使わず残り時間から続きます。その間も、街づくりや受注を並行できます。'
                                     : '技術を確実に解放できました。資金と工場を使って居住キットを製造し、火星へ届けましょう。新しい施設の建設には通常の費用と工期を使います。'
-                              : '研究者を配置した稼働施設で共通RPを蓄え、必要量を使って技術を必ず解放します。解放後は、資金と工場を使って居住キットを製造できます。',
+                              : '稼働中の研究施設で共通RPを蓄え、都市条件と必要量をそろえて技術を解放します。解放後は、資金と工場を使って居住キットを製造できます。',
                           style: const TextStyle(fontSize: 13),
                         ),
                       ],
@@ -156,7 +157,7 @@ class FirstRunTutorial extends StatelessWidget {
                           controller.busy ||
                               controller.error != null ||
                               (!started &&
-                                  (plan != null ||
+                                  ((plan != null && !manualStart) ||
                                       game.researchPoints < pointCost))
                           ? null
                           : () async {
@@ -167,7 +168,9 @@ class FirstRunTutorial extends StatelessWidget {
                                 }
                               } else {
                                 await controller.command(
-                                  (engine) => engine.unlockResearch(task.id),
+                                  (engine) => manualStart
+                                      ? engine.startPlan(plan!.id)
+                                      : engine.unlockResearch(task.id),
                                 );
                               }
                             },

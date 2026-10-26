@@ -146,7 +146,7 @@ void main() {
         expect(state.discoveredResearchIds, containsAll(historicalRoots));
         expect(state.research, isNot(contains(technology('B09'))));
         expect(state.plans.single.taskId, isNot(technology('B09')));
-        expect(state.researchPointsPerMinute, 0);
+        expect(state.researchPointsPerMinute, greaterThan(0));
         final migrated = state.toJson();
         expect(migrated['contentVersion'], GameContent.version);
         expect(migrated['discoveredResearch'], containsAll(historicalRoots));
@@ -166,7 +166,10 @@ void main() {
         expect(finished.state.plans.single.status, 'completed');
         expect(finished.state.plans.single.completedRuns, 1);
         expect(finished.state.research, contains('life_support'));
-        expect(finished.state.researchPointUnits, legacy['researchPointUnits']);
+        expect(
+          finished.state.researchPointUnits,
+          greaterThan(legacy['researchPointUnits'] as int),
+        );
         expect(
           finished.state.discoveredResearchIds,
           containsAll(historicalRoots),
@@ -179,7 +182,10 @@ void main() {
         expect(repeat.error, isNull);
         expect(repeat.state.toJson(), completed);
         expect(repeat.engine!.unlockResearch('life_support'), isNotNull);
-        expect(repeat.state.researchPointUnits, legacy['researchPointUnits']);
+        expect(
+          repeat.state.researchPointUnits,
+          finished.state.researchPointUnits,
+        );
         expect(repeat.state.plans.single.completedRuns, 1);
       },
     );

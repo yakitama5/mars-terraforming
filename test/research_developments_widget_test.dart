@@ -77,68 +77,62 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'build, preserve city, operate and allocate researchers separately',
-    (tester) async {
-      final repository = _DevelopmentSave();
-      final controller = await initialize(repository);
-      controller.state.research.add('algal_cultivation');
-      final operations = <String>[];
-      await tester.pumpWidget(panel(controller, operations));
-      await tester.pumpAndSettle();
-      await tap(
-        tester,
-        find.byKey(const Key('build-development-algal_cultivation')),
-      );
-      final plan = controller.state.plans.singleWhere(
-        (plan) => plan.definition.developmentId == 'algal_cultivation',
-      );
-      expect(plan.developmentCityId, 'earth_delta');
-      expect(controller.state.developments, isEmpty);
-      await controller.advanceForDevelopment(
-        duration: Duration(milliseconds: plan.remainingMs),
-      );
-      await tester.pumpAndSettle();
-      expect(controller.state.developments, contains('algal_cultivation'));
-      expect(controller.state.developmentEnabled['algal_cultivation'], isFalse);
-      expect(controller.state.developmentWorkers, 0);
-      expect(
-        controller.state.developmentCityIds['algal_cultivation'],
-        'earth_delta',
-      );
-      await tap(
-        tester,
-        find.byKey(const Key('enable-development-algal_cultivation')),
-      );
-      expect(
-        controller.state.isDevelopmentOperational('algal_cultivation'),
-        isTrue,
-      );
-      expect(controller.state.developmentWorkers, 1);
-      final researchers = controller.state.researchers;
-      await tap(
-        tester,
-        find.byKey(const Key('development-research-plus-algal_cultivation')),
-      );
-      expect(controller.state.developmentResearchers['algal_cultivation'], 1);
-      expect(controller.state.researchers, researchers);
-      expect(controller.state.labResearchers, researchers - 1);
-      final saved = GameState.fromJson(repository.snapshot!);
-      expect(saved.developmentCityIds['algal_cultivation'], 'earth_delta');
-      expect(saved.developmentResearchers['algal_cultivation'], 1);
-      await tap(
-        tester,
-        find.byKey(const Key('operate-development-algal_cultivation')),
-      );
-      expect(operations, [
-        GameContent.developmentOperationTaskId('algal_cultivation'),
-      ]);
-      // The development shortcut shows an eight-second command notice even
-      // when this focused panel omits the product's notice banner.
-      await tester.pump(const Duration(seconds: 8));
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('build, preserve city and operate without staff allocation', (
+    tester,
+  ) async {
+    final repository = _DevelopmentSave();
+    final controller = await initialize(repository);
+    controller.state.research.add('algal_cultivation');
+    final operations = <String>[];
+    await tester.pumpWidget(panel(controller, operations));
+    await tester.pumpAndSettle();
+    await tap(
+      tester,
+      find.byKey(const Key('build-development-algal_cultivation')),
+    );
+    final plan = controller.state.plans.singleWhere(
+      (plan) => plan.definition.developmentId == 'algal_cultivation',
+    );
+    expect(plan.developmentCityId, 'earth_delta');
+    expect(controller.state.developments, isEmpty);
+    await controller.advanceForDevelopment(
+      duration: Duration(milliseconds: plan.remainingMs),
+    );
+    await tester.pumpAndSettle();
+    expect(controller.state.developments, contains('algal_cultivation'));
+    expect(controller.state.developmentEnabled['algal_cultivation'], isFalse);
+    expect(
+      controller.state.developmentCityIds['algal_cultivation'],
+      'earth_delta',
+    );
+    await tap(
+      tester,
+      find.byKey(const Key('enable-development-algal_cultivation')),
+    );
+    expect(
+      controller.state.isDevelopmentOperational('algal_cultivation'),
+      isTrue,
+    );
+    expect(
+      find.byKey(const Key('development-research-plus-algal_cultivation')),
+      findsNothing,
+    );
+    expect(controller.state.researchPointsPerMinute, greaterThan(0));
+    final saved = GameState.fromJson(repository.snapshot!);
+    expect(saved.developmentCityIds['algal_cultivation'], 'earth_delta');
+    expect(saved.isDevelopmentOperational('algal_cultivation'), isTrue);
+    await tap(
+      tester,
+      find.byKey(const Key('operate-development-algal_cultivation')),
+    );
+    expect(operations, [
+      GameContent.developmentOperationTaskId('algal_cultivation'),
+    ]);
+    // The development shortcut shows an eight-second command notice even
+    // when this focused panel omits the product's notice banner.
+    await tester.pump(const Duration(seconds: 8));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'mapped research routes to placement without purchasing from the list',
@@ -176,9 +170,7 @@ void main() {
     },
   );
 
-  testWidgets('paused installations release people and cannot run a contract', (
-    tester,
-  ) async {
+  testWidgets('paused installations cannot run a contract', (tester) async {
     final controller = await initialize(_DevelopmentSave());
     controller.state
       ..research.add('algal_cultivation')
@@ -192,8 +184,10 @@ void main() {
       tester,
       find.byKey(const Key('enable-development-algal_cultivation')),
     );
-    expect(controller.state.developmentWorkers, 0);
-    expect(controller.state.developmentResearchers['algal_cultivation'], 0);
+    expect(
+      controller.state.isDevelopmentOperational('algal_cultivation'),
+      isFalse,
+    );
     expect(
       tester
           .widget<OutlinedButton>(

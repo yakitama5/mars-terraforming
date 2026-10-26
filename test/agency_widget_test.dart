@@ -47,21 +47,20 @@ void main() {
   });
 
   for (final size in [const Size(844, 390), const Size(1280, 800)]) {
-    testWidgets('staff draft, paid locks and recruitment work at $size', (
-      tester,
-    ) async {
-      tester.view.physicalSize = size;
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final store = _AgencySave();
-      final controller = GameController(
-        store,
-        devTools: true,
-        now: () => DateTime.utc(2026, 10, 14),
-      );
-      try {
+    testWidgets(
+      'city foundation replaces staffing and preserves the world at $size',
+      (tester) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final controller = GameController(
+          _AgencySave(),
+          devTools: true,
+          now: () => DateTime.utc(2026, 10, 14),
+        );
         await controller.initialize(startTimer: false);
+        addTearDown(controller.dispose);
         await tester.pumpWidget(
           MarsApp(
             showTitle: false,
@@ -70,105 +69,25 @@ void main() {
             sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
           ),
         );
-        expect(find.text('900ドル'), findsOneWidget);
-        await tester.tap(find.byKey(const Key('navigation-4')));
-        await tester.pumpAndSettle();
         final unchanged = jsonEncode(controller.state.toJson());
-        await _tapDetail(tester, 'staff-research-more', 'agency-staff');
-        expect(controller.state.researchers, 6);
-        expect(jsonEncode(controller.state.toJson()), unchanged);
-        expect(find.text('研究 7人 / 工業 5人に変更'), findsOneWidget);
-        await tester.ensureVisible(
-          find.byKey(const Key('confirm-staff-allocation')),
-        );
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const Key('confirm-staff-allocation')).hitTestable(),
-          findsOneWidget,
-        );
-        await tester.tap(find.byKey(const Key('confirm-staff-allocation')));
-        await tester.pumpAndSettle();
-        expect(controller.state.researchers, 7);
-        expect(controller.state.industrialWorkers, 5);
-        expect(store.data!['researchers'], 7);
-
-        // A research paid before the RP update still holds its people.
-        // Preparing that old paid iteration is fixture setup, not a new bill.
-        await controller.command((engine) {
-          final legacy =
-              PlannedTask(
-                  id: 'plan-${engine.state.nextPlanId++}',
-                  taskId: 'life_support',
-                )
-                ..status = 'running'
-                ..remainingMs = 120000
-                ..iterationDurationMs = 120000
-                ..iterationSpecialists = engine.state.researchers;
-          engine.state.plans.add(legacy);
-          engine.enqueue('factory_contract', repeats: null);
-          return null;
-        });
-        await tester.pumpAndSettle();
-        // The confirm action may have scrolled the lazily built controls out
-        // of the small viewport. Return to the allocation row before reading
-        // the paid-work locks on its buttons.
-        await tester.scrollUntilVisible(
-          find.byKey(const Key('staff-research-less')),
-          -140,
-          scrollable: find.descendant(
-            of: find.byKey(const Key('agency-staff')),
-            matching: find.byType(Scrollable),
-          ),
-        );
-        await tester.pumpAndSettle();
-        expect(
-          tester
-              .widget<IconButton>(find.byKey(const Key('staff-research-less')))
-              .onPressed,
-          isNull,
-        );
-        expect(
-          tester
-              .widget<IconButton>(find.byKey(const Key('staff-research-more')))
-              .onPressed,
-          isNull,
-        );
-        final beforeOperations = jsonEncode(controller.state.toJson());
-        await _tapDetail(tester, 'agency-open-operations', 'agency-staff');
-        expect(find.byKey(const Key('operations-list-0')), findsOneWidget);
-        expect(jsonEncode(controller.state.toJson()), beforeOperations);
-        expect(
-          controller.state.currentPlanFor('factory')!.remainingRepeats,
-          isNull,
-        );
         await tester.tap(find.byKey(const Key('navigation-4')));
         await tester.pumpAndSettle();
-        final duration = controller.state
-            .currentPlanFor('lab')!
-            .iterationDurationMs;
-        await controller.advanceForDevelopment(
-          duration: const Duration(minutes: 10),
+        expect(find.byKey(const Key('agency-foundation')), findsOneWidget);
+        expect(find.byKey(const Key('staff-research-more')), findsNothing);
+        expect(find.byKey(const Key('confirm-staff-allocation')), findsNothing);
+        expect(find.byKey(const Key('queue-train_specialists')), findsNothing);
+        expect(find.textContaining('施設への投資で生産能力を伸ばせます。'), findsOneWidget);
+        expect(jsonEncode(controller.state.toJson()), unchanged);
+        await _tapDetail(
+          tester,
+          'foundation-open-operations',
+          'agency-foundation',
         );
-        await tester.pumpAndSettle();
-        expect(controller.state.research, contains('life_support'));
-        expect(duration, greaterThan(0));
-        await _tapDetail(tester, 'queue-train_specialists', 'agency-staff');
-        expect(
-          controller.state.plans.where((p) => p.taskId == 'train_specialists'),
-          hasLength(1),
-        );
-        await controller.advanceForDevelopment();
-        await tester.pumpAndSettle();
-        expect(
-          controller.state.specialistCount,
-          GameContent.initialSpecialists + GameContent.specialistTrainingCount,
-        );
-        expect(controller.state.researchers, 7);
+        expect(find.byKey(const Key('operations-list-0')), findsOneWidget);
+        expect(jsonEncode(controller.state.toJson()), unchanged);
         expect(tester.takeException(), isNull);
-      } finally {
-        controller.dispose();
-      }
-    });
+      },
+    );
 
     testWidgets(
       'a partnership can be compared and selected only once at $size',
@@ -246,67 +165,47 @@ void main() {
     );
   }
 
-  testWidgets('guide targets its research and offers a parallel city action', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1280, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final controller = GameController(
-      _AgencySave(),
-      now: () => DateTime.utc(2026, 10, 14),
-    );
-    await controller.initialize(startTimer: false);
-    addTearDown(controller.dispose);
-    controller.state.researchPointUnits = 0;
-    await tester.pumpWidget(
-      MarsApp(
-        showTitle: false,
-        showIntroduction: false,
-        controller: controller,
-        sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
-      ),
-    );
-    await tester.tap(find.byKey(const Key('navigation-2')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('research-filter-bio')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('research-node-orbital_gardens')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('navigation-0')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('next-goal')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('queue-life_support')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('queue-life_support')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('navigation-0')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('予約済み · 研究ポイント待ち'), findsOneWidget);
-    await controller.command(
-      (engine) => engine.setFacilityEnabled('lab', false),
-    );
-    await tester.pumpAndSettle();
-    expect(find.textContaining('停止中 · 設備休止中'), findsOneWidget);
-    expect(find.textContaining('予約済み · 研究ポイント待ち'), findsNothing);
-    final paused = jsonEncode(controller.state.toJson());
-    await tester.tap(find.byKey(const Key('next-goal')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('operations-list-0')), findsOneWidget);
-    expect(jsonEncode(controller.state.toJson()), paused);
-    await tester.tap(find.byKey(const Key('navigation-0')));
-    await tester.pumpAndSettle();
-    final before = jsonEncode(controller.state.toJson());
-    await tester.tap(find.byKey(const Key('guide-city')));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const Key('district-option-housing')).hitTestable(),
-      findsOneWidget,
-    );
-    expect(jsonEncode(controller.state.toJson()), before);
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'research shortage offers city investment without reserving a technology',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = GameController(
+        _AgencySave(),
+        now: () => DateTime.utc(2026, 10, 14),
+      );
+      await controller.initialize(startTimer: false);
+      addTearDown(controller.dispose);
+      controller.state.researchPointUnits = 0;
+      await tester.pumpWidget(
+        MarsApp(
+          showTitle: false,
+          showIntroduction: false,
+          controller: controller,
+          sceneBuilder: (_, _, _, _) => const SizedBox.expand(),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('next-goal')));
+      await tester.pumpAndSettle();
+      final action = find.byKey(const Key('queue-life_support'));
+      expect(action, findsOneWidget);
+      expect(tester.widget<FilledButton>(action).onPressed, isNull);
+      expect(controller.state.plans, isEmpty);
+      await tester.ensureVisible(
+        find.byKey(const Key('research-parallel-city')),
+      );
+      await tester.tap(find.byKey(const Key('research-parallel-city')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('district-option-housing')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(controller.state.plans, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('optional short research guide opens each intended research', (
     tester,
   ) async {

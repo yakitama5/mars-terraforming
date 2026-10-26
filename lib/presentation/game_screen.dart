@@ -741,7 +741,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       controller.engine!.researchRequirementReasons(id),
     );
     final requiredPoints = GameContent.researchPointCost(id);
-    final canUnlock = game.researchPoints >= requiredPoints;
+    final requirements = controller.engine!.researchRequirements(id);
+    final canPay = game.researchPoints >= requiredPoints;
+    final canUnlock =
+        canPay && requirements.every((condition) => condition.isMet);
     return Column(
       children: [
         Expanded(
@@ -831,7 +834,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      '解放後、導入する都市と設備・人員への投資を決めます。',
+                      '解放後、施設や機体を建設・製造して都市へ導入します。',
                       style: TextStyle(fontSize: 11, color: strategyMuted),
                     ),
                   ],
@@ -848,23 +851,25 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 StrategyFact('必要RP', '$requiredPoints RP'),
                 StrategyFact(
                   '保有RP',
-                  '${game.researchPoints.toStringAsFixed(1)} RP',
+                  '${game.researchPoints.toStringAsFixed(1)} / ${game.researchPointCapacity} RP',
                 ),
                 StrategyFact(
                   'RP生産',
-                  '${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
+                  '${game.researchPointsPerHour.toStringAsFixed(1)} RP/時',
                 ),
                 const Text(
-                  '必要なRPで必ず解放。解放後に追加の研究待機はありません。',
+                  '都市条件と必要RPがそろえば、その場で解放します。',
                   style: TextStyle(fontSize: 12, color: strategyMuted),
                 ),
-                if (!researched && !canUnlock)
+                if (!researched && !canPay)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                      game.researchWaitMs(id) == null
-                          ? '研究施設に人員を配分するとRPを生産できます。'
-                          : '今の生産を続けた場合、必要量まで約${gameDuration(game.researchWaitMs(id)!)}。予約済み研究の消費は別です。',
+                      requiredPoints > game.researchPointCapacity
+                          ? '保有上限が必要RPに届きません。人口を増やして上限を広げましょう。'
+                          : game.researchWaitMs(id) == null
+                          ? '研究施設を稼働するとRPを生産できます。'
+                          : '今の生産を続けた場合、必要量まで約${gameDuration(game.researchWaitMs(id)!)}。上限までの蓄積を見込んだ目安です。',
                       style: const TextStyle(
                         fontSize: 12,
                         color: strategyCopper,
@@ -872,6 +877,61 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     ),
                   ),
               ],
+              if (!researched && requirements.isNotEmpty)
+                StrategyCard(
+                  key: const Key('research-city-requirements'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        '解放条件',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      for (final (index, condition) in requirements.indexed)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                condition.isMet
+                                    ? Icons.check_circle_outline
+                                    : Icons.radio_button_unchecked,
+                                size: 16,
+                                color: condition.isMet
+                                    ? strategyBenefit
+                                    : strategyCopper,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '${condition.label} · ${condition.current}/${condition.required}',
+                                  key: Key('research-condition-$index'),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: condition.isMet
+                                        ? strategyBenefit
+                                        : strategyCopper,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (activePlan?.requiresManualStart == true)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(
+                    '以前の計画を保全しています。条件を整えてから、下のボタンで解放してください。',
+                    style: const TextStyle(fontSize: 12, color: strategyCopper),
+                  ),
+                ),
               if (activePlan != null)
                 TextButton.icon(
                   key: const Key('research-open-queue'),
@@ -883,7 +943,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     _focusFacility('lab');
                   },
                   icon: const Icon(Icons.view_timeline_outlined, size: 17),
-                  label: const Text('研究の予約を確認'),
+                  label: const Text('研究の進行を確認'),
                 ),
               if (researched &&
                   GameContent.mapBuildingDefinitions.containsKey(id))
@@ -920,15 +980,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 }),
                 icon: const Icon(Icons.location_city_outlined, size: 17),
                 label: const Text('都市で研究と収入の基盤を育てる'),
-              ),
-              TextButton.icon(
-                key: const Key('research-agency'),
-                onPressed: () => setState(() {
-                  agencySection = 0;
-                  tab = 4;
-                }),
-                icon: const Icon(Icons.groups_outlined, size: 17),
-                label: const Text('研究者を配分する'),
               ),
               ExpansionTile(
                 key: ValueKey('research-explanation-$id'),
@@ -968,21 +1019,27 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         ),
         StrategyActionBar(
           message: !researched && !legacyRunning && !canUnlock
-              ? '予約すると、順番と必要なRPが揃った時に解放します。'
+              ? !canPay
+                    ? 'RPを蓄え、都市の解放条件を整えましょう。'
+                    : '解放条件を満たす都市基盤を整えましょう。'
               : null,
           child: FilledButton.icon(
             key: Key('queue-$id'),
-            onPressed: controller.busy || activePlan != null
+            onPressed: controller.busy || legacyRunning
                 ? null
                 : researched
                 ? () => setState(() {
                     tab = 3;
                     facilityTab = 4;
                   })
-                : canUnlock
-                ? () =>
-                      controller.command((engine) => engine.unlockResearch(id))
-                : () => _reserve(id),
+                : !canUnlock
+                ? null
+                : activePlan?.requiresManualStart == true
+                ? () => controller.command(
+                    (engine) => engine.startPlan(activePlan!.id),
+                  )
+                : () =>
+                      controller.command((engine) => engine.unlockResearch(id)),
             icon: Icon(
               researched ? Icons.construction_outlined : Icons.auto_awesome,
               size: 18,
@@ -994,7 +1051,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ? '施設・機体の導入へ'
                   : canUnlock
                   ? '技術を解放する'
-                  : 'RPの蓄積を待って解放',
+                  : canPay
+                  ? '都市条件が未達成'
+                  : 'RPが不足しています',
               semanticsLabel: researched
                   ? '${task.name}の導入計画を見る'
                   : '${task.name}を解放',
@@ -1126,10 +1185,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   List<Widget> _queueOverview() => [
     const StrategyHeading(
       '共用設備の稼働計画',
-      '↑↓で予約順を変更。設備を休止すると、対応する地区の効果と維持費も停止します。',
+      '製造・輸送の反復順を調整できます。着工済みの建設は、離れている間も進みます。',
     ),
     Text(
-      '有効な計画 ${game.activePlanCount}/${GameContent.maxActivePlans}件 · 研究・建設・反復予約を含みます',
+      '進行・保全中の計画 ${game.activePlanCount}/${GameContent.maxActivePlans}件',
       key: const Key('active-plan-count'),
       style: const TextStyle(fontSize: 12, color: strategyMuted),
     ),
