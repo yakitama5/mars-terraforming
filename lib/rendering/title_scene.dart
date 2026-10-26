@@ -7,11 +7,12 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'title_celestial_models.dart';
 import 'title_cosmos_models.dart';
+import 'title_gas_giant_models.dart';
 import 'title_spacecraft_models.dart';
 import 'title_scene_motion.dart';
 import 'title_scene_snapshot.dart';
 
-/// 火星の姿勢とカメラを固定し、その周囲の宇宙だけが動くタイトル。
+/// 火星の地形の自転と、その周囲を巡る宇宙を固定した構図で望むタイトル。
 class TitleScene extends StatefulWidget {
   const TitleScene({
     super.key,
@@ -33,9 +34,12 @@ class _TitleSceneState extends State<TitleScene>
   fs.Scene? _scene;
   TitleCelestialModels? _models;
   TitleCosmosModels? _cosmos;
+  TitleGasGiantModels? _giants;
   late TitleSceneSnapshot _displayedSnapshot;
   TitleMarsModel? _mars;
+  vm.Quaternion _marsOrientation = vm.Quaternion.identity();
   fs.Node? _earth, _earthGlobe, _sun, _sunGlobe, _rocket, _satellite;
+  fs.Node? _jupiter, _saturn;
   final _asteroids = <fs.Node>[];
   late final Ticker _ticker;
   Duration? _lastTick;
@@ -93,16 +97,20 @@ class _TitleSceneState extends State<TitleScene>
         TitleCelestialModels.load(),
         TitleCosmosModels.load(),
         TitleSpacecraftModels.load(),
+        TitleGasGiantModels.load(),
       ]);
       if (!mounted || generation != _generation) return;
       pending = fs.Scene();
       final models = resources[0] as TitleCelestialModels;
       final cosmos = resources[1] as TitleCosmosModels;
       final spacecraft = resources[2] as TitleSpacecraftModels;
+      final giants = resources[3] as TitleGasGiantModels;
       _models = models;
       _cosmos = cosmos;
+      _giants = giants;
       _displayedSnapshot = widget.snapshot;
       _mars = models.mars(widget.snapshot);
+      _marsOrientation = _mars!.root.rotation.clone();
       _mars!.root
         ..name = 'title-mars'
         ..position = _marsPosition
@@ -120,7 +128,17 @@ class _TitleSceneState extends State<TitleScene>
         ..scale = vm.Vector3.all(.045);
       _sun = cosmos.sun(radius: 1.1)..name = 'title-sun';
       _sunGlobe = _sun!.getChildByName('白熱した太陽光球');
-      for (final node in [_mars!.root, _earth!, _sun!, _rocket!, _satellite!]) {
+      _jupiter = giants.jupiter()..scale = vm.Vector3.all(5.2);
+      _saturn = giants.saturn()..scale = vm.Vector3.all(3.8);
+      for (final node in [
+        _mars!.root,
+        _earth!,
+        _sun!,
+        _jupiter!,
+        _saturn!,
+        _rocket!,
+        _satellite!,
+      ]) {
         pending.add(node);
       }
       for (var i = 0; i < 2; i++) {
@@ -188,6 +206,7 @@ class _TitleSceneState extends State<TitleScene>
       pending?.removeAll();
       pending?.dispose();
       _scene = null;
+      _clearModelReferences();
       debugPrint('Title scene initialization: $error\n$stack');
       if (!mounted) return;
       setState(() => _failed = true);
@@ -207,6 +226,7 @@ class _TitleSceneState extends State<TitleScene>
     }
     // 施設完成など外観の変化があったときだけメッシュを差し替える。
     final updated = models.mars(widget.snapshot);
+    _marsOrientation = updated.root.rotation.clone();
     updated.root
       ..name = 'title-mars'
       ..position = mars.root.position
@@ -235,6 +255,7 @@ class _TitleSceneState extends State<TitleScene>
 
   void _animate() {
     final motion = TitleSceneMotion(_seconds);
+    _mars?.root.rotation = motion.marsRotation(_marsOrientation);
     final sunPosition = _marsPosition + motion.sunOffset;
     final sunFacing = vm.Quaternion.fromTwoVectors(
       vm.Vector3(0, 0, 1),
@@ -243,7 +264,7 @@ class _TitleSceneState extends State<TitleScene>
     _cosmos?.update(
       _seconds,
       skyYaw: motion.starAngle,
-      bodyTilt: -TitleSceneMotion.marsAxialTilt,
+      bodyTilt: -TitleSceneMotion.cameraFrameTilt,
     );
     _sun
       ?..position = sunPosition
@@ -258,9 +279,19 @@ class _TitleSceneState extends State<TitleScene>
       sunDirection: motion.sunDirection,
       sunPosition: sunPosition,
       seconds: _seconds,
-      inertialToBody: motion.inertialToBody,
+      inertialToView: motion.inertialToCamera,
     );
     _earthGlobe?.rotation = motion.earthRotation;
+    _jupiter
+      ?..position = _marsPosition + motion.jupiterOffset
+      ..rotation = motion.jupiterRotation;
+    _saturn
+      ?..position = _marsPosition + motion.saturnOffset
+      ..rotation = motion.saturnRotation;
+    _giants?.updateView(
+      sunPosition: sunPosition,
+      cameraPosition: _cameraPosition,
+    );
     final satellite = motion.satellite;
     _satellite
       ?..position = _marsPosition + satellite.position
@@ -287,17 +318,24 @@ class _TitleSceneState extends State<TitleScene>
     _scene?.removeAll();
     _scene?.dispose();
     _scene = null;
+    _clearModelReferences();
+    super.dispose();
+  }
+
+  void _clearModelReferences() {
     _models = null;
     _cosmos = null;
+    _giants = null;
     _mars = null;
     _earth = null;
     _earthGlobe = null;
     _sun = null;
     _sunGlobe = null;
+    _jupiter = null;
+    _saturn = null;
     _rocket = null;
     _satellite = null;
     _asteroids.clear();
-    super.dispose();
   }
 
   @override
@@ -325,7 +363,7 @@ class _TitleSceneState extends State<TitleScene>
       child: ClipRect(
         child: Semantics(
           image: true,
-          label: '星空と地球を望む、峡谷と極冠のある火星。探査機と衛星が宇宙を航行する。',
+          label: '星空と地球・木星・土星を望む、自転する峡谷と極冠のある火星。探査機と衛星が宇宙を航行する。',
           child: ExcludeSemantics(
             child: fs.SceneView(
               scene,

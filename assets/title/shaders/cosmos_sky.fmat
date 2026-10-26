@@ -17,7 +17,7 @@ sky {
     vec3 yawed = vec3(cy * direction.x + sy * direction.z,
                      direction.y,
                      -sy * direction.x + cy * direction.z);
-    // 視線を火星の身体固定系から慣性系へ戻す。天体方向と同じ軸傾斜。
+    // 視線をカメラの周回座標から慣性系へ戻す。天体方向と同じ軸傾斜。
     float cb = cos(material_params.body_tilt);
     float sb = sin(material_params.body_tilt);
     yawed = vec3(yawed.x, cb * yawed.y - sb * yawed.z,
