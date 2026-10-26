@@ -11,6 +11,7 @@ Future<void> _mountTitle(
   Size size = const Size(844, 390),
   double textScale = 1,
   bool reduceMotion = false,
+  TitleSceneBuilder? sceneBuilder,
   required VoidCallback onStart,
 }) async {
   tester.view.physicalSize = size;
@@ -29,12 +30,23 @@ Future<void> _mountTitle(
       home: TitleScreen(
         game: GameState.initial(DateTime.utc(2026, 10, 25)),
         renderScene: false,
+        sceneBuilder: sceneBuilder,
         onStart: onStart,
       ),
     ),
   );
   await tester.pump();
 }
+
+double _backgroundOpacity(WidgetTester tester) => tester
+    .widget<FadeTransition>(
+      find.descendant(
+        of: find.byKey(const Key('title-background-fade')),
+        matching: find.byType(FadeTransition),
+      ),
+    )
+    .opacity
+    .value;
 
 void main() {
   for (final size in [const Size(568, 320), const Size(844, 390)]) {
@@ -59,6 +71,117 @@ void main() {
     });
   }
 
+  testWidgets('背景の準備を待たず開始でき、開始後に届く通知も安全に破棄する', (tester) async {
+    var starts = 0;
+    late VoidCallback ready;
+    late ValueChanged<Object> failed;
+    final semantics = tester.ensureSemantics();
+    try {
+      await _mountTitle(
+        tester,
+        sceneBuilder: (_, onReady, onError) {
+          ready = onReady;
+          failed = onError;
+          return const ColoredBox(color: Colors.red);
+        },
+        onStart: () => starts++,
+      );
+      expect(find.text('DEAR MARS'), findsOneWidget);
+      expect(find.text('TAP TO START'), findsOneWidget);
+      expect(find.byKey(const Key('title-loading')), findsNothing);
+      expect(_backgroundOpacity(tester), 0);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('タップまたはクリックしてスタート')),
+        isSemantics(
+          label: 'タップまたはクリックしてスタート',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          hasTapAction: true,
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('title-start')));
+      await tester.pump();
+      ready();
+      failed(StateError('開始後に完了した背景の読み込み'));
+      await tester.pump(const Duration(milliseconds: 450));
+      expect(starts, 1, reason: '背景の準備通知は開始完了の条件にしない');
+      expect(_backgroundOpacity(tester), 0, reason: '開始後は背景の出現を始めない');
+      await tester.pumpWidget(const SizedBox.shrink());
+      ready();
+      failed(StateError('画面破棄後に届いた読み込みエラー'));
+      await tester.pump();
+      expect(starts, 1);
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('読み込み完了後は背景だけフェードインし、タイトルと開始案内は保持する', (tester) async {
+    var starts = 0;
+    late VoidCallback ready;
+    await _mountTitle(
+      tester,
+      sceneBuilder: (_, onReady, _) {
+        ready = onReady;
+        return const ColoredBox(color: Colors.red);
+      },
+      onStart: () => starts++,
+    );
+    final title = tester.element(find.text('DEAR MARS'));
+    final prompt = tester.element(find.text('TAP TO START'));
+    await tester.pump(const Duration(seconds: 3));
+    expect(_backgroundOpacity(tester), 0);
+    ready();
+    await tester.pump();
+    expect(_backgroundOpacity(tester), 0);
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(_backgroundOpacity(tester), allOf(greaterThan(0), lessThan(1)));
+    expect(tester.element(find.text('DEAR MARS')), same(title));
+    expect(tester.element(find.text('TAP TO START')), same(prompt));
+    expect(find.byKey(const Key('title-start')), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(_backgroundOpacity(tester), 1);
+    expect(starts, 0, reason: '背景の準備完了だけではゲームを開始しない');
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final fails in [false, true]) {
+    testWidgets('動きを減らす設定では背景の${fails ? '代替表示' : '準備完了'}も待機なしで表示する', (
+      tester,
+    ) async {
+      var starts = 0;
+      late VoidCallback ready;
+      late ValueChanged<Object> failed;
+      await _mountTitle(
+        tester,
+        reduceMotion: true,
+        sceneBuilder: (_, onReady, onError) {
+          ready = onReady;
+          failed = onError;
+          return const ColoredBox(color: Colors.red);
+        },
+        onStart: () => starts++,
+      );
+      expect(_backgroundOpacity(tester), 0);
+      if (fails) {
+        failed(StateError('GPUを利用できない'));
+      } else {
+        ready();
+      }
+      await tester.pump();
+      expect(_backgroundOpacity(tester), 1);
+      expect(find.text('DEAR MARS'), findsOneWidget);
+      expect(find.text('TAP TO START'), findsOneWidget);
+      expect(starts, 0);
+      await tester.tap(find.byKey(const Key('title-start')));
+      expect(starts, 1);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('画面端のタップとマウスクリックの連打でも開始は一度だけ', (tester) async {
     var starts = 0;
     await _mountTitle(tester, onStart: () => starts++);
@@ -78,7 +201,11 @@ void main() {
   for (final key in [LogicalKeyboardKey.enter, LogicalKeyboardKey.space]) {
     testWidgets('${key.keyLabel}の押しっぱなし・再入力でも開始は一度だけ', (tester) async {
       var starts = 0;
-      await _mountTitle(tester, onStart: () => starts++);
+      await _mountTitle(
+        tester,
+        sceneBuilder: (_, _, _) => const ColoredBox(color: Colors.red),
+        onStart: () => starts++,
+      );
       await tester.sendKeyDownEvent(key);
       await tester.pump();
       expect(starts, 0);
@@ -113,7 +240,12 @@ void main() {
 
   testWidgets('Creditsは開始せず出典とCC BYを表示し、閉じた後に開始できる', (tester) async {
     var starts = 0;
-    await _mountTitle(tester, reduceMotion: true, onStart: () => starts++);
+    await _mountTitle(
+      tester,
+      reduceMotion: true,
+      sceneBuilder: (_, _, _) => const ColoredBox(color: Colors.red),
+      onStart: () => starts++,
+    );
     await tester.tap(find.widgetWithText(TextButton, 'Credits'));
     await tester.pumpAndSettle();
     expect(starts, 0);
@@ -138,6 +270,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
     expect(starts, 0, reason: '閉じる操作を背後の開始へ伝えない');
+    expect(_backgroundOpacity(tester), 0, reason: '背景の読込中もクレジットを確認できる');
     await tester.tapAt(const Offset(20, 20));
     await tester.pump();
     expect(starts, 1);
@@ -146,11 +279,23 @@ void main() {
 
   testWidgets('暗転中に画面を破棄しても開始や例外を残さない', (tester) async {
     var starts = 0;
-    await _mountTitle(tester, onStart: () => starts++);
+    late VoidCallback ready;
+    late ValueChanged<Object> failed;
+    await _mountTitle(
+      tester,
+      sceneBuilder: (_, onReady, onError) {
+        ready = onReady;
+        failed = onError;
+        return const ColoredBox(color: Colors.red);
+      },
+      onStart: () => starts++,
+    );
     await tester.tap(find.byKey(const Key('title-start')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
     await tester.pumpWidget(const SizedBox.shrink());
+    ready();
+    failed(StateError('暗転中の破棄後に届いた読み込みエラー'));
     await tester.pump(const Duration(seconds: 1));
     expect(starts, 0);
     expect(tester.takeException(), isNull);

@@ -154,7 +154,14 @@ void main() {
     await loading;
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.byType(TitleScreen), findsOneWidget);
+    expect(find.byKey(const Key('title-start')), findsOneWidget);
     expect(store.data, isNotNull);
+    await start(tester);
+    expect(find.byType(TitleScreen), findsNothing);
+    expect(find.byType(MissionOpening), findsOneWidget);
+    expect(controller.state.openingStarted, isTrue);
+    expect(controller.state.simulatedMs, 0);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
