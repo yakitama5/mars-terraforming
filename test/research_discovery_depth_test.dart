@@ -13,12 +13,81 @@ final _epoch = DateTime.utc(2026, 10, 20);
 
 String _id(String catalogId) => ResearchCatalog.idForCatalog(catalogId);
 
-GameEngine _fresh({int points = 100000000}) => GameEngine(
-  GameState.initial(_epoch)
+GameEngine _fresh({int points = 100000000}) {
+  final state = GameState.initial(_epoch)
     ..openingSeen = true
     ..firstRunTutorial = FirstRunTutorialStep.completed
-    ..researchPointUnits = points * GameState.researchPointScale,
-);
+    ..population = 12000
+    ..money = 100000000
+    ..marsHabitats = 2
+    ..marsResidents = 48
+    ..researchPointUnits = points * GameState.researchPointScale;
+  state.achievements.addAll(GameContent.achievementNames.keys);
+  for (final entry in {
+    0: 'housing',
+    1: 'housing',
+    2: 'industry',
+    3: 'industry',
+    4: 'spaceport',
+    5: 'spaceport',
+    6: 'solar',
+    7: 'solar',
+    8: 'solar',
+    9: 'solar',
+  }.entries) {
+    final district = DistrictState(
+      cityId: 'earth_delta',
+      plotIndex: entry.key,
+      districtId: entry.value,
+    );
+    state.districts[district.key] = district;
+  }
+  final moon = DistrictState(
+    cityId: 'moon_south_pole',
+    plotIndex: 2,
+    districtId: 'moon_outpost',
+  );
+  state.districts[moon.key] = moon;
+  final moonPort = DistrictState(
+    cityId: 'moon_south_pole',
+    plotIndex: 3,
+    districtId: 'moon_spaceport',
+  );
+  state.districts[moonPort.key] = moonPort;
+  state.surveyedSites.addAll([
+    'earth_delta:0',
+    'earth_delta:1',
+    'earth_delta:2',
+  ]);
+  state.connectedGridCities.add('earth_delta');
+  state.facilities.updateAll((_, _) => true);
+  return GameEngine(state);
+}
+
+// These are layout fixtures, not a funded playthrough. Complete the physical
+// application only after its knowledge was unlocked; reload remains valid and
+// the layout still has to grow from legal, exposed research choices.
+void _prepareApplications(GameEngine engine) {
+  final state = engine.state;
+  for (final technologyId in state.research) {
+    state.developments.add(technologyId);
+    state.developmentCityIds[technologyId] =
+        GameContent.developmentPlanet(technologyId) == 'mars'
+        ? 'mars_arcadia'
+        : 'earth_delta';
+    state.developmentEnabled[technologyId] =
+        GameContent.developmentEffect(technologyId) ==
+            ResearchUnlockEffect.research ||
+        technologyId == 'urban_planning';
+    if (GameContent.mapBuildingDefinitions.containsKey(technologyId)) {
+      state.buildingLocations[technologyId] = BuildingLocation(
+        cityId: state.developmentCityIds[technologyId]!,
+        plotIndex: -1,
+        legacySite: true,
+      );
+    }
+  }
+}
 
 GameEngine _reload(GameEngine engine) => GameEngine(
   GameState.fromJson(
@@ -104,6 +173,7 @@ void _expectGrowthToRight(
 void _unlock(GameEngine engine, String catalogId) {
   final id = _id(catalogId);
   expect(engine.unlockResearch(id), isNull, reason: '$catalogIdを公開操作で解放');
+  _prepareApplications(engine);
 }
 
 void main() {
@@ -178,6 +248,7 @@ void main() {
       final candidates = _eligible(engine).toList();
       expect(candidates, isNotEmpty, reason: '$step件解放後にも選べる研究があります');
       expect(engine.unlockResearch(candidates.first.id), isNull);
+      _prepareApplications(engine);
     }
     expect(engine.state.research, ids);
   });
@@ -194,6 +265,7 @@ void main() {
         final selected = candidates[random.nextInt(candidates.length)];
         final before = Set<String>.of(engine.state.discoveredResearchIds);
         expect(engine.unlockResearch(selected.id), isNull);
+        _prepareApplications(engine);
         _expectGrowthToRight(
           before,
           engine.state,
@@ -214,7 +286,7 @@ void main() {
     // E19 is the existing cross-field application. Complete its energy side
     // first, so the last mechanical prerequisite itself causes its discovery.
     final crossing = _fresh();
-    for (final catalogId in ['E01', 'E13', 'E17', 'M22']) {
+    for (final catalogId in ['R01', 'R02', 'E01', 'E13', 'E17', 'M22']) {
       _unlock(crossing, catalogId);
     }
     expect(crossing.state.isResearchDiscovered(_id('E19')), isFalse);
@@ -229,12 +301,13 @@ void main() {
     );
   });
 
-  test('RP待ち予約の自動完成でも途中保存を経て同じ深さ規則を守る', () {
+  test('RPが貯まっても手動解放まで枝は増えず途中保存後も深さ規則を守る', () {
     var engine = _fresh(points: 0);
     for (final catalogId in ['B01', 'B05']) {
       final id = _id(catalogId);
       final before = Set<String>.of(engine.state.discoveredResearchIds);
-      expect(engine.enqueue(id), isNull);
+      expect(engine.enqueue(id), contains('研究ポイント不足'));
+      expect(engine.state.plans.where((plan) => !plan.isFinished), isEmpty);
       expect(engine.state.research, isNot(contains(id)));
       final wait = engine.state.researchWaitMs(id)!;
       expect(wait, greaterThan(1));
@@ -245,13 +318,12 @@ void main() {
       engine = _reload(engine);
       expect(engine.state.research, isNot(contains(id)));
       engine.advanceBy(Duration(milliseconds: wait - firstHalf + 1));
+      expect(engine.state.research, isNot(contains(id)));
+      expect(engine.state.discoveredResearchIds, before);
+      expect(engine.unlockResearch(id), isNull);
+      _prepareApplications(engine);
       expect(engine.state.research, contains(id));
-      _expectGrowthToRight(
-        before,
-        engine.state,
-        id,
-        reason: '$catalogIdのRP待ち自動完成',
-      );
+      _expectGrowthToRight(before, engine.state, id, reason: '$catalogIdの手動解放');
       final after = Set<String>.of(engine.state.discoveredResearchIds);
       engine = _reload(engine);
       expect(engine.state.discoveredResearchIds, after);
@@ -275,6 +347,8 @@ void main() {
   test('水の精製は採氷と加熱抽出のどちらか一方から発見して解放できる', () {
     for (final source in ['R05', 'R06']) {
       final engine = _fresh();
+      _unlock(engine, 'E01');
+      _unlock(engine, 'E13');
       _unlock(engine, 'R01');
       _unlock(engine, 'R02');
       expect(engine.state.isResearchDiscovered(_id('R07')), isFalse);

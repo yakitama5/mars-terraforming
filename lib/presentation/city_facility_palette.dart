@@ -149,7 +149,7 @@ class CityFacilityPalette extends StatelessWidget {
       if (!compact) ...[
         const SizedBox(height: 5),
         const Text(
-          '施設 → 区画 → 建設予約',
+          '施設 → 区画 → 着工',
           style: TextStyle(fontSize: 11, color: strategyMuted),
         ),
       ],

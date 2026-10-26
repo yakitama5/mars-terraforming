@@ -80,7 +80,12 @@ void main() {
       final parallel = fresh()..enqueue('life_support');
       final paused = fresh();
       paused.state.researchPointUnits = 0;
-      paused.enqueue('life_support');
+      paused.state.plans.add(
+        PlannedTask(id: 'paused-paid', taskId: 'life_support')
+          ..status = 'running'
+          ..remainingMs = 120000
+          ..iterationDurationMs = 120000,
+      );
       paused.setFacilityEnabled('lab', false);
       final repeated = fresh();
       repeated.state.research.add('life_support');
@@ -134,7 +139,12 @@ void main() {
       lowFunds.state.achievements.addAll(['first_launch', 'mars_route_open']);
       final paused = fresh();
       paused.state.researchPointUnits = 0;
-      paused.enqueue('life_support');
+      paused.state.plans.add(
+        PlannedTask(id: 'paused-paid', taskId: 'life_support')
+          ..status = 'running'
+          ..remainingMs = 120000
+          ..iterationDurationMs = 120000,
+      );
       paused.setFacilityEnabled('lab', false);
       final delivery = fresh();
       delivery.state.research.addAll({'life_support', 'urban_planning'});

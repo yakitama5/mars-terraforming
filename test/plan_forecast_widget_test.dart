@@ -227,10 +227,13 @@ void main() {
     addTearDown(controller.dispose);
     await controller.command((engine) {
       engine.enqueue('factory_contract', repeats: null);
-      engine.enqueueDistrict('earth_delta', 0, 'housing');
+      engine.state.research.add('life_support');
+      engine.enqueue('habitat_kit');
       return null;
     });
-    final house = controller.state.districtPlanAt('earth_delta', 0)!;
+    final house = controller.state.plans.lastWhere(
+      (plan) => plan.taskId == 'habitat_kit',
+    );
     final contract = controller.state.currentPlanFor('factory')!;
     await tester.pumpWidget(
       MarsApp(

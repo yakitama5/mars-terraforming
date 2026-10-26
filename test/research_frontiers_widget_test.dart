@@ -39,6 +39,11 @@ void main() {
   );
 
   void fund(GameEngine engine, String id) {
+    // City prerequisites are explicit fixtures; this suite verifies animation.
+    engine.state.population = 1000;
+    if (id != 'orbital_gardens') {
+      engine.state.developments.add('orbital_gardens');
+    }
     engine.state.researchPointUnits =
         GameContent.researchPointCost(id) * GameState.researchPointScale;
   }

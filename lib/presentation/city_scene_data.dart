@@ -39,7 +39,7 @@ ScenePlot _scenePlot(GameState game, CityDefinition city, int index) {
         ? plan.stopReason
         : plan.status == 'running'
         ? '残り ${gameDuration(plan.remainingMs)}'
-        : '建設予約',
+        : '要着手',
   );
 }
 

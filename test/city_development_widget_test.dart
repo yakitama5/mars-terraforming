@@ -140,33 +140,50 @@ void main() {
     },
   );
 
-  testWidgets('discovery and RP reservation do not expose district choices', (
-    tester,
-  ) async {
-    final controller = await createController();
-    await showCity(tester, controller);
-    await controller.command(
-      (engine) => engine.unlockResearch('deployable_solar_arrays'),
-    );
-    await tester.pumpAndSettle();
-    expect(controller.state.isResearchDiscovered('urban_planning'), isTrue);
-    expect(paletteIds(tester), {'housing', 'solar'});
-    await controller.command((engine) => engine.enqueue('urban_planning'));
-    await tester.pumpAndSettle();
-    expect(controller.state.plans.last.status, 'queued');
-    expect(paletteIds(tester), {'housing', 'solar'});
-    await controller.command((engine) {
-      engine.state.researchPointUnits =
-          GameContent.researchPointCost('urban_planning') *
-          GameState.researchPointScale;
-      engine.advanceBy(Duration.zero);
-      return null;
-    });
-    await tester.pumpAndSettle();
-    expect(controller.state.research, contains('urban_planning'));
-    expect(paletteIds(tester), {'housing', 'solar', 'campus', 'industry'});
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'discovery and a preserved plan do not expose district choices before manual unlock',
+    (tester) async {
+      final controller = await createController();
+      await showCity(tester, controller);
+      await controller.command(
+        (engine) => engine.unlockResearch('deployable_solar_arrays'),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.state.isResearchDiscovered('urban_planning'), isTrue);
+      expect(paletteIds(tester), {'housing', 'solar'});
+      await controller.command((engine) => engine.enqueue('urban_planning'));
+      await tester.pumpAndSettle();
+      expect(
+        controller.state.plans.where((plan) => plan.taskId == 'urban_planning'),
+        isEmpty,
+      );
+      controller.state.plans.add(
+        PlannedTask(id: 'preserved-urban', taskId: 'urban_planning')
+          ..requiresManualStart = true,
+      );
+      expect(paletteIds(tester), {'housing', 'solar'});
+      await controller.command((engine) {
+        engine.state.population = 180;
+        const solar = DistrictState(
+          cityId: 'earth_delta',
+          plotIndex: 0,
+          districtId: 'solar',
+        );
+        engine.state.districts[solar.key] = solar;
+        engine.state.researchPointUnits =
+            GameContent.researchPointCost('urban_planning') *
+            GameState.researchPointScale;
+        engine.advanceBy(Duration.zero);
+        expect(engine.state.research, isNot(contains('urban_planning')));
+        return engine.startPlan('preserved-urban');
+      });
+      await tester.pumpAndSettle();
+      expect(controller.state.research, contains('urban_planning'));
+      expect(paletteIds(tester), {'housing', 'solar', 'campus', 'industry'});
+      await tester.pump(const Duration(seconds: 8));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'space elevator appears only after both prerequisite technologies',
