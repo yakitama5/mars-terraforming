@@ -7,6 +7,8 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'title_celestial_models.dart';
 import 'title_cosmos_models.dart';
+import 'title_apparent_planet_scale.dart';
+import 'title_distant_planet_glow.dart';
 import 'title_gas_giant_models.dart';
 import 'title_spacecraft_models.dart';
 import 'title_scene_motion.dart';
@@ -35,6 +37,7 @@ class _TitleSceneState extends State<TitleScene>
   TitleCelestialModels? _models;
   TitleCosmosModels? _cosmos;
   TitleGasGiantModels? _giants;
+  TitleDistantPlanetGlow? _distantGlow;
   late TitleSceneSnapshot _displayedSnapshot;
   TitleMarsModel? _mars;
   vm.Quaternion _marsOrientation = vm.Quaternion.identity();
@@ -47,9 +50,14 @@ class _TitleSceneState extends State<TitleScene>
   bool _active = true;
   bool _reduceMotion = false;
   bool _failed = false;
+  double _viewportHeightPixels = 1000;
+  double _renderPixelRatio = 1;
   int _generation = 0;
   static final _cameraPosition = vm.Vector3(0, 1, 14);
   static final _marsPosition = vm.Vector3(0, -7.4, 0);
+  static final _cameraTarget = vm.Vector3(0, 1.8, 0);
+  static final _cameraForward = (_cameraTarget - _cameraPosition).normalized();
+  static const _verticalFieldOfView = 43 * math.pi / 180;
 
   @override
   void initState() {
@@ -63,6 +71,12 @@ class _TitleSceneState extends State<TitleScene>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _renderPixelRatio = MediaQuery.devicePixelRatioOf(context)
+        .clamp(1, 2.0)
+        .toDouble();
+    _viewportHeightPixels =
+        MediaQuery.sizeOf(context).height * _renderPixelRatio;
+    if (_scene != null) _animate();
     _syncTicker();
   }
 
@@ -98,6 +112,7 @@ class _TitleSceneState extends State<TitleScene>
         TitleCosmosModels.load(),
         TitleSpacecraftModels.load(),
         TitleGasGiantModels.load(),
+        TitleDistantPlanetGlow.load(),
       ]);
       if (!mounted || generation != _generation) return;
       pending = fs.Scene();
@@ -105,9 +120,11 @@ class _TitleSceneState extends State<TitleScene>
       final cosmos = resources[1] as TitleCosmosModels;
       final spacecraft = resources[2] as TitleSpacecraftModels;
       final giants = resources[3] as TitleGasGiantModels;
+      final distantGlow = resources[4] as TitleDistantPlanetGlow;
       _models = models;
       _cosmos = cosmos;
       _giants = giants;
+      _distantGlow = distantGlow;
       _displayedSnapshot = widget.snapshot;
       _mars = models.mars(widget.snapshot);
       _marsOrientation = _mars!.root.rotation.clone();
@@ -115,10 +132,7 @@ class _TitleSceneState extends State<TitleScene>
         ..name = 'title-mars'
         ..position = _marsPosition
         ..scale = vm.Vector3.all(2.6);
-      _earth = models.earth()
-        ..name = 'title-earth'
-        ..position = vm.Vector3(-17, 5.8, -22)
-        ..scale = vm.Vector3.all(1.05);
+      _earth = models.earth()..name = 'title-earth';
       _earthGlobe = _earth!.getChildByName('title-earth-globe');
       _rocket = spacecraft.rocket
         ..name = 'title-rocket'
@@ -126,10 +140,10 @@ class _TitleSceneState extends State<TitleScene>
       _satellite = spacecraft.satellite
         ..name = 'title-satellite'
         ..scale = vm.Vector3.all(.045);
-      _sun = cosmos.sun(radius: 1.1)..name = 'title-sun';
+      _sun = cosmos.sun()..name = 'title-sun';
       _sunGlobe = _sun!.getChildByName('白熱した太陽光球');
-      _jupiter = giants.jupiter()..scale = vm.Vector3.all(5.2);
-      _saturn = giants.saturn()..scale = vm.Vector3.all(3.8);
+      _jupiter = giants.jupiter();
+      _saturn = giants.saturn();
       for (final node in [
         _mars!.root,
         _earth!,
@@ -138,6 +152,9 @@ class _TitleSceneState extends State<TitleScene>
         _saturn!,
         _rocket!,
         _satellite!,
+        distantGlow.earth,
+        distantGlow.jupiter,
+        distantGlow.saturn,
       ]) {
         pending.add(node);
       }
@@ -256,7 +273,42 @@ class _TitleSceneState extends State<TitleScene>
   void _animate() {
     final motion = TitleSceneMotion(_seconds);
     _mars?.root.rotation = motion.marsRotation(_marsOrientation);
-    final sunPosition = _marsPosition + motion.sunOffset;
+    // 主火星の赤道半径8.06を実3396.19kmへ対応させ、観測者の高度も含める。
+    final observerOffsetAu =
+        (_cameraPosition - _marsPosition) *
+        (TitleDistantBody.mars.equatorialRadiusKm /
+            (3.1 * 2.6) /
+            TitleSolarSystemScale.kilometersPerAu);
+    ApparentBody apparent(TitleDistantBody body, vm.Vector3 relativeAu) =>
+        ApparentBody(
+          radiusKm: body.equatorialRadiusKm,
+          relativeAu: relativeAu - observerOffsetAu,
+        );
+    final sun = apparent(TitleDistantBody.sun, motion.sunRelativeAu);
+    final earth = apparent(TitleDistantBody.earth, motion.earthRelativeAu);
+    final jupiter = apparent(
+      TitleDistantBody.jupiter,
+      motion.jupiterRelativeAu,
+    );
+    final saturn = apparent(TitleDistantBody.saturn, motion.saturnRelativeAu);
+    void place(
+      fs.Node? node,
+      ApparentBody body,
+      double distance, {
+      double modelRadius = 1,
+    }) {
+      node
+        ?..position = body.cameraAnchoredPosition(_cameraPosition, distance)
+        ..scale = vm.Vector3.all(
+          body.modelScale(renderDistance: distance, modelRadius: modelRadius),
+        );
+    }
+
+    place(_sun, sun, TitleSceneMotion.sunDistance);
+    place(_earth, earth, TitleSceneMotion.earthDistance, modelRadius: 3.1);
+    place(_jupiter, jupiter, TitleSceneMotion.jupiterDistance);
+    place(_saturn, saturn, TitleSceneMotion.saturnDistance);
+    final sunPosition = _sun!.position;
     final sunFacing = vm.Quaternion.fromTwoVectors(
       vm.Vector3(0, 0, 1),
       (_cameraPosition - sunPosition).normalized(),
@@ -266,31 +318,81 @@ class _TitleSceneState extends State<TitleScene>
       skyYaw: motion.starAngle,
       bodyTilt: -TitleSceneMotion.cameraFrameTilt,
     );
-    _sun
-      ?..position = sunPosition
-      ..rotation = sunFacing;
+    _sun?.rotation = sunFacing;
     _sunGlobe?.rotation = sunFacing.conjugated() * motion.sunRotation;
     // 遠景の位置と地表の明暗を同じ太陽方向で動かす。
     // 既存のlightを更新し、毎フレームcomponentや影atlasを作り直さない。
     _scene?.directionalLight?.direction = -motion.sunDirection;
-    _earth?.position = _marsPosition + motion.earthOffset;
     _models?.updateView(
       cameraPosition: _cameraPosition,
       sunDirection: motion.sunDirection,
-      sunPosition: sunPosition,
       seconds: _seconds,
       inertialToView: motion.inertialToCamera,
+      earthSunDirection: motion.earthToSunAu,
     );
     _earthGlobe?.rotation = motion.earthRotation;
-    _jupiter
-      ?..position = _marsPosition + motion.jupiterOffset
-      ..rotation = motion.jupiterRotation;
-    _saturn
-      ?..position = _marsPosition + motion.saturnOffset
-      ..rotation = motion.saturnRotation;
+    _jupiter?.rotation = motion.jupiterRotation;
+    _saturn?.rotation = motion.saturnRotation;
     _giants?.updateView(
-      sunPosition: sunPosition,
+      jupiterToSunInRadii:
+          motion.jupiterToSunAu *
+          (TitleSolarSystemScale.kilometersPerAu /
+              TitleDistantBody.jupiter.equatorialRadiusKm),
+      saturnToSunInRadii:
+          motion.saturnToSunAu *
+          (TitleSolarSystemScale.kilometersPerAu /
+              TitleDistantBody.saturn.equatorialRadiusKm),
       cameraPosition: _cameraPosition,
+    );
+    void glow(
+      String name,
+      fs.Node? node,
+      ApparentBody body,
+      vm.Vector3 toSunAu,
+      double distance, {
+      double outerRadiusRatio = 1,
+    }) {
+      if (node == null) return;
+      // 未分解天体の光学的な点像。球や環の実角径を最低pixel数へ拡大しない。
+      // quadは画面平行なので、斜めの視線でも球の前へ面全体を出す。
+      final alignment = body.direction.dot(_cameraForward);
+      final front =
+          body.renderedSphereRadius(distance) *
+          outerRadiusRatio *
+          1.04 /
+          math.max(alignment, .01);
+      _distantGlow?.updateBody(
+        name,
+        position: node.position - body.direction * front,
+        cameraPosition: _cameraPosition,
+        cameraTarget: _cameraTarget,
+        verticalFieldOfViewRadians: _verticalFieldOfView,
+        viewportHeightPixels: _viewportHeightPixels,
+        brightness: _glowBrightness(body, toSunAu),
+      );
+    }
+
+    glow(
+      'earth',
+      _earth,
+      earth,
+      motion.earthToSunAu,
+      TitleSceneMotion.earthDistance,
+    );
+    glow(
+      'jupiter',
+      _jupiter,
+      jupiter,
+      motion.jupiterToSunAu,
+      TitleSceneMotion.jupiterDistance,
+    );
+    glow(
+      'saturn',
+      _saturn,
+      saturn,
+      motion.saturnToSunAu,
+      TitleSceneMotion.saturnDistance,
+      outerRadiusRatio: 2.330901,
     );
     final satellite = motion.satellite;
     _satellite
@@ -310,6 +412,19 @@ class _TitleSceneState extends State<TitleScene>
     }
   }
 
+  double _glowBrightness(ApparentBody body, vm.Vector3 toSunAu) {
+    final cosine = (-body.direction).dot(toSunAu.normalized()).clamp(-1.0, 1.0);
+    final phase = math.acos(cosine);
+    final lambert =
+        (math.sin(phase) + (math.pi - phase) * math.cos(phase)) / math.pi;
+    final flux =
+        math.pow(body.radiusKm / (body.distanceAu * toSunAu.length), 2) *
+        lambert;
+    // 明るい外惑星を基準にした露光。測光等級の厳密な校正ではない。
+    final reference = math.pow(71492 / (5.2 * 4.2), 2);
+    return math.pow((flux / reference).clamp(0.0, 1.0), .4).toDouble();
+  }
+
   @override
   void dispose() {
     ++_generation;
@@ -326,6 +441,7 @@ class _TitleSceneState extends State<TitleScene>
     _models = null;
     _cosmos = null;
     _giants = null;
+    _distantGlow = null;
     _mars = null;
     _earth = null;
     _earthGlobe = null;
@@ -369,15 +485,13 @@ class _TitleSceneState extends State<TitleScene>
               scene,
               camera: fs.PerspectiveCamera(
                 position: _cameraPosition,
-                target: vm.Vector3(0, 1.8, 0),
-                fovRadiansY: 43 * math.pi / 180,
+                target: _cameraTarget,
+                fovRadiansY: _verticalFieldOfView,
                 fovNear: .25,
                 fovFar: 240,
               ),
               autoTick: false,
-              pixelRatio: MediaQuery.devicePixelRatioOf(context)
-                  .clamp(1, 2.0)
-                  .toDouble(),
+              pixelRatio: _renderPixelRatio,
             ),
           ),
         ),

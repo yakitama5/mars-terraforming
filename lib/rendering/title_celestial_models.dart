@@ -179,14 +179,16 @@ class TitleCelestialModels {
     required double seconds,
     vm.Vector3? sunPosition,
     vm.Quaternion? inertialToView,
+    vm.Vector3? earthSunDirection,
   }) {
     final sun = sunDirection.normalized();
     for (final material in _materials.skip(1)) {
       material.parameters.setVec3('sun_direction', sun);
     }
     final earth = _earthRoot;
-    if (sunPosition != null && earth != null) {
-      final earthSun = (sunPosition - earth.position)..normalize();
+    if (earthSunDirection != null || (sunPosition != null && earth != null)) {
+      final earthSun = (earthSunDirection ?? (sunPosition! - earth!.position))
+          .normalized();
       for (final material in [
         _earthSurface,
         _earthAtmosphere,
