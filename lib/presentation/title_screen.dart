@@ -88,6 +88,8 @@ class _TitleScreenState extends State<TitleScreen>
             '火星\nNASA/JPL/USGS・Arizona State University\nNASA/MGS/MOLA Science Team・NASA PDS\n\n'
             '地球\nNASA Earth Observatory・NASA Goddard Space Flight Center\n'
             'Reto Stöckli・Robert Simmon・Joshua Stevens・Miguel Román\n\n'
+            '木星・土星\nNASA Visualization Technology Applications and Development (VTAD)\n'
+            '雲画像を球面へ再投影し、環の半径方向画像を使用しています。\n\n'
             '宇宙機・小惑星\nNASA / NASA 3D Resources\n'
             'NASA / Michael D. Carbajal\nNASA / Christopher R. Meaney\n'
             'NASA/Goddard/University of Arizona\n\n'

@@ -20,6 +20,7 @@ import 'package:mars_terraforming/rendering/city_scene.dart';
 import 'package:mars_terraforming/rendering/title_scene.dart';
 import 'package:mars_terraforming/rendering/title_scene_motion.dart';
 import 'package:mars_terraforming/rendering/title_spacecraft_models.dart';
+import 'package:vector_math/vector_math.dart' as vm;
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -87,7 +88,8 @@ void main() {
   });
 
   testWidgets(
-    'iOS GPU: saved Mars, fixed title viewpoint, moving space and safe launch',
+    'GPU: 自転する火星と地表施設・木星・土星を表示し安全に開始する',
+    // 実描画・画角・保存を、同じセッションで順に検証する。
     (tester) async {
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
@@ -165,6 +167,77 @@ void main() {
         ];
       }
 
+      fs.Node node(String name) {
+        final result = view().scene!.root.getChildByName(name);
+        expect(result, isNotNull, reason: 'GPUシーンに$nameが同時に存在する');
+        return result!;
+      }
+
+      List<double> worldTransform(fs.Node node) =>
+          node.globalTransform.storage.toList();
+
+      List<double> worldAxes(fs.Node node) {
+        final rotation = node.globalTransform.getRotation();
+        return [
+          for (final axis in [
+            vm.Vector3(1, 0, 0),
+            vm.Vector3(0, 1, 0),
+            vm.Vector3(0, 0, 1),
+          ])
+            ...rotation.transformed(axis).normalized().storage,
+        ];
+      }
+
+      List<double> relativeTransform(fs.Node parent, fs.Node child) {
+        final inverse = vm.Matrix4.copy(parent.globalTransform)..invert();
+        return (inverse * child.globalTransform).storage.toList();
+      }
+
+      void expectTransformUnchanged(
+        List<double> actual,
+        List<double> expected,
+      ) {
+        expect(actual.length, expected.length);
+        for (var i = 0; i < actual.length; i++) {
+          expect(actual[i], closeTo(expected[i], 2e-4));
+        }
+      }
+
+      void expectOuterPlanetsPresent() {
+        for (final name in ['title-jupiter', 'title-saturn']) {
+          final planet = node(name);
+          expect(planet.visible, isTrue, reason: '惑星の出没は画角と遮蔽で決まる');
+          expect(planet.meshNodes, isNotEmpty, reason: '名前だけのノードでなく実モデルを持つ');
+          expect(planet.combinedWorldBounds, isNotNull);
+          final globe = node('$name-globe');
+          expect(globe.visible, isTrue);
+          expect(globe.meshNodes, isNotEmpty);
+        }
+        final rings = node('title-saturn-rings');
+        expect(rings.visible, isTrue);
+        expect(rings.meshNodes, isNotEmpty);
+      }
+
+      bool hasUnoccludedCenterInView(String name) {
+        final planet = node(name);
+        final camera = view().camera!;
+        final viewport = tester.getSize(find.byType(TitleScene));
+        final position = planet.globalTransform.getTranslation();
+        final point = camera.worldToScreen(position, viewport);
+        if (point == null ||
+            !(Offset.zero & viewport).deflate(12).contains(point)) {
+          return false;
+        }
+        // 火星中心を原点にした視線segment。画角内でも火星の裏なら撮らない。
+        final marsCenter = node('title-mars').globalTransform.getTranslation();
+        final cameraFromMars = camera.position - marsCenter;
+        final ray = position - camera.position;
+        final closest = (-cameraFromMars.dot(ray) / ray.length2)
+            .clamp(0.0, 1.0)
+            .toDouble();
+        return (cameraFromMars + ray * closest).length2 > 8.14 * 8.14;
+      }
+
       double starAngle() => (view().scene!.skybox!.source as fs.PreprocessedSky)
           .parameters
           .getFloat('sky_yaw');
@@ -172,6 +245,32 @@ void main() {
       Future<void> capture(String name) async {
         await wait(const Duration(milliseconds: 500));
         await binding.takeScreenshot(name);
+      }
+
+      Future<void> captureVisibleBodies(
+        Map<String, String> captures, {
+        int maxAttempts = 240,
+      }) async {
+        final pending = Map<String, String>.of(captures);
+        // 実際のScene位置を見て撮るため、初期位相の微調整で黒背景や火星の
+        // 背後だけを証拠画像にしない。両モデルはこの待機中も同時に存在する。
+        for (
+          var attempt = 0;
+          attempt < maxAttempts && pending.isNotEmpty;
+          attempt++
+        ) {
+          expectOuterPlanetsPresent();
+          for (final name in pending.keys.toList()) {
+            if (!hasUnoccludedCenterInView(name)) continue;
+            await wait(const Duration(milliseconds: 100));
+            if (!hasUnoccludedCenterInView(name)) continue;
+            await binding.takeScreenshot(pending.remove(name)!);
+          }
+          if (pending.isNotEmpty) {
+            await wait(const Duration(milliseconds: 250));
+          }
+        }
+        expect(pending, isEmpty, reason: '指定天体の画角内・非遮蔽の時点を各1枚撮影する');
       }
 
       Future<void> start() async {
@@ -190,17 +289,43 @@ void main() {
       expect(find.byType(MissionOpening), findsNothing);
       final initialCamera = cameraPose();
       final initialMars = nodePose('title-mars');
+      final initialSurface = worldTransform(node('title-mars-surface'));
+      final initialJupiter = nodePose('title-jupiter');
+      final initialSaturn = nodePose('title-saturn');
+      final initialJupiterAxes = worldAxes(node('title-jupiter-globe'));
+      final initialSaturnAxes = worldAxes(node('title-saturn-globe'));
       final initialStars = starAngle();
       final initialSatellite = nodePose('title-satellite');
+      expectOuterPlanetsPresent();
       await capture('title-ios-pristine');
       // ignore: avoid_print
       print('TITLE_VIDEO_READY');
+      await captureVisibleBodies({
+        'title-jupiter': 'title-ios-jupiter-visible',
+        'title-saturn': 'title-ios-saturn-visible',
+      });
       await wait(const Duration(seconds: 7));
       await capture('title-ios-passage');
       await wait(const Duration(seconds: 11));
       await capture('title-ios-pristine-motion');
       expect(cameraPose(), initialCamera, reason: 'タイトルの視点は時間で移動しない');
-      expect(nodePose('title-mars'), initialMars, reason: '火星の地表と姿勢は固定する');
+      expect(
+        nodePose('title-mars'),
+        isNot(initialMars),
+        reason: '固定視点から火星の自転が見える',
+      );
+      expect(
+        worldTransform(node('title-mars-surface')),
+        isNot(initialSurface),
+        reason: '実際に描画する地表のworld変換が進む',
+      );
+      expect(node('title-mars').position.storage, initialMars.take(3));
+      expect(node('title-mars').scale.storage, initialMars.skip(7));
+      expectOuterPlanetsPresent();
+      expect(nodePose('title-jupiter'), isNot(initialJupiter));
+      expect(nodePose('title-saturn'), isNot(initialSaturn));
+      expect(worldAxes(node('title-jupiter-globe')), isNot(initialJupiterAxes));
+      expect(worldAxes(node('title-saturn-globe')), isNot(initialSaturnAxes));
       expect(starAngle(), isNot(initialStars));
       expect(nodePose('title-satellite'), isNot(initialSatellite));
       final marsCenter = view().scene!.root
@@ -235,10 +360,12 @@ void main() {
       }
       final initialSun = nodePose('title-sun');
       await wait(const Duration(seconds: 45));
-      await capture('title-ios-orbital-phase');
+      await captureVisibleBodies({
+        'title-sun': 'title-ios-orbital-phase',
+      }, maxAttempts: 300);
       expect(nodePose('title-sun'), isNot(initialSun));
       expect(cameraPose(), initialCamera);
-      expect(nodePose('title-mars'), initialMars);
+      expect(nodePose('title-mars'), isNot(initialMars));
       now = now.add(const Duration(hours: 8));
       await pristine.resume();
       expect(pristine.state.moneyUnits, initialMoney);
@@ -313,12 +440,42 @@ void main() {
       expect(find.byType(MissionOpening), findsNothing);
       final developedCamera = cameraPose();
       final developedMars = nodePose('title-mars');
+      final surface = node('title-mars-surface');
+      final settlements = node('title-mars-settlements');
+      expect(
+        settlements.meshNodes,
+        isNotEmpty,
+        reason: '発展fixtureの地表に実際の施設描画がある',
+      );
+      final facility = settlements.meshNodes.first;
+      final surfaceBefore = worldTransform(surface);
+      final facilityBefore = worldTransform(facility);
+      final facilityRelativeToSurface = relativeTransform(surface, facility);
+      final bounds = facility.combinedLocalBounds!;
+      final facilityProbe = (bounds.min + bounds.max) * .5;
+      final facilityWorldBefore = facility.globalTransform.transformed3(
+        facilityProbe,
+      );
       final developedEarth = nodePose('title-earth-globe');
       await capture('title-ios-developed');
       await wait(const Duration(seconds: 18));
       await capture('title-ios-developed-motion');
       expect(cameraPose(), developedCamera);
-      expect(nodePose('title-mars'), developedMars);
+      expect(nodePose('title-mars'), isNot(developedMars));
+      expect(worldTransform(surface), isNot(surfaceBefore));
+      expect(worldTransform(facility), isNot(facilityBefore));
+      expect(
+        (facility.globalTransform.transformed3(facilityProbe) -
+                facilityWorldBefore)
+            .length,
+        greaterThan(.01),
+        reason: '地表の施設を描く実geometryもworld空間で移動する',
+      );
+      expectTransformUnchanged(
+        relativeTransform(surface, facility),
+        facilityRelativeToSurface,
+      );
+      expectOuterPlanetsPresent();
       expect(nodePose('title-earth-globe'), isNot(developedEarth));
       expect(developed.state.toJson(), baseline, reason: '描画待機は進行と報酬を変更しない');
 

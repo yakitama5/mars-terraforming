@@ -1,0 +1,60 @@
+material {
+  name: "TitlePhotographicGasGiant",
+  shading_model: unlit,
+  blending: opaque,
+  culling: back,
+  parameters: [
+    { type: sampler2d, name: albedo_map, hint: default_white },
+    { type: sampler2d, name: ring_map, hint: default_black },
+    { type: vec3, name: sun_local, default: [-20.0, 8.0, 10.0] },
+    { type: vec3, name: camera_local, default: [0.0, 0.0, 20.0] },
+    { type: float, name: polar_ratio, default: 1.0 },
+    { type: float, name: sunlight, default: 2.1 },
+    { type: float, name: ambient, default: 0.018 },
+    { type: float, name: rings_enabled, default: 0.0 },
+  ],
+  varyings: [
+    { type: vec3, name: giant_local_position },
+  ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    giant_local_position = vertex.position;
+  }
+}
+fragment {
+  float RingTransmission(vec3 p, vec3 l, float light_distance) {
+    if (material_params.rings_enabled < 0.5 || abs(l.y) < 0.0001) return 1.0;
+    float t = -p.y / l.y;
+    if (t <= 0.0005 || t >= light_distance) return 1.0;
+    float radius = length((p + l * t).xz);
+    float u = (radius - 1.232301) / (2.330901 - 1.232301);
+    if (u <= 0.0 || u >= 1.0) return 1.0;
+    float opacity = texture(ring_map, vec2(u, 0.5)).a;
+    float tau = -log(max(1.0 - opacity, 0.015)) * 0.45;
+    return exp(-tau / max(abs(l.y), 0.025));
+  }
+
+  void Surface(inout MaterialInputs material) {
+    // Vertex coordinates precede the globe child's polar flattening. The
+    // lighting API uses the unflattened parent frame, shared with its rings.
+    vec3 p = giant_local_position * vec3(1.0, material_params.polar_ratio, 1.0);
+    vec3 n = normalize(p / vec3(1.0,
+        material_params.polar_ratio * material_params.polar_ratio, 1.0));
+    vec3 to_sun = material_params.sun_local - p;
+    vec3 l = normalize(to_sun);
+    vec3 v = normalize(material_params.camera_local - p);
+    float ndl = dot(n, l);
+    float direct = max(ndl, 0.0);
+    float shadow = RingTransmission(p, l, length(to_sun));
+    vec3 albedo = SRGBToLinear(texture(albedo_map, GetUV0()).rgb);
+    // A thin cloud-top haze softens the limb without a flat exterior halo.
+    float limb = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+    float day = smoothstep(-0.12, 0.20, ndl);
+    vec3 color = albedo * (material_params.ambient +
+        direct * material_params.sunlight * shadow);
+    color += albedo * vec3(0.07, 0.09, 0.12) * limb * day * shadow;
+    material.base_color = vec4(color, 1.0);
+    PrepareMaterial(material);
+  }
+}

@@ -18,20 +18,38 @@ void main() {
       expect(motion.seconds, 0);
       _expectVector(motion.sunDirection, initial.sunDirection);
       _expectVector(motion.earthDirection, initial.earthDirection);
+      _expectVector(motion.jupiterDirection, initial.jupiterDirection);
+      _expectVector(motion.saturnDirection, initial.saturnDirection);
       _expectVector(motion.rocket.position, initial.rocket.position);
     }
     for (final time in [0.0, 1e12, 1e308, double.maxFinite]) {
       final motion = TitleSceneMotion(time);
       for (final angle in [
         motion.starAngle,
+        motion.marsSpin,
         motion.earthAngle,
         motion.cloudAngle,
       ]) {
         expect(angle, inInclusiveRange(0, math.pi * 2));
       }
-      for (final direction in [motion.sunDirection, motion.earthDirection]) {
+      for (final direction in [
+        motion.sunDirection,
+        motion.earthDirection,
+        motion.jupiterDirection,
+        motion.saturnDirection,
+      ]) {
         _expectFiniteVector(direction);
         expect(direction.length, closeTo(1, 1e-6));
+      }
+      for (final rotation in [
+        motion.marsRotation(vm.Quaternion.identity()),
+        motion.earthRotation,
+        motion.sunRotation,
+        motion.jupiterRotation,
+        motion.saturnRotation,
+      ]) {
+        expect(rotation.storage.every((value) => value.isFinite), isTrue);
+        expect(rotation.length, closeTo(1, 2e-6));
       }
       for (final pose in [
         motion.satellite,
@@ -52,32 +70,68 @@ void main() {
     final second = TitleSceneMotion(127.25);
     _expectVector(first.sunOffset, second.sunOffset);
     _expectVector(first.earthOffset, second.earthOffset);
+    _expectVector(first.jupiterOffset, second.jupiterOffset);
+    _expectVector(first.saturnOffset, second.saturnOffset);
     _expectVector(first.satellite.position, second.satellite.position);
     _expectVector(first.rocket.velocity, second.rocket.velocity);
     _expectRotation(first.earthRotation, second.earthRotation);
   });
 
-  test('太陽・地球・星空は同じ慣性系と火星自転を共有する', () {
+  test('太陽・地球・巨惑星・星空は同じ太陽中心慣性系とカメラ座標を共有する', () {
     for (final time in [0.0, 32.5, 180.0, 583.0, 3600.0]) {
       final motion = TitleSceneMotion(time);
       final marsAngle =
-          math.pi / 2 + time / TitleSceneMotion.marsYear * math.pi * 2;
-      final earthAngle = 3 + time / TitleSceneMotion.earthYear * math.pi * 2;
+          TitleSceneMotion.marsOrbitAtEpoch +
+          time / TitleSceneMotion.marsYear * math.pi * 2;
       final mars = vm.Vector3(
         1.52 * math.cos(marsAngle),
         0,
         1.52 * math.sin(marsAngle),
       );
-      final earth = vm.Vector3(math.cos(earthAngle), 0, math.sin(earthAngle));
-      final bodyToInertial = motion.bodyToInertial.asRotationMatrix();
+      final cameraToInertial = motion.cameraToInertial.asRotationMatrix();
       _expectVector(
-        bodyToInertial.transformed(motion.sunDirection),
+        cameraToInertial.transformed(motion.sunDirection),
         (-mars).normalized(),
       );
-      _expectVector(
-        bodyToInertial.transformed(motion.earthDirection),
-        (earth - mars).normalized(),
-      );
+      for (final (radius, period, phase, direction, offset, distance) in [
+        (
+          1.0,
+          TitleSceneMotion.earthYear,
+          TitleSceneMotion.earthOrbitAtEpoch,
+          motion.earthDirection,
+          motion.earthOffset,
+          TitleSceneMotion.earthDistance,
+        ),
+        (
+          5.2,
+          TitleSceneMotion.jupiterYear,
+          TitleSceneMotion.jupiterOrbitAtEpoch,
+          motion.jupiterDirection,
+          motion.jupiterOffset,
+          TitleSceneMotion.jupiterDistance,
+        ),
+        (
+          9.58,
+          TitleSceneMotion.saturnYear,
+          TitleSceneMotion.saturnOrbitAtEpoch,
+          motion.saturnDirection,
+          motion.saturnOffset,
+          TitleSceneMotion.saturnDistance,
+        ),
+      ]) {
+        final angle = phase + time / period * math.pi * 2;
+        final planet = vm.Vector3(
+          radius * math.cos(angle),
+          0,
+          radius * math.sin(angle),
+        );
+        _expectVector(
+          cameraToInertial.transformed(direction),
+          (planet - mars).normalized(),
+        );
+        _expectVector(offset.normalized(), direction);
+        expect(offset.length, closeTo(distance, 2e-5));
+      }
       _expectVector(motion.sunOffset.normalized(), motion.sunDirection);
       expect(motion.sunOffset.length, closeTo(120, 2e-5));
       expect(motion.earthOffset.length, closeTo(110, 2e-5));
@@ -85,41 +139,107 @@ void main() {
       final skyRotation =
           vm.Quaternion.axisAngle(
             vm.Vector3(1, 0, 0),
-            -TitleSceneMotion.marsAxialTilt,
+            -TitleSceneMotion.cameraFrameTilt,
           ) *
           vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), motion.starAngle);
-      _expectRotation(skyRotation, motion.bodyToInertial);
+      _expectRotation(skyRotation, motion.cameraToInertial);
     }
   });
 
-  test('火星一日で同じ固定配置には戻らず、公転も見かけの向きを変える', () {
+  test('火星一日やカメラ一周で遠景を固定せず、公転も見かけの向きを変える', () {
     final initial = TitleSceneMotion(0);
     final day = TitleSceneMotion(TitleSceneMotion.marsDay);
-    expect(initial.sunDirection.dot(day.sunDirection), lessThan(.2));
+    expect(initial.sunDirection.dot(day.sunDirection), lessThan(.5));
     expect(
       (initial.earthDirection - day.earthDirection).length,
       greaterThan(.5),
     );
-    final halfDay = TitleSceneMotion(TitleSceneMotion.marsDay / 2);
-    expect(initial.sunDirection.dot(halfDay.sunDirection), lessThan(0));
-    final cycle = TitleSceneMotion(3600);
+    final halfOrbit = TitleSceneMotion(TitleSceneMotion.cameraOrbitPeriod / 2);
+    expect(initial.sunDirection.dot(halfOrbit.sunDirection), lessThan(0));
+    final cameraOrbit = TitleSceneMotion(TitleSceneMotion.cameraOrbitPeriod);
+    expect(
+      (initial.sunDirection - cameraOrbit.sunDirection).length,
+      greaterThan(.3),
+    );
+    final cycle = TitleSceneMotion(72000);
     _expectVector(initial.sunDirection, cycle.sunDirection);
     _expectVector(initial.earthDirection, cycle.earthDirection);
+    _expectVector(initial.jupiterDirection, cycle.jupiterDirection);
+    _expectVector(initial.saturnDirection, cycle.saturnDirection);
   });
 
-  test('地球と太陽の自転は慣性系でそれぞれの周期に閉じる', () {
+  test('撮影姿勢を保って火星地理軸で自転し、カメラ周回と分離する', () {
+    final authored = vm.Quaternion.euler(.7, -1.1, .35);
+    final original = List<double>.of(authored.storage);
+    final initial = TitleSceneMotion(0);
+    _expectRotation(initial.marsRotation(authored), authored);
+    for (final time in [30.0, 90.0, 180.0, 720.0, 1e12]) {
+      final motion = TitleSceneMotion(time);
+      final inertialMars =
+          motion.cameraToInertial * motion.marsRotation(authored);
+      _expectRotation(
+        inertialMars,
+        initial.cameraToInertial *
+            authored *
+            vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), motion.marsSpin),
+      );
+    }
+    final afterThirty = TitleSceneMotion(30);
+    final landmark = vm.Vector3(1, 0, 0);
+    expect(
+      (afterThirty
+                  .marsRotation(authored)
+                  .asRotationMatrix()
+                  .transformed(landmark) -
+              authored.asRotationMatrix().transformed(landmark))
+          .length,
+      greaterThan(.5),
+      reason: 'カメラを地表と一緒に回して自転を相殺しない',
+    );
+    expect(
+      afterThirty.cameraOrbit - TitleSceneMotion.cameraOrbitAtEpoch,
+      closeTo(afterThirty.marsSpin * .25, 1e-10),
+    );
+    expect(authored.storage, orderedEquals(original));
+  });
+
+  test('地球・太陽・巨惑星の自転は慣性系でそれぞれの周期に閉じる', () {
     vm.Quaternion inertialEarth(double time) {
       final motion = TitleSceneMotion(time);
-      return motion.bodyToInertial * motion.earthRotation;
+      return motion.cameraToInertial * motion.earthRotation;
     }
 
     vm.Quaternion inertialSun(double time) {
       final motion = TitleSceneMotion(time);
-      return motion.bodyToInertial * motion.sunRotation;
+      return motion.cameraToInertial * motion.sunRotation;
+    }
+
+    vm.Quaternion inertialJupiter(double time) {
+      final motion = TitleSceneMotion(time);
+      return motion.cameraToInertial * motion.jupiterRotation;
+    }
+
+    vm.Quaternion inertialSaturn(double time) {
+      final motion = TitleSceneMotion(time);
+      return motion.cameraToInertial * motion.saturnRotation;
     }
 
     _expectRotation(inertialEarth(0), inertialEarth(TitleSceneMotion.earthDay));
     _expectRotation(inertialSun(0), inertialSun(TitleSceneMotion.sunDay));
+    _expectRotation(
+      inertialJupiter(0),
+      inertialJupiter(TitleSceneMotion.jupiterDay),
+    );
+    _expectRotation(
+      inertialSaturn(0),
+      inertialSaturn(TitleSceneMotion.saturnDay),
+    );
+    for (final time in [0.0, 18.0, 60.0, 150.0]) {
+      final pole = inertialSaturn(time)
+          .asRotationMatrix()
+          .transformed(vm.Vector3(0, 1, 0));
+      expect(pole.y, closeTo(math.cos(TitleSceneMotion.saturnAxialTilt), 1e-6));
+    }
     expect(
       (inertialSun(0).asRotationMatrix().transformed(vm.Vector3(1, 0, 0)) -
               inertialSun(TitleSceneMotion.sunDay / 4)
@@ -128,6 +248,56 @@ void main() {
           .length,
       greaterThan(1),
     );
+  });
+
+  test('巨惑星は最初から見え、120秒以内に地球と太陽も地平線へ現れる', () {
+    for (final aspect in [568 / 320, 844 / 390]) {
+      for (final time in [0.0, 3.0, 18.0, 30.0, 60.0]) {
+        final motion = TitleSceneMotion(time);
+        expect(
+          _isVisible(motion.jupiterOffset, aspect),
+          isTrue,
+          reason: '$time秒の木星は火星に遮蔽されず画角へ入る',
+        );
+        expect(
+          _isVisible(motion.saturnOffset, aspect),
+          isTrue,
+          reason: '$time秒の土星は火星に遮蔽されず画角へ入る',
+        );
+      }
+      final firstTwoMinutes = [
+        for (var time = 0.0; time <= 120; time += 5) TitleSceneMotion(time),
+      ];
+      expect(
+        firstTwoMinutes.any((motion) => _isVisible(motion.earthOffset, aspect)),
+        isTrue,
+      );
+      expect(
+        firstTwoMinutes.any((motion) => _isVisible(motion.sunOffset, aspect)),
+        isTrue,
+      );
+    }
+  });
+
+  test('遠景を画面へ固定せず、各天体は自然な運動で画角へ出入りする', () {
+    for (final offsetAt in [
+      (TitleSceneMotion motion) => motion.sunOffset,
+      (TitleSceneMotion motion) => motion.earthOffset,
+      (TitleSceneMotion motion) => motion.jupiterOffset,
+      (TitleSceneMotion motion) => motion.saturnOffset,
+    ]) {
+      var visible = 0;
+      var hidden = 0;
+      for (var time = 0.0; time < 720; time += 5) {
+        if (_isVisible(offsetAt(TitleSceneMotion(time)), 844 / 390)) {
+          visible++;
+        } else {
+          hidden++;
+        }
+      }
+      expect(visible, greaterThan(0));
+      expect(hidden, greaterThan(0));
+    }
   });
 
   test('円・高離心率・傾斜楕円で周期の位置・速度・姿勢が連続する', () {
@@ -285,6 +455,27 @@ List<KeplerOrbit> get _localOrbits => [
   TitleSceneMotion.rocketOrbit,
   ...TitleSceneMotion.asteroidOrbits,
 ];
+
+/// Sceneの固定構図を火星中心相対で投影し、地形全体を包む球の遮蔽も除く。
+bool _isVisible(vm.Vector3 point, double aspect) {
+  final camera = vm.Vector3(0, 8.4, 14);
+  final target = vm.Vector3(0, 9.2, 0);
+  final forward = (target - camera).normalized();
+  final right = forward.cross(vm.Vector3(0, 1, 0)).normalized();
+  final up = right.cross(forward).normalized();
+  final ray = point - camera;
+  final depth = ray.dot(forward);
+  if (depth <= .25 || depth >= 240) return false;
+  final halfHeight = math.tan(43 * math.pi / 360);
+  final x = ray.dot(right) / (depth * halfHeight * aspect);
+  final y = ray.dot(up) / (depth * halfHeight);
+  if (x.abs() > 1 || y.abs() > 1) return false;
+  final closestPointFraction = (-camera.dot(ray) / ray.length2)
+      .clamp(0.0, 1.0)
+      .toDouble();
+  final closestPoint = camera + ray * closestPointFraction;
+  return closestPoint.length2 > 8.14 * 8.14;
+}
 
 void _expectFiniteVector(vm.Vector3 vector) {
   expect(vector.x.isFinite && vector.y.isFinite && vector.z.isFinite, isTrue);
