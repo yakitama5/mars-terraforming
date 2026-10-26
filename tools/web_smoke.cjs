@@ -124,35 +124,6 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
       if (await option.count() === 0) await click('建設する施設を選ぶ');
       await reach(option, `${name}を選ぶ`);
     };
-    const compareInvestment = async screenshotName => {
-      const beforeComparison = await snapshot();
-      await page.getByRole('button', { name: 'この候補を比較に保存', exact: true }).click();
-      await page.getByRole('button', { name: '惑星マップ', exact: true }).click();
-      await reach(page.getByRole('button', { name: /^高原科学都市 / }).last(), '高原科学都市');
-      await page.getByRole('button', { name: '都市開発', exact: true }).click();
-      await chooseFacility('住宅地区');
-      await ground('高原科学都市', 13);
-      await page.getByRole('button', { name: '保存した候補と比較', exact: true }).click();
-      await page.getByRole('button', { name: '比較を閉じる', exact: true }).waitFor();
-      await page.waitForTimeout(400);
-      assert.equal(await page.getByText('住宅地区 Lv.1 → 2', { exact: true }).count(), 1);
-      assert.equal(await page.getByText('住宅地区 新設 Lv.1', { exact: true }).count(), 1);
-      const { width, height } = page.viewportSize();
-      await page.screenshot({ path: path.join(output, `${screenshotName}.png`) });
-      // The entire comparison scrolls while its close action stays reachable.
-      await page.mouse.move(width / 2, height - 80);
-      await page.mouse.wheel(0, 600);
-      await page.waitForTimeout(250);
-      const close = page.getByRole('button', { name: '比較を閉じる', exact: true });
-      const closeBox = await close.boundingBox();
-      assert.ok(closeBox && closeBox.y >= 0 && closeBox.y + closeBox.height <= height);
-      await close.click();
-      await page.waitForTimeout(250);
-      assert.equal(await page.getByRole('button', { name: '比較を閉じる', exact: true }).count(), 0);
-      const afterComparison = await snapshot();
-      assert.deepEqual(afterComparison.districts, beforeComparison.districts);
-      assert.deepEqual(afterComparison.plans.map(p => p.id), beforeComparison.plans.map(p => p.id));
-    };
     const inspectForecast = async screenshotName => {
       await page.getByRole('button', { name: '設備・進行', exact: true }).click();
       await page.getByRole('button', { name: '稼働状況', exact: true }).click();
@@ -198,330 +169,265 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
         await page.waitForTimeout(300);
       }
     };
+    const advance = async (period = '開発 +1時間') => {
+      await page.getByRole('button', { name: '開発用の時間送り', exact: true }).click();
+      await page.getByRole('menuitem', { name: period, exact: true }).click();
+      await page.waitForTimeout(350);
+    };
+    const closeDialog = async () => {
+      await page.getByRole('button', { name: '閉じる', exact: true })
+        .and(page.locator('[tabindex="0"]')).click();
+    };
+    const energyResearch = async name => {
+      await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
+      const field = page.getByRole('checkbox', { name: 'エネルギー', exact: true })
+        .or(page.getByRole('button', { name: 'エネルギー', exact: true })).first();
+      await field.click();
+      await page.getByRole('button', { name: '発見した範囲を表示', exact: true }).click();
+      await page.getByRole('button', { name: new RegExp(`^${name}、`) }).click();
+      await page.getByText(/^必要RP\s+\d[\d,]* RP$/).waitFor();
+    };
+    const unlock = async (name, id) => {
+      await energyResearch(name);
+      const points = (await snapshot()).researchPointUnits;
+      const button = page.getByRole('button', { name: `${name}を解放`, exact: true });
+      assert.ok(await button.isEnabled(), `${name} has its city conditions and RP`);
+      await reach(button, `${name}を解放`);
+      const saved = await snapshot();
+      assert.ok(saved.research.includes(id));
+      const plan = saved.plans.find(plan => plan.taskId === id);
+      assert.equal(plan.status, 'completed');
+      assert.equal(plan.remainingMs, 0);
+      assert.equal(plan.iterationDurationMs, 0);
+      assert.ok(saved.researchPointUnits < points, 'unlock consumes RP immediately');
+    };
+    const earn = async () => {
+      await reserve('外部受注・精密機器', '3回');
+      await advance();
+      assert.ok((await snapshot()).plans.filter(plan => plan.taskId === 'factory_contract')
+        .every(plan => plan.status === 'completed'));
+    };
+    fs.mkdirSync(output, { recursive: true });
     await page.goto(url);
     await ready(page);
     await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.waitForTimeout(1500);
-    fs.mkdirSync(output, { recursive: true });
+    const initial = await snapshot();
+    assert.equal(initial.contentVersion, 'district-11');
+    assert.equal(initial.firstRunTutorial, 'completed');
+    assert.ok(initial.research.includes('life_support'));
+    assert.ok(initial.districts.some(d => d.cityId === 'earth_delta' && d.plotIndex === 1 && d.districtId === 'housing'));
     await page.screenshot({ path: path.join(output, 'strategy-web-earth.png') });
     await page.getByRole('button', { name: '国力', exact: true }).click();
     await page.getByText('国力と収支', { exact: true }).waitFor();
     await page.screenshot({ path: path.join(output, 'product-web-resources.png') });
-    await page.getByRole('button', { name: '閉じる', exact: true }).and(page.locator('[tabindex="0"]')).click();
+    await closeDialog();
     await page.getByRole('button', { name: 'ガイド', exact: true }).click();
     await page.getByText('開発ガイド・Tips', { exact: true }).waitFor();
-    await page.waitForTimeout(350);
     await page.screenshot({ path: path.join(output, 'guidance-web-guide.png') });
-    await page.getByRole('button', { name: '閉じる', exact: true }).and(page.locator('[tabindex="0"]')).click();
+    await closeDialog();
+    console.log('CHECK OK: first housing and immediate research completed through the tutorial');
 
-    await reserve('外部受注・精密機器', '無期限・分岐まで');
-    await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
-    await page.waitForTimeout(200);
-    await page.screenshot({ path: path.join(output, 'strategy-web-research.png') });
-    const researchStart = await snapshot();
-    if (!researchStart.research.includes('life_support') &&
-        !researchStart.plans.some(p => p.taskId === 'life_support' && !['completed', 'cancelled'].includes(p.status))) {
-      await click('生命維持の実証を予約');
-    }
+    // Ordinary manufacturing retains its repeat order and its paid current run.
+    await reserve('外部受注・精密機器', '3回');
     await reserve('居住キット製造', '1回');
-    await reserve('火星へ輸送', '1回');
     await page.getByRole('button', { name: '設備・進行', exact: true }).click();
-    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: '稼働状況', exact: true }).click();
     const before = await snapshot();
     const contract = before.plans.find(plan => plan.taskId === 'factory_contract');
     assert.equal(contract.status, 'running');
-    await page.getByRole('button', { name: '居住キット製造を前へ', exact: true }).click();
-    await page.waitForTimeout(300);
+    await click('居住キット製造を前へ');
     const reordered = await snapshot();
-    assert.deepEqual(reordered.plans.filter(plan => ['factory_contract', 'habitat_kit'].includes(plan.taskId)).map(plan => plan.taskId), ['habitat_kit', 'factory_contract']);
+    assert.deepEqual(reordered.plans.filter(plan => ['factory_contract', 'habitat_kit'].includes(plan.taskId))
+      .map(plan => plan.taskId), ['habitat_kit', 'factory_contract']);
     assert.equal(reordered.plans.find(plan => plan.id === contract.id).status, 'running');
     assert.equal(reordered.plans.find(plan => plan.id === contract.id).completedRuns, 0);
     await page.screenshot({ path: path.join(output, 'strategy-web-equipment.png') });
-    await inspectForecast('forecast-web-summary');
     await page.reload();
     await ready(page);
-    assert.equal((await snapshot()).worldId, before.worldId);
-    assert.deepEqual((await snapshot()).plans.filter(plan => ['factory_contract', 'habitat_kit'].includes(plan.taskId)).map(plan => plan.taskId), ['habitat_kit', 'factory_contract']);
-    for (let n = 0; n < 3; n++) {
-      await page.getByRole('button', { name: '開発 +5分', exact: true }).click();
-      await page.waitForTimeout(350);
-    }
-    const arrived = await snapshot();
-    assert.ok(arrived.achievements.includes('first_landing'));
-    assert.equal(arrived.marsHabitats, 0);
-    assert.ok(arrived.completionNotices.some(notice => notice.taskId === 'life_support'));
-    await page.getByRole('button', { name: /^通知/ }).click();
-    await page.getByText(/^完了通知 · 未読/).waitFor();
-    await page.waitForTimeout(350);
-    await page.screenshot({ path: path.join(output, 'guidance-web-completions.png') });
-    await page.getByRole('button', { name: 'すべて既読にする', exact: true }).click();
-    await page.waitForTimeout(250);
-    const acknowledged = await snapshot();
-    assert.equal(acknowledged.readCompletionNoticeId, acknowledged.nextCompletionNoticeId - 1);
-    await page.getByRole('button', { name: '閉じる', exact: true }).and(page.locator('[tabindex="0"]')).click();
+    assert.equal((await snapshot()).worldId, initial.worldId);
+    assert.deepEqual((await snapshot()).plans.filter(plan => ['factory_contract', 'habitat_kit'].includes(plan.taskId))
+      .map(plan => plan.taskId), ['habitat_kit', 'factory_contract']);
+    await advance();
+    let saved = await snapshot();
+    assert.equal(saved.plans.find(plan => plan.id === contract.id).completedRuns, 3);
+    assert.ok(saved.earthKits >= 1);
+    assert.equal(saved.plans.find(plan => plan.taskId === 'habitat_kit').status, 'completed');
+    console.log('CHECK OK: manufacturing repeats, reorder, paid run and reload');
 
-    await page.getByRole('button', { name: '設備・進行', exact: true }).click();
-    await page.getByRole('button', { name: '輸送・居住', exact: true }).click();
-    await click('ドーム居住');
-    await page.getByRole('button', { name: 'この方式で進める', exact: true }).click();
-    await page.waitForTimeout(250);
-    await page.getByRole('button', { name: '惑星マップ', exact: true }).click();
-    await page.getByRole('checkbox', { name: '火星', exact: true }).click();
-    await page.waitForTimeout(700);
-    await page.screenshot({ path: path.join(output, 'strategy-web-mars.png') });
+    // A newly discovered research remains visible while its city condition is missing.
+    await unlock('展開型ソーラーアレイ', 'deployable_solar_arrays');
+    await energyResearch('拠点マイクログリッド');
+    const cityGate = page.getByRole('button', { name: '拠点マイクログリッドを解放', exact: true });
+    assert.ok(await cityGate.isDisabled());
+    assert.ok(await page.getByText(/完成した発電地区.*0\/1/).count());
+    assert.ok(!(await snapshot()).research.includes('urban_planning'));
+    await page.screenshot({ path: path.join(output, 'v11-web-city-research-condition.png') });
+
+    // Fund both quotes first, so the second attempt tests occupied capacity.
+    await earn();
+    // Build on the map now; another construction cannot reserve the occupied factory.
     await page.getByRole('button', { name: '都市開発', exact: true }).click();
-    await page.waitForTimeout(800);
-    // Use real screen coordinates on the projected ground at the corner,
-    // center and ridge; the resulting inspector must refer to that same plot.
-    await chooseFacility('火星居住地区');
-    for (const number of [1, 5, 13]) await ground('アルカディア', number);
-    await page.screenshot({ path: path.join(output, 'terrain-web-before.png') });
-    await click('この区画に建設を予約');
-    await page.waitForTimeout(500);
+    await chooseFacility('発電地区');
+    await ground('デルタ湾岸', 13);
+    await click('この区画で建設を開始');
+    const solar = (await snapshot()).plans.find(plan => plan.taskId === 'district_solar');
+    assert.equal(solar.status, 'running');
+    assert.equal(solar.plotIndex, 12);
     await page.screenshot({ path: path.join(output, 'terrain-web-construction.png') });
-    const construction = (await snapshot()).plans.find(plan => plan.taskId === 'district_mars_habitat');
-    assert.equal(construction.cityId, 'mars_arcadia');
-    assert.equal(construction.plotIndex, 12);
-    await page.getByRole('button', { name: '開発用の時間送り', exact: true }).click();
-    await page.getByRole('menuitem', { name: '開発 +1時間', exact: true }).click();
-    await page.waitForTimeout(700);
-    const inhabited = await snapshot();
-    assert.equal(inhabited.marsHabitats, 1);
-    assert.equal(inhabited.marsResidents, 24);
-    assert.equal(inhabited.districts.find(d => d.cityId === 'mars_arcadia' && d.plotIndex === 12).districtId, 'mars_habitat');
-    await page.screenshot({ path: path.join(output, 'strategy-web-city.png') });
-    await page.screenshot({ path: path.join(output, 'terrain-web-completed.png') });
-    console.log('CHECK OK: research tree, reservations, reorder, reload, city plot habitation');
-
-    // Grow the first Earth city through the UI, then compare its upgrade with
-    // a new city's first district. No test fixture or save mutation is used.
-    await page.getByRole('button', { name: '惑星マップ', exact: true }).click();
-    await page.getByRole('checkbox', { name: '地球', exact: true }).click();
-    await page.getByRole('button', { name: '都市開発', exact: true }).click();
-    await page.getByText(/^拠点 · 完成 1\/25区画 · 総Lv\.1/).waitFor();
     await chooseFacility('住宅地区');
-    await ground('デルタ湾岸', 13);
-    await click('この区画に建設を予約');
-    await page.getByRole('button', { name: '設備・進行', exact: true }).click();
-    await page.getByRole('button', { name: '稼働状況', exact: true }).click();
-    await page.getByRole('button', { name: '住宅地区を建設を前へ', exact: true }).click();
-    for (let n = 0; n < 2; n++) {
-      await page.getByRole('button', { name: '開発 +5分', exact: true }).click();
-      await page.waitForTimeout(350);
-    }
-    assert.ok((await snapshot()).districts.some(d => d.cityId === 'earth_delta' && d.plotIndex === 12));
-    await page.getByRole('button', { name: '都市開発', exact: true }).click();
-    await page.getByText(/^拠点 · 完成 2\/25区画 · 総Lv\.2/).waitFor();
-    await ground('デルタ湾岸', 13);
-    await compareInvestment('investment-web-comparison');
-    console.log('CHECK OK: city growth and live upgrade/new-city comparison');
-
-    // Research is independently playable while the factory earns funds.
-    await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
-    await page.getByRole('button', { name: '全体表示', exact: true }).click();
-    await page.getByRole('button', { name: /^都市基盤の計画、/ }).click();
-    await click('都市基盤の計画を予約');
-    for (let n = 0; n < 2; n++) {
-      await page.getByRole('button', { name: '開発 +5分', exact: true }).click();
-      await page.waitForTimeout(250);
-    }
-    await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
-    await page.getByRole('button', { name: '全体表示', exact: true }).click();
-    await page.getByRole('button', { name: /^工程設計、/ }).click();
-    await click('工程設計を予約');
-    const parallel = await snapshot();
-    assert.equal(parallel.plans.find(p => p.taskId === 'process_design').status, 'running');
-    assert.equal(parallel.plans.find(p => p.taskId === 'factory_contract').status, 'running');
-    await page.getByRole('button', { name: '開発 +5分', exact: true }).click();
-    await page.waitForTimeout(300);
-    assert.ok((await snapshot()).research.includes('process_design'));
-    await page.getByRole('button', { name: '機関運営', exact: true }).click();
-    await page.getByRole('button', { name: '研究者を1人減らす', exact: true }).click();
-    await click('人員配分を確定');
-    assert.equal((await snapshot()).researchers, 5);
-    await page.getByRole('button', { name: '提携・支援', exact: true }).click();
-    await click('都市技術の共同研究：開発資金を受けるを選ぶ');
-    await page.getByRole('button', { name: 'この提案で決定', exact: true }).click();
-    await page.waitForTimeout(250);
-    assert.equal((await snapshot()).partnershipChoices.research_exchange, 'funding');
-    await page.screenshot({ path: path.join(output, 'agency-web-partnerships.png') });
-    await page.getByRole('button', { name: '人員配分', exact: true }).click();
-    await click('専門職の育成を予約');
-    await page.getByRole('button', { name: '開発 +5分', exact: true }).click();
-    await page.waitForTimeout(300);
-    const agencySaved = await snapshot();
-    assert.equal(agencySaved.specialistCount, 14);
-    assert.equal(agencySaved.researchers, 5);
-    await page.getByRole('button', { name: '機関運営', exact: true }).click();
-    await page.screenshot({ path: path.join(output, 'agency-web-overview.png') });
-    console.log('CHECK OK: parallel applied research, one-time partnership, staffing and training');
-
-
-    // Grow a neighborhood on real adjacent hexes, using the same placement
-    // controls as the player. Preview/cancel must never construct a district.
-    await page.getByRole('button', { name: '惑星マップ', exact: true }).click();
-    await page.getByRole('checkbox', { name: '地球', exact: true }).click();
-    await page.getByRole('button', { name: '都市開発', exact: true }).click();
-    const beforeCancel = await snapshot();
-    await chooseFacility('研究地区');
     await ground('デルタ湾岸', 8);
-    await page.screenshot({ path: path.join(output, 'district-web-placement.png') });
+    const beforeBlocked = await snapshot();
+    await click('この区画で建設を開始');
+    const afterBlocked = await snapshot();
+    assert.deepEqual(afterBlocked.plans.map(plan => plan.id), beforeBlocked.plans.map(plan => plan.id));
+    assert.deepEqual(afterBlocked.districts, beforeBlocked.districts);
+    await inspectForecast('forecast-web-summary');
+    await advance();
+    saved = await snapshot();
+    assert.ok(saved.districts.some(d => d.cityId === 'earth_delta' && d.plotIndex === 12 && d.districtId === 'solar'));
+    assert.ok(!saved.plans.some(plan => plan.status === 'queued' && /^district_/.test(plan.taskId)));
+    await unlock('拠点マイクログリッド', 'urban_planning');
+    console.log('CHECK OK: city-specific research gate and immediate unlock after completed construction');
+
+    await earn();
+    await page.getByRole('button', { name: '都市開発', exact: true }).click();
+    await chooseFacility('住宅地区');
+    await ground('デルタ湾岸', 8);
+    const beforeHousing = await snapshot();
+    await click('この区画で建設を開始');
+    const housing = (await snapshot()).plans.find(plan => plan.taskId === 'district_housing' && plan.plotIndex === 7);
+    assert.equal(housing.status, 'running');
+    await advance();
+    saved = await snapshot();
+    assert.equal(saved.population, beforeHousing.population + 60);
+    assert.ok(saved.districts.some(d => d.cityId === 'earth_delta' && d.plotIndex === 7 && d.districtId === 'housing'));
+    await page.getByRole('button', { name: '都市開発', exact: true }).click();
+    await chooseFacility('研究地区');
+    await ground('デルタ湾岸', 9);
+    const beforeCancel = await snapshot();
     await click('配置をやめる');
     const afterCancel = await snapshot();
     assert.deepEqual(afterCancel.districts, beforeCancel.districts);
-    assert.deepEqual(afterCancel.plans.map(p => p.id), beforeCancel.plans.map(p => p.id));
-    for (const [name, id, number] of [
-      ['研究地区', 'campus', 8],
-      ['発電地区', 'solar', 9],
-      ['工業地区', 'industry', 14],
-      ['住宅地区', 'housing', 18],
-    ]) {
-      await chooseFacility(name);
-      await ground('デルタ湾岸', number);
-      await click('この区画に建設を予約');
-      await page.getByRole('button', { name: '設備・進行', exact: true }).click();
-      await page.getByRole('button', { name: '稼働状況', exact: true }).click();
-      await click(`${name}を建設を前へ`);
-      await page.getByRole('button', { name: '開発用の時間送り', exact: true }).click();
-      await page.getByRole('menuitem', { name: '開発 +1時間', exact: true }).click();
-      await page.waitForTimeout(450);
-      const built = (await snapshot()).districts.find(d => d.cityId === 'earth_delta' && d.plotIndex === number - 1);
-      assert.ok(built, `${name} completed at actual map tile ${number}`);
-      assert.equal(built.districtId, id);
-      assert.equal(built.level, 1);
-      await page.getByRole('button', { name: '都市開発', exact: true }).click();
+    assert.deepEqual(afterCancel.plans.map(plan => plan.id), beforeCancel.plans.map(plan => plan.id));
+    await page.screenshot({ path: path.join(output, 'terrarium-web-whole.png') });
+    console.log('CHECK OK: explicit construction, population growth and placement cancel without mutation');
+
+    // Pause unused departments, then simulate a long absence through the visible dev clock.
+    await page.getByRole('button', { name: '設備・進行', exact: true }).click();
+    await page.getByRole('button', { name: '稼働状況', exact: true }).click();
+    for (const name of ['共用工場', '共用宇宙港']) {
+      const toggle = page.getByRole('switch', { name: `${name}の稼働`, exact: true })
+        .or(page.getByRole('checkbox', { name: `${name}の稼働`, exact: true })).first();
+      await reach(toggle, `${name}の稼働`);
     }
-    await page.getByRole('button', { name: '地図を広く表示', exact: true }).click();
-    await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(output, 'district-web-neighborhood.png') });
-    // Optional isolated fixture for repeated visual checks; never a user save.
+    const knowledge = (await snapshot()).research;
+    let capped = await snapshot();
+    let elapsedDays = 0;
+    const reservesAreFull = state => {
+      const population = state.population + state.marsResidents;
+      return state.researchPointUnits >= (240 + population * 40) * 6000000 &&
+        state.moneyUnits >= (10000 + population * 1000) * 60000;
+    };
+    while (!reservesAreFull(capped) && elapsedDays < 30) {
+      await advance('開発 +1日');
+      elapsedDays++;
+      capped = await snapshot();
+    }
+    assert.ok(reservesAreFull(capped), `Both reserves fill within 30 development days; simulated=${elapsedDays}`);
+    console.log(`CHECK OK: both reserve limits reached after ${elapsedDays} development days`);
+    const population = capped.population + capped.marsResidents;
+    assert.equal(capped.researchPointUnits, (240 + population * 40) * 6000000);
+    assert.equal(capped.moneyUnits, (10000 + population * 1000) * 60000);
+    assert.deepEqual(capped.research, knowledge, 'full reserves never choose new research');
+    await advance('開発 +1日');
+    assert.equal((await snapshot()).researchPointUnits, capped.researchPointUnits);
+    assert.equal((await snapshot()).moneyUnits, capped.moneyUnits);
+    await page.getByRole('button', { name: '機関運営', exact: true }).click();
+    await page.getByRole('button', { name: '都市基盤', exact: true }).click();
+    for (const name of ['研究者を1人増やす', '研究者を1人減らす', '人員配分を確定', '専門職の育成を予約']) {
+      assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0);
+    }
+    await page.screenshot({ path: path.join(output, 'agency-web-overview.png') });
+    console.log('CHECK OK: population-linked RP and money limits; no staffing controls');
+
+    await page.getByRole('button', { name: /^通知/ }).click();
+    await page.getByText(/^完了通知 · 未読/).waitFor();
+    await page.getByRole('button', { name: 'すべて既読にする', exact: true }).click();
+    await page.screenshot({ path: path.join(output, 'guidance-web-completions.png') });
+    await closeDialog();
+    const acknowledged = await snapshot();
+    assert.equal(acknowledged.readCompletionNoticeId, acknowledged.nextCompletionNoticeId - 1);
     if (process.env.MARS_VISUAL_STATE) {
       fs.writeFileSync(process.env.MARS_VISUAL_STATE, JSON.stringify({
         key, saved: await page.evaluate(storageKey => localStorage.getItem(storageKey), key),
       }));
     }
-    const beforeCamera = await snapshot();
-    await page.screenshot({ path: path.join(output, 'terrarium-web-whole.png') });
-    await page.getByRole('button', { name: '市街', exact: true }).click();
-    await page.getByRole('button', { name: '都市地図を拡大', exact: true }).click();
-    await page.getByRole('button', { name: '都市地図を拡大', exact: true }).click();
-    await page.mouse.move(160, 30);
-    await page.waitForTimeout(600);
-    await page.screenshot({ path: path.join(output, 'diorama-web-close.png') });
-    await page.getByRole('button', { name: '全域', exact: true }).click();
-    await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(output, 'diorama-web-overview.png') });
-    await page.getByRole('button', { name: '都市地図の視点操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: '右へ回転', exact: true }).click();
-    await page.waitForTimeout(450);
-    await page.screenshot({ path: path.join(output, 'terrarium-web-orbit.png') });
-    await page.getByRole('button', { name: '全域', exact: true }).click();
-    await page.getByRole('button', { name: '区画の詳細を表示', exact: true }).click();
-    await chooseFacility('住宅地区');
-    await ground('デルタ湾岸', 1);
-    await page.getByRole('button', { name: '市街', exact: true }).click();
-    await page.getByText(/^区画 1  ·/).waitFor();
-    // The same border plot stays reachable after focusing and orbiting.
-    await ground('デルタ湾岸', 1);
-    await page.getByRole('button', { name: '都市地図の視点操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: '左へ回転', exact: true }).click();
-    await ground('デルタ湾岸', 1);
-    await page.mouse.move(160, 30);
-    await page.waitForTimeout(450);
-    await page.screenshot({ path: path.join(output, 'diorama-web-coast.png') });
-    const afterCamera = await snapshot();
-    assert.deepEqual(afterCamera.districts, beforeCamera.districts);
-    assert.deepEqual(afterCamera.plans.map(p => p.id), beforeCamera.plans.map(p => p.id));
-    await page.getByRole('button', { name: '全域', exact: true }).click();
-    await page.getByRole('button', { name: '地図を広く表示', exact: true }).click();
-    console.log('CHECK OK: facility-first placement, tutorial coast plus five districts, closeup/overview/edge focus/orbit without mutation');
 
-    // The second tab must stop before loading or advancing the shared world.
+    // The second tab must stop before it can advance the same world.
     const second = await context.newPage();
     await second.goto(url);
     await second.locator('flt-semantics-host').getByText(/別のタブで使用中/).waitFor({ timeout: 60000 });
     await second.screenshot({ path: path.join(output, 'web-second-tab.png') });
     assert.equal(await second.getByRole('button', { name: '開発 +5分' }).count(), 0);
     await second.close();
-    console.log('CHECK OK: second tab safely stopped');
     await page.reload();
     await ready(page);
-    assert.deepEqual((await snapshot()).claimedRewards, agencySaved.claimedRewards);
-    assert.deepEqual((await snapshot()).partnershipChoices, agencySaved.partnershipChoices);
-    assert.equal((await snapshot()).specialistCount, 14);
-    assert.equal((await snapshot()).researchers, 5);
-    assert.equal((await snapshot()).marsResidents, 24);
+    saved = await snapshot();
+    assert.equal(saved.worldId, initial.worldId);
+    assert.deepEqual(saved.research, capped.research);
+    assert.deepEqual(saved.claimedRewards, acknowledged.claimedRewards);
+    assert.deepEqual(saved.districts, acknowledged.districts);
+    assert.equal(saved.readCompletionNoticeId, acknowledged.readCompletionNoticeId);
 
-    // A complete cold reload without network must use local assets and saves.
+    // A cold offline reload must retain the same complete save and local assets.
     await context.setOffline(true);
     await page.reload();
     await ready(page);
     const offline = await snapshot();
-    assert.equal(offline.worldId, inhabited.worldId);
-    assert.equal(offline.marsResidents, 24);
-    assert.deepEqual(offline.partnershipChoices, agencySaved.partnershipChoices);
-    assert.equal(offline.specialistCount, 14);
+    assert.equal(offline.worldId, initial.worldId);
+    assert.deepEqual(offline.districts, acknowledged.districts);
+    assert.deepEqual(offline.research, capped.research);
+    assert.deepEqual(offline.claimedRewards, acknowledged.claimedRewards);
     assert.equal(offline.readCompletionNoticeId, acknowledged.readCompletionNoticeId);
     await page.getByRole('button', { name: '設備・進行', exact: true }).click();
-    await page.waitForTimeout(300);
     assert.ok(await page.getByRole('button', { name: '都市開発', exact: true }).isVisible());
     await context.setOffline(false);
-    console.log('CHECK OK: offline reload');
-    // Inspect real GPU/layout at an iPhone-sized landscape viewport too.
-    await page.setViewportSize({ width: 844, height: 390 });
-    await page.getByRole('button', { name: '惑星マップ', exact: true }).click();
-    await page.getByRole('checkbox', { name: '地球', exact: true }).click();
-    await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(output, 'strategy-web-small-earth.png') });
-    await page.getByRole('button', { name: '都市開発', exact: true }).click();
-    await page.waitForTimeout(300);
-    await ground('デルタ湾岸', 13);
-    const action = await page.getByRole('button', { name: 'この地区を強化する', exact: true }).boundingBox();
-    assert.ok(action && action.y > 100 && action.y + action.height < 370, 'district action remains visible in landscape');
-    await page.screenshot({ path: path.join(output, 'strategy-web-small-city.png') });
-    await compareInvestment('investment-web-small-comparison');
-    await inspectForecast('forecast-web-small-summary');
-    await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
-    await page.getByRole('button', { name: '全体表示', exact: true }).click();
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: path.join(output, 'strategy-web-small-research.png') });
-    await page.getByRole('button', { name: '機関運営', exact: true }).click();
-    await page.getByRole('button', { name: '人員配分', exact: true }).click();
-    await page.screenshot({ path: path.join(output, 'agency-web-small-overview.png') });
-    await page.getByRole('button', { name: '提携・支援', exact: true }).click();
-    await page.mouse.move(700, 260);
-    await page.mouse.wheel(0, 450);
-    await page.waitForTimeout(250);
-    await page.screenshot({ path: path.join(output, 'agency-web-small-partnerships.png') });
-    await page.getByRole('button', { name: 'ガイド', exact: true }).click();
-    await page.getByText('開発ガイド・Tips', { exact: true }).waitFor();
-    await page.waitForTimeout(350);
-    await page.screenshot({ path: path.join(output, 'guidance-web-small-guide.png') });
-    await page.getByRole('button', { name: '閉じる', exact: true }).and(page.locator('[tabindex="0"]')).click();
-    await page.getByRole('button', { name: /^通知/ }).click();
-    await page.getByText(/^完了通知 · 未読/).waitFor();
-    await page.waitForTimeout(350);
-    await page.screenshot({ path: path.join(output, 'guidance-web-small-completions.png') });
-    await page.getByRole('button', { name: '閉じる', exact: true }).and(page.locator('[tabindex="0"]')).click();
-    await page.setViewportSize({ width: 568, height: 320 });
-    await page.getByRole('button', { name: '機関運営', exact: true }).click();
-    await page.getByRole('button', { name: '人員配分', exact: true }).click();
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: path.join(output, 'product-web-minimum-agency.png') });
-    const beforeStaffPreview = await snapshot();
-    // Running work may reserve all current industrial staff. Reduce research
-    // first, then restore the draft without moving any reserved workers.
-    await click('研究者を1人減らす');
-    await click('研究者を1人増やす');
-    assert.equal((await snapshot()).researchers, beforeStaffPreview.researchers);
-    await page.getByRole('button', { name: '惑星マップ', exact: true }).click();
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: path.join(output, 'product-web-minimum-planet.png') });
-    console.log('CHECK OK: small landscape, pinned construction action, whole research map and minimum-width staffing');
+    console.log('CHECK OK: two-tab lock, save/reward persistence and offline cold reload');
+
+    for (const viewport of [{ width: 844, height: 390 }, { width: 568, height: 320 }]) {
+      await page.setViewportSize(viewport);
+      await page.getByRole('button', { name: '都市開発', exact: true }).click();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(output, `v11-web-${viewport.width}-city.png`) });
+      await page.getByRole('button', { name: '研究ツリー', exact: true }).click();
+      const closeDetail = page.getByRole('button', { name: '研究詳細を閉じる', exact: true });
+      if (await closeDetail.count()) await closeDetail.click();
+      await page.getByRole('button', { name: '発見した範囲を表示', exact: true }).click();
+      await page.screenshot({ path: path.join(output, `v11-web-${viewport.width}-research.png`) });
+      await page.getByRole('button', { name: '機関運営', exact: true }).click();
+      await page.getByRole('button', { name: '都市基盤', exact: true }).click();
+      await page.screenshot({ path: path.join(output, `v11-web-${viewport.width}-foundation.png`) });
+      assert.equal(await page.getByRole('button', { name: '人員配分を確定', exact: true }).count(), 0);
+    }
     assert.deepEqual(errors, []);
     assert.deepEqual([...origins], [new URL(url).origin], `Unexpected external resources: ${externalRequests.join(', ')}`);
-    result = { result: 'PASS', checks: ['onboarding guide', 'completion history and read persistence', 'facility-first placement and cancel without mutation', 'five adjacent districts built through the UI', 'parallel applied research', 'one-time partnership persists offline', 'staff allocation and training', 'agency on small landscape', '3D startup', 'small landscape and whole research map', 'city stage growth', 'live investment comparison and small-screen close', 'read-only eight-hour forecast and small-screen close', 'equipment reorder', 'paid iteration preserved', 'reload keeps order', 'research tree/manufacture/transport/district habitation', 'multi-tab lock', 'reward persistence', 'offline cold reload', 'no external resource hosts'], origins: [...origins] };
+    result = { result: 'PASS', checks: [
+      'first housing and immediate research tutorial through UI',
+      'manufacturing repeat/reorder preserves the paid iteration and reload order',
+      'research-specific city condition stays visible before it is met',
+      'construction starts immediately or leaves no waiting reservation',
+      'completed city facility enables immediate RP research',
+      'population grows through housing and placement cancel creates no asset',
+      'forecast does not materialize future constructions or research',
+      'population-linked RP and money reserve limits after development-time absence',
+      'no staff allocation or training controls',
+      'completion history read state and reward persistence',
+      'multi-tab lock and offline cold reload',
+      'GPU/layout on 844x390 and 568x320 landscape',
+      'no external resource hosts',
+    ], origins: [...origins] };
   } catch (error) {
     if (page) {
       await page.screenshot({ path: path.join(output, 'web-failure.png') }).catch(() => {});
