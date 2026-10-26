@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/rendering/orbital_motion.dart';
+import 'package:mars_terraforming/rendering/title_apparent_planet_scale.dart';
 import 'package:mars_terraforming/rendering/title_scene_motion.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -41,6 +42,15 @@ void main() {
         _expectFiniteVector(direction);
         expect(direction.length, closeTo(1, 1e-6));
       }
+      for (final relativeAu in [
+        motion.sunRelativeAu,
+        motion.earthRelativeAu,
+        motion.jupiterRelativeAu,
+        motion.saturnRelativeAu,
+      ]) {
+        _expectFiniteVector(relativeAu);
+        expect(relativeAu.length, greaterThan(0));
+      }
       for (final rotation in [
         motion.marsRotation(vm.Quaternion.identity()),
         motion.earthRotation,
@@ -72,6 +82,10 @@ void main() {
     _expectVector(first.earthOffset, second.earthOffset);
     _expectVector(first.jupiterOffset, second.jupiterOffset);
     _expectVector(first.saturnOffset, second.saturnOffset);
+    _expectVector(first.sunRelativeAu, second.sunRelativeAu);
+    _expectVector(first.earthRelativeAu, second.earthRelativeAu);
+    _expectVector(first.jupiterRelativeAu, second.jupiterRelativeAu);
+    _expectVector(first.saturnRelativeAu, second.saturnRelativeAu);
     _expectVector(first.satellite.position, second.satellite.position);
     _expectVector(first.rocket.velocity, second.rocket.velocity);
     _expectRotation(first.earthRotation, second.earthRotation);
@@ -84,47 +98,71 @@ void main() {
           TitleSceneMotion.marsOrbitAtEpoch +
           time / TitleSceneMotion.marsYear * math.pi * 2;
       final mars = vm.Vector3(
-        1.52 * math.cos(marsAngle),
+        TitleDistantBody.mars.semiMajorAxisAu * math.cos(marsAngle),
         0,
-        1.52 * math.sin(marsAngle),
+        TitleDistantBody.mars.semiMajorAxisAu * math.sin(marsAngle),
       );
       final cameraToInertial = motion.cameraToInertial.asRotationMatrix();
+      _expectVector(cameraToInertial.transformed(motion.sunRelativeAu), -mars);
+      expect(
+        motion.sunRelativeAu.length,
+        closeTo(TitleDistantBody.mars.semiMajorAxisAu, 1e-6),
+      );
       _expectVector(
         cameraToInertial.transformed(motion.sunDirection),
         (-mars).normalized(),
       );
-      for (final (radius, period, phase, direction, offset, distance) in [
-        (
-          1.0,
-          TitleSceneMotion.earthYear,
-          TitleSceneMotion.earthOrbitAtEpoch,
-          motion.earthDirection,
-          motion.earthOffset,
-          TitleSceneMotion.earthDistance,
-        ),
-        (
-          5.2,
-          TitleSceneMotion.jupiterYear,
-          TitleSceneMotion.jupiterOrbitAtEpoch,
-          motion.jupiterDirection,
-          motion.jupiterOffset,
-          TitleSceneMotion.jupiterDistance,
-        ),
-        (
-          9.58,
-          TitleSceneMotion.saturnYear,
-          TitleSceneMotion.saturnOrbitAtEpoch,
-          motion.saturnDirection,
-          motion.saturnOffset,
-          TitleSceneMotion.saturnDistance,
-        ),
-      ]) {
+      for (final (
+            radius,
+            period,
+            phase,
+            relativeAu,
+            direction,
+            offset,
+            distance,
+          )
+          in [
+            (
+              TitleDistantBody.earth.semiMajorAxisAu,
+              TitleSceneMotion.earthYear,
+              TitleSceneMotion.earthOrbitAtEpoch,
+              motion.earthRelativeAu,
+              motion.earthDirection,
+              motion.earthOffset,
+              TitleSceneMotion.earthDistance,
+            ),
+            (
+              TitleDistantBody.jupiter.semiMajorAxisAu,
+              TitleSceneMotion.jupiterYear,
+              TitleSceneMotion.jupiterOrbitAtEpoch,
+              motion.jupiterRelativeAu,
+              motion.jupiterDirection,
+              motion.jupiterOffset,
+              TitleSceneMotion.jupiterDistance,
+            ),
+            (
+              TitleDistantBody.saturn.semiMajorAxisAu,
+              TitleSceneMotion.saturnYear,
+              TitleSceneMotion.saturnOrbitAtEpoch,
+              motion.saturnRelativeAu,
+              motion.saturnDirection,
+              motion.saturnOffset,
+              TitleSceneMotion.saturnDistance,
+            ),
+          ]) {
         final angle = phase + time / period * math.pi * 2;
         final planet = vm.Vector3(
           radius * math.cos(angle),
           0,
           radius * math.sin(angle),
         );
+        _expectVector(cameraToInertial.transformed(relativeAu), planet - mars);
+        expect(
+          relativeAu.length,
+          closeTo((planet - mars).length, 2e-5),
+          reason: '見かけのサイズへ使う実AU距離を正規化で失わない',
+        );
+        _expectVector(relativeAu.normalized(), direction);
         _expectVector(
           cameraToInertial.transformed(direction),
           (planet - mars).normalized(),
@@ -456,14 +494,14 @@ List<KeplerOrbit> get _localOrbits => [
   ...TitleSceneMotion.asteroidOrbits,
 ];
 
-/// Sceneの固定構図を火星中心相対で投影し、地形全体を包む球の遮蔽も除く。
-bool _isVisible(vm.Vector3 point, double aspect) {
+/// 遠景はcamera+offsetへ置き、火星中心相対の球で視線の遮蔽を除く。
+bool _isVisible(vm.Vector3 cameraOffset, double aspect) {
   final camera = vm.Vector3(0, 8.4, 14);
   final target = vm.Vector3(0, 9.2, 0);
   final forward = (target - camera).normalized();
   final right = forward.cross(vm.Vector3(0, 1, 0)).normalized();
   final up = right.cross(forward).normalized();
-  final ray = point - camera;
+  final ray = cameraOffset;
   final depth = ray.dot(forward);
   if (depth <= .25 || depth >= 240) return false;
   final halfHeight = math.tan(43 * math.pi / 360);

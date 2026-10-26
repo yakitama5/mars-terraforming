@@ -104,7 +104,9 @@ python3 tools/prepare_title_gas_giants.py \
 遠い惑星が既存shadow atlasの範囲から外れても自己/相互影が失われないよう、
 この影は各専用shader内で解析する。頂点由来の局所位置をfragmentへ渡し、
 大きいworld座標から毎pixelで中心を引く際の精度落ちを避けた。
-`updateView(sunPosition:, cameraPosition:)` はrootの位置・傾斜・自転を反映した後に呼ぶ。
+`updateView(jupiterToSunInRadii:, saturnToSunInRadii:, cameraPosition:)` はrootの位置・傾斜・自転を反映した後に呼ぶ。
+各惑星→太陽の実AUベクトルを赤道半径単位へ変換し、rootの回転だけを逆変換して局所光源を求める。
+圧縮した太陽の表示位置を光源として使わず、遠景の縮尺変更でも位相と環の影を保つ。
 
 ## 資源と検証範囲
 

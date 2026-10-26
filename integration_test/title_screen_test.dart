@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import 'package:mars_terraforming/presentation/title_scene_data.dart';
 import 'package:mars_terraforming/presentation/title_screen.dart';
 import 'package:mars_terraforming/rendering/base_scene.dart';
 import 'package:mars_terraforming/rendering/city_scene.dart';
+import 'package:mars_terraforming/rendering/title_apparent_planet_scale.dart';
 import 'package:mars_terraforming/rendering/title_scene.dart';
 import 'package:mars_terraforming/rendering/title_scene_motion.dart';
 import 'package:mars_terraforming/rendering/title_spacecraft_models.dart';
@@ -193,6 +195,125 @@ void main() {
         return (inverse * child.globalTransform).storage.toList();
       }
 
+      double sceneSeconds() =>
+          (node('白熱した太陽光球').mesh!.primitives.first.material
+                  as fs.PreprocessedMaterial)
+              .parameters
+              .getFloat('time');
+
+      double equatorialWorldRadius(String name, double modelRadius) =>
+          node(name).globalTransform
+              .getRotation()
+              .transformed(vm.Vector3(1, 0, 0))
+              .length *
+          modelRadius;
+
+      void expectDistantSphere({
+        required String name,
+        required TitleDistantBody body,
+        required vm.Vector3 relativeAu,
+        required double modelRadius,
+        required double renderDistance,
+      }) {
+        final camera = view().camera!;
+        final center = node(name).globalTransform.getTranslation();
+        final fromCamera = center - camera.position;
+        final distance = fromCamera.length;
+        final radius = equatorialWorldRadius(name, modelRadius);
+        expect(distance, closeTo(renderDistance, 2e-4));
+        expect(radius.isFinite, isTrue);
+        expect(radius, greaterThan(0));
+        expect(radius, lessThan(distance));
+        expect(
+          (fromCamera.normalized() - relativeAu.normalized()).length,
+          lessThan(2e-6),
+          reason: '$nameはカメラからの視線方向を保ち、火星中心起点の偽視差を作らない',
+        );
+        // 実geometryのworld半径とカメラ実距離を測り、描画scale算出APIを
+        // 呼び直さずにAU/kmの角直径と比較する。glowや大気のboundsは含めない。
+        final renderedDiameter = 2 * math.asin(radius / distance);
+        final physicalDistance =
+            relativeAu.length * TitleSolarSystemScale.kilometersPerAu;
+        final expectedDiameter =
+            2 * math.asin(body.equatorialRadiusKm / physicalDistance);
+        expect(
+          renderedDiameter,
+          closeTo(expectedDiameter, math.max(expectedDiameter * 1e-4, 1e-11)),
+          reason: '$nameの実球を1倍で描き、最低pixel数の拡大を適用しない',
+        );
+      }
+
+      vm.Vector3 observerOffsetAu() {
+        final marsCenter = node('title-mars').globalTransform.getTranslation();
+        final marsRadius = equatorialWorldRadius('title-mars-surface', 3.1);
+        return (view().camera!.position - marsCenter) *
+            (TitleDistantBody.mars.equatorialRadiusKm /
+                marsRadius /
+                TitleSolarSystemScale.kilometersPerAu);
+      }
+
+      void expectDistantSizes() {
+        expect(
+          equatorialWorldRadius('title-mars-surface', 3.1),
+          closeTo(8.06, 2e-5),
+          reason: '遠景の縮小で主火星の大きさを変えない',
+        );
+        final motion = TitleSceneMotion(sceneSeconds());
+        final observerAu = observerOffsetAu();
+        for (final (name, body, relativeAu, modelRadius, renderDistance) in [
+          (
+            '白熱した太陽光球',
+            TitleDistantBody.sun,
+            motion.sunRelativeAu,
+            1.0,
+            TitleSceneMotion.sunDistance,
+          ),
+          (
+            'title-earth-globe',
+            TitleDistantBody.earth,
+            motion.earthRelativeAu,
+            3.1,
+            TitleSceneMotion.earthDistance,
+          ),
+          (
+            'title-jupiter-globe',
+            TitleDistantBody.jupiter,
+            motion.jupiterRelativeAu,
+            1.0,
+            TitleSceneMotion.jupiterDistance,
+          ),
+          (
+            'title-saturn-globe',
+            TitleDistantBody.saturn,
+            motion.saturnRelativeAu,
+            1.0,
+            TitleSceneMotion.saturnDistance,
+          ),
+        ]) {
+          expectDistantSphere(
+            name: name,
+            body: body,
+            relativeAu: relativeAu - observerAu,
+            modelRadius: modelRadius,
+            renderDistance: renderDistance,
+          );
+        }
+        final rings = node('title-saturn-rings');
+        final ringBounds = rings.combinedLocalBounds!;
+        final outerRadius = (ringBounds.max.x - ringBounds.min.x) / 2;
+        final ringWorldScale = rings.globalTransform
+            .getRotation()
+            .transformed(vm.Vector3(1, 0, 0))
+            .length;
+        expect(
+          outerRadius *
+              ringWorldScale /
+              equatorialWorldRadius('title-saturn-globe', 1),
+          closeTo(2.330901, 2e-5),
+          reason: '土星は実球と環を同じ倍率で縮小し、環だけ巨大に残さない',
+        );
+      }
+
       void expectTransformUnchanged(
         List<double> actual,
         List<double> expected,
@@ -238,6 +359,57 @@ void main() {
         return (cameraFromMars + ray * closest).length2 > 8.14 * 8.14;
       }
 
+      void expectPlanetPointSupport(String planetName) {
+        final sceneView = view();
+        final planet = node(planetName);
+        final point = node('$planetName-glow');
+        expect(point.visible, isTrue);
+        expect(point.meshNodes, isNotEmpty);
+        expect(point.parent, same(sceneView.scene!.root));
+        expect(point.parent, same(planet.parent), reason: '実球や環の子に光点を入れない');
+        expect(sceneView.scene!.root.getChildByName('title-sun-glow'), isNull);
+        expect(sceneView.scene!.root.getChildByName('title-mars-glow'), isNull);
+
+        final camera = sceneView.camera! as fs.PerspectiveCamera;
+        final forward = (camera.target - camera.position).normalized();
+        final outerRadiusRatio = planetName == 'title-saturn' ? 2.330901 : 1.0;
+        final outerRadius =
+            equatorialWorldRadius('$planetName-globe', 1) * outerRadiusRatio;
+        expect(
+          (planet.globalTransform.getTranslation() -
+                  point.globalTransform.getTranslation())
+              .dot(forward),
+          greaterThan(outerRadius * 1.01),
+          reason: '画面平行な光点の面を実球・環の外接半径より手前へ置き自己遮蔽を防ぐ',
+        );
+        final viewport = tester.getSize(
+          find.descendant(
+            of: find.byType(TitleScene),
+            matching: find.byType(fs.SceneView),
+          ),
+        );
+        final pixelRatio = sceneView.pixelRatio ?? tester.view.devicePixelRatio;
+        expect(pixelRatio, greaterThan(0));
+        Offset project(double x, double y) {
+          final screen = camera.worldToScreen(
+            point.globalTransform.transformed3(vm.Vector3(x, y, 0)),
+            viewport,
+          );
+          expect(screen, isNotNull);
+          return screen!;
+        }
+
+        final left = project(-1, 0), right = project(1, 0);
+        final bottom = project(0, -1), top = project(0, 1);
+        // これはGaussianを描くquad全体のsupport幅5 render pxを測る。
+        // FWHM 1 render pxや惑星本体の実角直径の検査とは区別する。
+        final expectedLogicalSupport = 5 / pixelRatio;
+        expect((right - left).distance, closeTo(expectedLogicalSupport, .05));
+        expect((top - bottom).distance, closeTo(expectedLogicalSupport, .05));
+        expect((right.dy - left.dy).abs(), lessThan(.02));
+        expect((top.dx - bottom.dx).abs(), lessThan(.02));
+      }
+
       double starAngle() => (view().scene!.skybox!.source as fs.PreprocessedSky)
           .parameters
           .getFloat('sky_yaw');
@@ -264,6 +436,9 @@ void main() {
             if (!hasUnoccludedCenterInView(name)) continue;
             await wait(const Duration(milliseconds: 100));
             if (!hasUnoccludedCenterInView(name)) continue;
+            if (name == 'title-jupiter' || name == 'title-saturn') {
+              expectPlanetPointSupport(name);
+            }
             await binding.takeScreenshot(pending.remove(name)!);
           }
           if (pending.isNotEmpty) {
@@ -297,6 +472,7 @@ void main() {
       final initialStars = starAngle();
       final initialSatellite = nodePose('title-satellite');
       expectOuterPlanetsPresent();
+      expectDistantSizes();
       await capture('title-ios-pristine');
       // ignore: avoid_print
       print('TITLE_VIDEO_READY');
@@ -322,6 +498,7 @@ void main() {
       expect(node('title-mars').position.storage, initialMars.take(3));
       expect(node('title-mars').scale.storage, initialMars.skip(7));
       expectOuterPlanetsPresent();
+      expectDistantSizes();
       expect(nodePose('title-jupiter'), isNot(initialJupiter));
       expect(nodePose('title-saturn'), isNot(initialSaturn));
       expect(worldAxes(node('title-jupiter-globe')), isNot(initialJupiterAxes));
@@ -333,15 +510,24 @@ void main() {
           .position;
       final camera = view().camera!;
       final viewport = tester.getSize(find.byType(TitleScene));
-      for (final offsetAt in [
-        (TitleSceneMotion motion) => motion.sunOffset,
-        (TitleSceneMotion motion) => motion.earthOffset,
+      final observerAu = observerOffsetAu();
+      for (final (relativeAuAt, renderDistance) in [
+        (
+          (TitleSceneMotion motion) => motion.sunRelativeAu,
+          TitleSceneMotion.sunDistance,
+        ),
+        (
+          (TitleSceneMotion motion) => motion.earthRelativeAu,
+          TitleSceneMotion.earthDistance,
+        ),
       ]) {
         var inside = 0;
         var outside = 0;
         for (var seconds = 0.0; seconds < 360; seconds += 5) {
+          final relativeAu =
+              relativeAuAt(TitleSceneMotion(seconds)) - observerAu;
           final point = camera.worldToScreen(
-            marsCenter + offsetAt(TitleSceneMotion(seconds)),
+            camera.position + relativeAu.normalized() * renderDistance,
             viewport,
           );
           if (point != null && (Offset.zero & viewport).contains(point)) {
@@ -364,6 +550,7 @@ void main() {
         'title-sun': 'title-ios-orbital-phase',
       }, maxAttempts: 300);
       expect(nodePose('title-sun'), isNot(initialSun));
+      expectDistantSizes();
       expect(cameraPose(), initialCamera);
       expect(nodePose('title-mars'), isNot(initialMars));
       now = now.add(const Duration(hours: 8));
@@ -457,6 +644,7 @@ void main() {
         facilityProbe,
       );
       final developedEarth = nodePose('title-earth-globe');
+      expectDistantSizes();
       await capture('title-ios-developed');
       await wait(const Duration(seconds: 18));
       await capture('title-ios-developed-motion');
@@ -515,6 +703,17 @@ void main() {
 
       var globe = await waitForGlobe('map-earth');
       expect(globe.scene!.root.getChildByName('map-sun'), isNotNull);
+      for (final name in [
+        'title-earth-glow',
+        'title-jupiter-glow',
+        'title-saturn-glow',
+      ]) {
+        expect(
+          globe.scene!.root.getChildByName(name),
+          isNull,
+          reason: '光点はタイトル専用',
+        );
+      }
       await capture('title-ios-game-earth');
       final marker = find.bySemanticsLabel(RegExp('デルタ湾岸を選択'));
       expect(marker, findsOneWidget);

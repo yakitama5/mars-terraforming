@@ -10,6 +10,8 @@ NASAの観測画像と実測標高、詳細な宇宙機モデル、ESOの全天�
 ユーザーから「モデルはすごくいい」と採用評価を得た。追加依頼で運動と読込中の操作を変更し、
 ゲーム内の全球表示にもモデルを共有する。都市開発の近接箱庭は現在のトゥーン調を維持する。
 続く「めっちゃいい」との評価を受け、火星の地表も自転して見える視点へ変更し、木星と土星を遠景へ追加する。
+その後のサイズ感の見直しで、遠景の角径は実半径・実距離へ合わせる。従来の大きな惑星円盤は履歴として区別する。
+[見かけの大きさの基準](title-apparent-scale.md)のとおり、現在は地球/木星/土星が小さな光点となる。
 
 ## 起動と操作
 
@@ -51,7 +53,7 @@ Figmaやゲームのスクリーンショットは描画素材に使わない。
 | 小惑星 | NASA公開のBennu形状に全球実測モザイクを貼り、補助normalを加えたモデル |
 
 Saturn Vがそのまま火星へ飛んだ、という歴史上の説明は追加しない。
-天体の大きさ・距離、機体の縮尺・経路・速度、未来の開発はタイトルの演出である。
+遠景の角径は実半径・実AU距離へ合わせる。公転/自転の周期と初期配置、機体の縮尺・経路・速度、未来の開発はタイトルの演出である。
 NASA/ESOの原素材へ本作のMITを適用せず、各素材の条件とクレジットを保持する。
 
 出典、画像の座標/変換、同梱ファイルのSHA-256、変更範囲は以下を参照する。
@@ -136,7 +138,26 @@ MROは元GLBが約4MB、変換後のScene binaryが約39MBで、配布物では�
 
 ## 検証の現在地
 
-### 2026-10-26: 自転する火星と木星・土星
+### 2026-10-26: 遠景の角径を実半径・距離へ合わせる
+
+- 全684テスト・整形・静的解析・依存/内容検査が成功。実角径/圧縮距離/元球半径の換算を含む10件を追加。
+- 初回のiOS実GPUは3ケースと後片付けが成功、exit0。実globeのworld半径とカメラ距離からの角径を、
+  観測者高度を含む実AUの角径へ4時点で独立照合。地球の元半径3.1、土星環比2.330901も一致。
+- 遠景の自己深度で光点が欠けないよう、画面平行の点像面を外接球の手前へ出す。
+  実pixelRatioによるsupport幅・高さとこのclearanceの実投影検査を追加した。
+  最終iOS実GPU試験も全ケース成功・exit0、PNG12枚と結果JSONを保存した。
+  最終Simulatorの初回pipeline警告は最大539ms。実機性能は未測定。
+- モデルの形状/画像、主火星の自転/施設、ゲームの全球/近接表示、開始/再開/保存は既存の検査を維持。
+- Web release/独立Chromeで大小画面、実描画、動き、クリック/キー開始、既存継続、オフライン/保存維持、外部取得なしが成功。
+
+今回の実表示: [iOS・初期](screenshots/title-angular-ios-pristine.png)、
+[iOS・太陽の位相](screenshots/title-angular-ios-phase.png)、
+[Web](screenshots/title-angular-web.png)、[Web小画面](screenshots/title-angular-web-small.png)。
+
+詳細と一次資料は[遠景の見かけの大きさ](title-apparent-scale.md)を参照する。
+下記の数度の円盤が見えるスクリーンショットは前回の演出サイズの履歴である。
+
+### 前回: 自転する火星と木星・土星
 
 - 整形・静的解析・依存/内容検査と全674テスト成功。
   運動の14件はカメラ座標と自転の分離、Quaternion入力の保持、共通の慣性系、可視時間を検証する。
@@ -228,10 +249,46 @@ iPhone 17 Pro Max / iOS 26.1 Simulatorで最終のGPU通し試験が成功し、
 
 ## 反映と次の確認
 
-### 火星の自転と木星・土星の反映（今回）
+### 遠景の実角径への反映（今回）
 
-全674テスト、Web/Chrome、iOS実GPUと結果保存まで確認後、develop→mainの順に反映する。
-確定HEADのCI・差分・CLEANを確認し、内部配信は配信先の状態とビルド/commit/runを照合する。
+全684テスト、Web/Chrome、最終iOS実GPUと結果保存を確認し、develop→mainの順に反映する。
+確定HEADのCI・差分・CLEANを確認し、内部配信は配信先の状態とbuild/commit/runを照合する。
+確定記録は両PR本文とローカルdocsへ追記し、記録だけの追加main pushはしない。
+
+### 前回の火星の自転と木星・土星の反映
+
+全674テスト、Web/Chrome、iOS実GPUと結果保存まで確認後、develop→mainの順に反映した。
+[PR #52](https://github.com/yakitama5/mars-terraforming/pull/52)の確定HEAD
+`648ea0de2bd2a28be7908eab9a7d65d3a97d1afe`で全4check成功・CLEAN後、
+develop `10152bb5507a1ac9e4ea4b7c57cc5bedf7c610e0`へ反映した。全ファイルtreeは検証featureと一致。
+[PR #53](https://github.com/yakitama5/mars-terraforming/pull/53)も全6check成功・CLEAN後にmainへ反映した。
+main `402ff2cc4461b0ed2650b9f276ad7ddd8525db79`と検証feature/developの全ファイルtreeが一致。
+mainの[Prototype run40264062532](https://github.com/yakitama5/mars-terraforming/actions/runs/40264062532)と
+[Pages run40264062404](https://github.com/yakitama5/mars-terraforming/actions/runs/40264062404)が全job成功。
+各headと公開deployment.jsonのmain/develop/runも上記SHAと40264062404に一致。
+公開通常版・試遊版で独立Chromeのタイトル実描画・大小画面・動き・開始/継続・オフライン/保存試験が成功した。
+公開試験は通常版`mars_terraforming.save.mars-terraforming-main_normal`、
+試遊版`mars_terraforming.save.mars-terraforming-develop_development`を指定する。
+初回の試遊版検証はローカル用のkeyを誤指定して保存の取得で失敗し、正しいnamespaceで再実行して成功した。
+[内部配信run40264062399](https://github.com/yakitama5/mars-terraforming/actions/runs/40264062399)も全4job成功。
+headは上記main全SHAと一致。run15/attempt1の両配信記録を照合した。
+
+- Android **1501**: Play internal/completed/versionCode1501をfresh readで確認。
+  recordのplatform・app ID・main全SHA・run・build・配信先が一致。
+  確認時刻2026-10-26T03:34:37Z（12:34:37 JST）。artifact12626175769のZIP/API/uploadログのSHA-256が
+  `d4388afef167256b36b36fbc29e21a8f8521619859a1e8447c6c9cfcccc24bab`で一致。
+  署名材料削除・WIF credential cleanup成功。実機動作は未確認。
+- iOS **0.1.0 (15.1)**: CIのfresh照合と独立したApple直GETで
+  VALID / IN_BETA_TESTING / expired=false / Internal所属を確認。
+  recordのplatform・app ID・main全SHA・run・build・配信先が一致。
+  record時刻2026-10-26T03:39:04Z（12:39:04 JST）、独立GETは03:40:27Z。
+  artifact12626560361のZIP/API/uploadログのSHA-256が
+  `7a408f1f243fbf48c472f9570034ee84e91f1c0ee13998f6bdb85725a3580467`で一致。
+  一時keychain/profile/p12/API鍵のcleanupも成功。実機動作は未確認。
+
+次の確認はユーザーによるAndroid1501の実機評価。地表の自転・環の見え方と、
+起動/復帰・長時間の負荷/熱/電池を確認する。内部配信の照合を実機性能の検証とは扱わない。
+内部配信は配信先の状態とビルド/commit/runを照合する。
 配信後の確定記録は両PR本文とローカルdocsへ追記し、記録だけの追加main pushはしない。
 
 ### 前回の即時開始・周回・全球モデルの反映（2026-10-26）
