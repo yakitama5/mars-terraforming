@@ -15,10 +15,76 @@ import 'package:mars_terraforming/main.dart';
 import 'package:mars_terraforming/presentation/mission_opening.dart';
 import 'package:mars_terraforming/presentation/title_scene_data.dart';
 import 'package:mars_terraforming/presentation/title_screen.dart';
+import 'package:mars_terraforming/rendering/base_scene.dart';
+import 'package:mars_terraforming/rendering/city_scene.dart';
 import 'package:mars_terraforming/rendering/title_scene.dart';
+import 'package:mars_terraforming/rendering/title_scene_motion.dart';
+import 'package:mars_terraforming/rendering/title_spacecraft_models.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('タイトル機体のロード後は共有templateの所有を残さない', (tester) async {
+    await fs.Scene.initializeStaticResources();
+    final models = await TitleSpacecraftModels.load();
+    for (final node in [models.satellite, models.rocket, models.asteroid]) {
+      expect(node.combinedWorldBounds, isNotNull);
+    }
+    // 他のloadが存在しない独立した最初の試験で、公開APIの所有数を確認。
+    for (final asset in [
+      TitleSpacecraftModels.satelliteAsset,
+      TitleSpacecraftModels.rocketAsset,
+      TitleSpacecraftModels.asteroidAsset,
+    ]) {
+      expect(
+        await fs.releaseScene(asset),
+        isFalse,
+        reason: '返したnodeの素材を保持しつつ、template cacheのclaimは返却済み',
+      );
+    }
+  });
+
+  testWidgets('起動直後の開始操作でOPへ進みGPU初期化と競合しない', (tester) async {
+    final previousPolicy = binding.framePolicy;
+    binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+    final directory = await Directory.systemTemp.createTemp(
+      'mars-title-early-',
+    );
+    final controller = GameController(
+      FileSaveStore(directory),
+      now: () => DateTime.utc(2026, 10, 26),
+    );
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await controller.save();
+      controller.dispose();
+      binding.framePolicy = previousPolicy;
+      await directory.delete(recursive: true);
+    });
+    await controller.initialize(startTimer: false);
+    final money = controller.state.moneyUnits;
+    await tester.pumpWidget(MarsApp(controller: controller));
+    expect(find.byKey(const Key('title-start')), findsOneWidget);
+    expect(find.text('TAP TO START'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('title-start')));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(seconds: 5)),
+    );
+    await tester.pump();
+    expect(find.byType(TitleScreen), findsNothing);
+    expect(find.byType(MissionOpening), findsOneWidget);
+    expect(controller.state.openingStarted, isTrue);
+    expect(controller.state.moneyUnits, money);
+    expect(tester.takeException(), isNull);
+    // OPの音声破棄はnative呼出しを伴う。Widget終了直後の検証へ音声の
+    // フレームcallbackを持ち越さず、通常の非同期後片付けを待つ。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 500)),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'iOS GPU: saved Mars, fixed title viewpoint, moving space and safe launch',
@@ -56,6 +122,8 @@ void main() {
         expect(controller.error, isNull);
         await tester.pumpWidget(MarsApp(controller: controller));
         await tester.pump();
+        expect(find.byKey(const Key('title-start')), findsOneWidget);
+        expect(find.text('TAP TO START'), findsOneWidget);
         for (var attempt = 0; attempt < 120; attempt++) {
           final views = find.descendant(
             of: find.byType(TitleScene),
@@ -135,6 +203,42 @@ void main() {
       expect(nodePose('title-mars'), initialMars, reason: '火星の地表と姿勢は固定する');
       expect(starAngle(), isNot(initialStars));
       expect(nodePose('title-satellite'), isNot(initialSatellite));
+      final marsCenter = view().scene!.root
+          .getChildByName('title-mars')!
+          .position;
+      final camera = view().camera!;
+      final viewport = tester.getSize(find.byType(TitleScene));
+      for (final offsetAt in [
+        (TitleSceneMotion motion) => motion.sunOffset,
+        (TitleSceneMotion motion) => motion.earthOffset,
+      ]) {
+        var inside = 0;
+        var outside = 0;
+        for (var seconds = 0.0; seconds < 360; seconds += 5) {
+          final point = camera.worldToScreen(
+            marsCenter + offsetAt(TitleSceneMotion(seconds)),
+            viewport,
+          );
+          if (point != null && (Offset.zero & viewport).contains(point)) {
+            inside++;
+          } else {
+            outside++;
+          }
+        }
+        expect(inside, greaterThan(0), reason: '自転と公転の組合せで遠景が現れる');
+        expect(outside, greaterThan(0), reason: '地球と太陽を画面へ固定しない');
+      }
+      for (final name in ['title-satellite', 'title-rocket']) {
+        final node = view().scene!.root.getChildByName(name)!;
+        expect(node.scale.x, lessThan(.06), reason: '火星に比べて小さい宇宙機');
+        expect((node.position - marsCenter).length, greaterThan(9));
+      }
+      final initialSun = nodePose('title-sun');
+      await wait(const Duration(seconds: 45));
+      await capture('title-ios-orbital-phase');
+      expect(nodePose('title-sun'), isNot(initialSun));
+      expect(cameraPose(), initialCamera);
+      expect(nodePose('title-mars'), initialMars);
       now = now.add(const Duration(hours: 8));
       await pristine.resume();
       expect(pristine.state.moneyUnits, initialMoney);
@@ -233,6 +337,74 @@ void main() {
       expect(find.byKey(const Key('navigation-1')), findsOneWidget);
       expect(developed.state.toJson(), expected.state.toJson());
 
+      Future<fs.SceneView> waitForGlobe(String name) async {
+        for (var i = 0; i < 160; i++) {
+          final views = find.descendant(
+            of: find.byType(BaseScene),
+            matching: find.byType(fs.SceneView),
+          );
+          if (views.evaluate().isNotEmpty) {
+            final globe = tester.widget<fs.SceneView>(views.first);
+            if (globe.scene!.root.getChildByName(name)?.visible == true) {
+              await wait(const Duration(seconds: 1));
+              expect(tester.takeException(), isNull);
+              return globe;
+            }
+          }
+          await wait(const Duration(milliseconds: 250));
+        }
+        fail('全球モデル $name が表示されなかった');
+      }
+
+      var globe = await waitForGlobe('map-earth');
+      expect(globe.scene!.root.getChildByName('map-sun'), isNotNull);
+      await capture('title-ios-game-earth');
+      final marker = find.bySemanticsLabel(RegExp('デルタ湾岸を選択'));
+      expect(marker, findsOneWidget);
+      await tester.tap(marker);
+      await wait(const Duration(milliseconds: 300));
+      expect(
+        tester.widget<BaseScene>(find.byType(BaseScene)).selectedCityId,
+        'earth_delta',
+      );
+      await tester.tap(find.byTooltip('惑星を拡大'));
+      await wait(const Duration(milliseconds: 300));
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byKey(const Key('select-planet-mars')));
+      await tester.pump();
+      globe = await waitForGlobe('map-mars');
+      final marsGlobe = globe.scene!.root.getChildByName('map-mars')!;
+      expect(
+        marsGlobe.rotation.storage,
+        orderedEquals([0.0, 0.0, 0.0, 1.0]),
+        reason: '都市の緯度経度に地理を合わせる',
+      );
+      await capture('title-ios-game-mars');
+      await tester.tap(find.byKey(const Key('select-planet-moon')));
+      await tester.pump();
+      globe = await waitForGlobe('月');
+      expect(globe.scene!.root.getChildByName('map-sun')!.visible, isFalse);
+      await capture('title-ios-game-moon');
+      await tester.tap(find.byKey(const Key('select-planet-earth')));
+      await tester.pump();
+      await waitForGlobe('map-earth');
+      await tester.tap(find.byKey(const Key('navigation-1')));
+      await tester.pump();
+      final cityGpu = find.descendant(
+        of: find.byType(CityScene),
+        matching: find.byType(fs.SceneView),
+      );
+      for (var i = 0; i < 160 && cityGpu.evaluate().isEmpty; i++) {
+        await wait(const Duration(milliseconds: 250));
+      }
+      expect(find.byType(CityScene), findsOneWidget);
+      expect(cityGpu, findsOneWidget, reason: '簡易地図でなく都市の実GPU描画を確認');
+      expect(find.textContaining('3Dを開始できない'), findsNothing);
+      await wait(const Duration(seconds: 2));
+      expect(tester.widget<CityScene>(find.byType(CityScene)).earth, isTrue);
+      await capture('title-ios-game-city-toon');
+      expect(developed.state.toJson(), expected.state.toJson());
+
       await tester.pumpWidget(const SizedBox.shrink());
       await developed.save();
       final restarted = await open(developedStore, () => now);
@@ -244,6 +416,6 @@ void main() {
       expect(find.byKey(const Key('navigation-1')), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
-    timeout: const Timeout(Duration(minutes: 3)),
+    timeout: const Timeout(Duration(minutes: 5)),
   );
 }

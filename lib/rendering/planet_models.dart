@@ -179,8 +179,9 @@ class PlanetModels {
     required bool selected,
     bool moon = false,
     bool cargo = false,
+    double surfaceRadius = 3.11,
   }) {
-    final root = surface(city.latitude, city.longitude, radius: 3.11)
+    final root = surface(city.latitude, city.longitude, radius: surfaceRadius)
       ..name = city.name;
     // These are bounded visual detail levels, not game progression rules.
     // A fully upgraded 25-plot city reaches 75; intermediate investment still

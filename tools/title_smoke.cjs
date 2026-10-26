@@ -35,9 +35,43 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
       return JSON.parse(JSON.parse(bundle.primary).payload);
     }, key);
     const capture = async name => page.screenshot({ path: path.join(output, `${name}.png`) });
+    // CTAは先に出る。描画の撮影は実画素で火星の準備を待ち、黒背景を成功と扱わない。
+    const waitForMars = async () => {
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        const frame = await page.screenshot();
+        const visible = await page.evaluate(async png => {
+          const picture = new Image();
+          picture.src = `data:image/png;base64,${png}`;
+          await picture.decode();
+          const canvas = document.createElement('canvas');
+          canvas.width = picture.width;
+          canvas.height = picture.height;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(picture, 0, 0);
+          const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          let warm = 0, total = 0;
+          for (let y = Math.floor(canvas.height * .74); y < canvas.height * .92; y += 4) {
+            for (let x = Math.floor(canvas.width * .25); x < canvas.width * .75; x += 4) {
+              const i = (y * canvas.width + x) * 4;
+              if (data[i] > 20 && data[i + 1] > 8 && data[i] > data[i + 1] * 1.1 && data[i + 2] < data[i] * .9) warm++;
+              total++;
+            }
+          }
+          return warm > total * .03;
+        }, frame.toString('base64'));
+        if (visible) {
+          await page.waitForTimeout(1200);
+          return;
+        }
+        await page.waitForTimeout(500);
+      }
+      throw new Error('開始操作は表示されたが、火星の背景を描画できなかった');
+    };
     await page.goto(url);
     await title().waitFor({ timeout: 60000 });
-    await page.waitForTimeout(2500);
+    await capture('title-web-loading');
+    await waitForMars();
     const initial = await snapshot();
     const early = await capture('title-web-pristine');
     await page.waitForTimeout(7000);
@@ -92,7 +126,7 @@ const key = process.env.MARS_SAVE_KEY || 'mars_terraforming.save.development';
     await context.setOffline(true);
     await page.reload();
     await title().waitFor({ timeout: 60000 });
-    await page.waitForTimeout(1500);
+    await waitForMars();
     await capture('title-web-offline');
     assert.equal((await snapshot()).worldId, started.worldId);
     await page.keyboard.press('Space');

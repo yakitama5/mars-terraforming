@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter/services.dart' show rootBundle;
@@ -22,11 +23,11 @@ class TitleMarsModel {
   final fs.Node root, surface, clouds, settlements, limb;
 }
 
-/// NASAのカラー・標高・昼夜・雲を、タイトル専用の材質で描く。
+/// NASAのカラー・標高・昼夜・雲を、シーンごとに独立した材質で描く。
 /// 時間進行も保存処理も持たず、開発の見た目だけを受け取る。
 class TitleCelestialModels {
-  TitleCelestialModels._(this._height, this._textures, this._materials) {
-    final textures = _textures;
+  TitleCelestialModels._(this._assets, this._materials) {
+    final textures = _assets.textures;
     _texture(_marsSurface, 'albedo_map', textures[0]);
     _texture(_marsSurface, 'normal_map', textures[1]);
     _texture(_earthSurface, 'day_map', textures[2]);
@@ -44,10 +45,9 @@ class TitleCelestialModels {
     _earthCloudMaterial.parameters.setFloat('opacity', .9);
   }
 
-  final MeasuredPlanetHeightField _height;
-  // GPU画像への参照をシーンの寿命まで保持する。
-  final List<fs.Texture2D> _textures;
-  int get textureCount => _textures.length;
+  // 静的cacheは弱参照のみ。生きているシーンが画像/地形の寿命を所有する。
+  final _CelestialAssets _assets;
+  int get textureCount => _assets.textures.length;
   final List<fs.PreprocessedMaterial> _materials;
   final _cloudNodes = <(fs.Node, bool)>[];
   fs.Node? _earthRoot;
@@ -58,27 +58,11 @@ class TitleCelestialModels {
   fs.PreprocessedMaterial get _earthCloudMaterial => _materials[4];
   fs.PreprocessedMaterial get _marsCloudMaterial => _materials[5];
 
-  late final _marsGeometry = measuredPlanetMeshData(heightField: _height)
-      .geometry();
-  late final _sphereGeometry = measuredPlanetMeshData(
-    rows: 96,
-    columns: 192,
-  ).geometry();
-
-  static const _planetPath = 'assets/title/planets';
   static const _shaderPath = 'assets/title/shaders';
 
   static Future<TitleCelestialModels> load() async {
-    final textures = await Future.wait([
-      fs.Texture2D.fromAsset('$_planetPath/mars_viking_albedo_4k.jpg'),
-      fs.Texture2D.fromAsset(
-        '$_planetPath/mars_mola_normal_2k.png',
-        content: fs.TextureContent.normal,
-      ),
-      fs.Texture2D.fromAsset('$_planetPath/earth_blue_marble_day_2k.jpg'),
-      fs.Texture2D.fromAsset('$_planetPath/earth_black_marble_night_2k.jpg'),
-      fs.Texture2D.fromAsset('$_planetPath/earth_blue_marble_clouds_2k.png'),
-    ]);
+    final assets = await _CelestialAssets.load();
+    // Parameters (including light direction) must never leak between scenes.
     final materials = await Future.wait([
       fs.loadFmatMaterial('$_shaderPath/planet_mars.fmat'),
       fs.loadFmatMaterial('$_shaderPath/planet_earth.fmat'),
@@ -87,10 +71,7 @@ class TitleCelestialModels {
       fs.loadFmatMaterial('$_shaderPath/planet_clouds.fmat'),
       fs.loadFmatMaterial('$_shaderPath/planet_clouds.fmat'),
     ]);
-    final height = MeasuredPlanetHeightField(
-      await rootBundle.load('$_planetPath/mars_mola_height_1k.bin'),
-    );
-    return TitleCelestialModels._(height, textures, materials);
+    return TitleCelestialModels._(assets, materials);
   }
 
   static void _texture(
@@ -103,7 +84,12 @@ class TitleCelestialModels {
     sampler: texture.sampledSampler,
   );
 
-  TitleMarsModel mars(TitleSceneSnapshot snapshot) {
+  /// [titleOrientation] preserves the authored title shot by default. A game
+  /// globe disables it so city longitude/latitude remain geographic coordinates.
+  TitleMarsModel mars(
+    TitleSceneSnapshot snapshot, {
+    bool titleOrientation = true,
+  }) {
     _marsSurface.parameters.setFloat('greenery', snapshot.greenery);
     _marsCloudMaterial.parameters.setFloat(
       'opacity',
@@ -120,9 +106,10 @@ class TitleCelestialModels {
         ),
       )
       ..setFloat('density', .43 + atmosphere * .9);
-    final root = fs.Node(name: 'title-mars')
+    final root = fs.Node(name: 'title-mars');
+    if (titleOrientation) {
       // 実測Valles Marinerisを見える地平線の下へ向ける固定の撮影姿勢。
-      ..rotation = vm.Quaternion.fromTwoVectors(
+      root.rotation = vm.Quaternion.fromTwoVectors(
         planetPoint(-12, -64, 1),
         vm.Vector3(
           0,
@@ -130,20 +117,21 @@ class TitleCelestialModels {
           math.cos(55 * math.pi / 180),
         ),
       );
+    }
     final surface = fs.Node(
       name: 'title-mars-surface',
-      mesh: fs.Mesh(_marsGeometry, _marsSurface),
+      mesh: fs.Mesh(_assets.marsGeometry, _marsSurface),
     );
     final clouds =
         fs.Node(
             name: 'title-mars-clouds',
-            mesh: fs.Mesh(_sphereGeometry, _marsCloudMaterial),
+            mesh: fs.Mesh(_assets.sphereGeometry, _marsCloudMaterial),
           )
           ..scale = vm.Vector3.all(1.014)
           ..visible = snapshot.cloudCoverage > 0;
     final limb = fs.Node(
       name: 'title-mars-atmosphere',
-      mesh: fs.Mesh(_sphereGeometry, _marsAtmosphere),
+      mesh: fs.Mesh(_assets.sphereGeometry, _marsAtmosphere),
     )..scale = vm.Vector3.all(1.024);
     final settlements = _settlementLights(snapshot);
     root.add(surface);
@@ -167,18 +155,18 @@ class TitleCelestialModels {
     root.add(
       fs.Node(
         name: 'title-earth-globe',
-        mesh: fs.Mesh(_sphereGeometry, _earthSurface),
+        mesh: fs.Mesh(_assets.sphereGeometry, _earthSurface),
       ),
     );
     final clouds = fs.Node(
       name: 'title-earth-clouds',
-      mesh: fs.Mesh(_sphereGeometry, _earthCloudMaterial),
+      mesh: fs.Mesh(_assets.sphereGeometry, _earthCloudMaterial),
     )..scale = vm.Vector3.all(1.0065);
     root.add(clouds);
     root.add(
       fs.Node(
         name: 'title-earth-limb',
-        mesh: fs.Mesh(_sphereGeometry, _earthAtmosphere),
+        mesh: fs.Mesh(_assets.sphereGeometry, _earthAtmosphere),
       )..scale = vm.Vector3.all(1.025),
     );
     _cloudNodes.add((clouds, true));
@@ -190,6 +178,7 @@ class TitleCelestialModels {
     required vm.Vector3 sunDirection,
     required double seconds,
     vm.Vector3? sunPosition,
+    vm.Quaternion? inertialToBody,
   }) {
     final sun = sunDirection.normalized();
     for (final material in _materials.skip(1)) {
@@ -207,12 +196,19 @@ class TitleCelestialModels {
       }
     }
     for (final (node, earth) in _cloudNodes) {
-      node.rotation = vm.Quaternion.axisAngle(
+      final rotation = vm.Quaternion.axisAngle(
         vm.Vector3(0, 1, 0),
         seconds * (earth ? .026 : .0015),
       );
+      node.rotation = earth && inertialToBody != null
+          ? inertialToBody * rotation
+          : rotation;
     }
   }
+
+  /// Match markers to MOLA displacement without deriving any game progress.
+  double marsSurfaceRadius(double latitude, double longitude) =>
+      3.1 * (1 + _assets.height.at(latitude, longitude) / 3396000 * 1.5);
 
   fs.Node _settlementLights(TitleSceneSnapshot snapshot) {
     final root = fs.Node(name: 'title-mars-settlements');
@@ -229,7 +225,7 @@ class TitleCelestialModels {
       final point = planetPoint(
         latitude,
         longitude,
-        3.1 * (1 + _height.at(latitude, longitude) / 3396000 * 1.5) + .004,
+        marsSurfaceRadius(latitude, longitude) + .004,
       );
       final n = point.normalized();
       final east = vm.Vector3(n.z, 0, -n.x)..normalize();
@@ -251,5 +247,61 @@ class TitleCelestialModels {
       ),
     );
     return root;
+  }
+}
+
+/// Only immutable textures, height data and mesh buffers may be shared. The
+/// in-flight future is cleared on success/failure; otherwise a completed Future
+/// would retain ~85 MiB of GPU images even after every scene was disposed.
+class _CelestialAssets {
+  _CelestialAssets(this.textures, this.height);
+
+  static const _path = 'assets/title/planets';
+  static WeakReference<_CelestialAssets>? _cache;
+  static Future<_CelestialAssets>? _inFlight;
+
+  final List<fs.Texture2D> textures;
+  final MeasuredPlanetHeightField height;
+  late final marsGeometry = measuredPlanetMeshData(heightField: height)
+      .geometry();
+  late final sphereGeometry = measuredPlanetMeshData(
+    rows: 96,
+    columns: 192,
+  ).geometry();
+
+  static Future<_CelestialAssets> load() async {
+    final cached = _cache?.target;
+    if (cached != null) return cached;
+    final loading = _inFlight;
+    if (loading != null) return loading;
+    final request = _load();
+    _inFlight = request;
+    try {
+      final assets = await request;
+      _cache = WeakReference(assets);
+      return assets;
+    } finally {
+      if (identical(_inFlight, request)) _inFlight = null;
+    }
+  }
+
+  static Future<_CelestialAssets> _load() async {
+    final resources = await Future.wait<Object>([
+      Future.wait([
+        fs.Texture2D.fromAsset('$_path/mars_viking_albedo_4k.jpg'),
+        fs.Texture2D.fromAsset(
+          '$_path/mars_mola_normal_2k.png',
+          content: fs.TextureContent.normal,
+        ),
+        fs.Texture2D.fromAsset('$_path/earth_blue_marble_day_2k.jpg'),
+        fs.Texture2D.fromAsset('$_path/earth_black_marble_night_2k.jpg'),
+        fs.Texture2D.fromAsset('$_path/earth_blue_marble_clouds_2k.png'),
+      ]),
+      rootBundle.load('$_path/mars_mola_height_1k.bin'),
+    ]);
+    return _CelestialAssets(
+      resources[0] as List<fs.Texture2D>,
+      MeasuredPlanetHeightField(resources[1] as ByteData),
+    );
   }
 }
