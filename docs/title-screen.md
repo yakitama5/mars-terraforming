@@ -9,6 +9,7 @@ Figmaの原稿は変更していない。
 NASAの観測画像と実測標高、詳細な宇宙機モデル、ESOの全天写真を使う写実寄りの表現へ作り直し、
 ユーザーから「モデルはすごくいい」と採用評価を得た。追加依頼で運動と読込中の操作を変更し、
 ゲーム内の全球表示にもモデルを共有する。都市開発の近接箱庭は現在のトゥーン調を維持する。
+続く「めっちゃいい」との評価を受け、火星の地表も自転して見える視点へ変更し、木星と土星を遠景へ追加する。
 
 ## 起動と操作
 
@@ -37,9 +38,11 @@ Figmaやゲームのスクリーンショットは描画素材に使わない。
 
 | 対象 | 現在の表現 |
 | --- | --- |
-| 火星 | Vikingの4096×2048カラー、MOLAの実測標高から変位させた192×320分割の球体、同標高由来の2048×1024法線。Valles Marinerisが見える固定の姿勢 |
+| 火星 | Vikingの4096×2048カラー、MOLAの実測標高から変位させた192×320分割の球体、同標高由来の2048×1024法線。初期はValles Marinerisが見える姿勢で、地形と施設が一体で自転 |
 | 火星の地形 | 61,953頂点・122,240三角形。標高を1.5倍、法線の勾配を2倍にした視認用の誇張。架空の峡谷・火山・クレーターは追加しない |
 | 地球 | Blue Marbleの昼、Black Marbleの夜、独立した雲の各2048×1024画像。自転、太陽方向に応じた明暗境界、夜の都市光と海面反射 |
+| 木星 | NASA VTADの公式モデルに含まれる雲画像を球面へ再投影したテクスチャと扁平な球体。自転と公転で見える面が変わる |
+| 土星 | NASA VTADの雲画像と半径方向の環画像。扁平な球体、傾斜した立体の環、球体と環の前後関係・相互影 |
 | 大気 | 球殻と専用シェーダーによる薄い縁、太陽側の散乱光。美術上の簡略表現で、厳密な多重散乱計算ではない |
 | 星空 | ESO/S. Brunierの6000×3000全天写真をGPU読込時4096×2048へ縮小。低輝度のノイズを持ち上げず、控えめな露光・彩度で星と銀河を表示 |
 | 太陽 | HDR発光の球体、周縁減光と粒状模様、別メッシュの加算光コロナ・ストリーマー・弱い光芒 |
@@ -56,13 +59,21 @@ NASA/ESOの原素材へ本作のMITを適用せず、各素材の条件とクレ
 - [天体のカラー・実測標高・昼夜・雲](title-assets.md)
 - [ESOの全天写真・サンプラー・太陽](title-cosmos-assets.md)
 - [NASAの宇宙機・Bennu・派生GLBの再生成](title-spacecraft-assets.md)
+- [木星・土星と立体の環](title-gas-giant-assets.md)
 
 ## 演出の動きと負荷の扱い
 
-火星の地表とカメラは固定する。太陽中心の共通慣性系で地球と火星を公転させ、
-火星の自転・軸傾斜の逆変換で見かけの天体方向を求める。星空は同じ変換で視線を戻して参照する。
+火星の中心とカメラの構図は固定し、自転とカメラの周回を分ける。
+火星と同じ速さで回る旧視点は地表の自転が見えなかったため、カメラは火星自転の25%の速さで回る。
+地表・施設の灯り・大気を含む火星全体を回し、地形が画面の中を流れる様子を見せる。
+太陽中心の共通慣性系で地球・火星・木星・土星を公転させ、
+カメラ周回・軸傾斜の逆変換で見かけの天体方向を求める。星空は同じ変換で視線を戻して参照する。
 地球と太陽は常時画面へ固定せず、視錐台と火星による遮蔽で自然に現れたり隠れたりする。
 地表の明暗も画面内の太陽と同じ方向へ合わせる。地球と太陽の自転、独立した雲も継続する。
+木星・土星も同じカメラ座標で公転させ、初期の画角では巨惑星を望める配置にする。
+両方とも常時表示する貼り絵にはせず、画角と火星の遮蔽で出入りする。
+木星・土星の球体をそれぞれの軸で自転させ、土星の環は球体と同じ赤道面へ合わせる。
+木星・土星を開発可能な天体や選択先へ追加するものではない。
 
 ロケット・MRO・小惑星は火星中心を焦点とする傾斜楕円を途切れず周回する。
 位置と解析速度を同じ離心近点角から求め、ロケット/衛星の+Yを接線へ向ける。
@@ -125,7 +136,33 @@ MROは元GLBが約4MB、変換後のScene binaryが約39MBで、配布物では�
 
 ## 検証の現在地
 
-### 2026-10-26の追加修正
+### 2026-10-26: 自転する火星と木星・土星
+
+- 整形・静的解析・依存/内容検査と全674テスト成功。
+  運動の14件はカメラ座標と自転の分離、Quaternion入力の保持、共通の慣性系、可視時間を検証する。
+  環の6件は実測半径、面積・面の向き、半径UV・接空間・継ぎ目、属性とindices、不正入力を検証する。
+- NASA元GLBからの再投影を元の三角形UVへ照合し、上下/左右の方向と欠落がないことを確認。
+  環の半径とUVは最大差4.8e-7で元meshに一致。画像3点のSHAは素材台帳と一致した。
+- iOSの最初の実GPU試験は全3ケースと後片付けが成功し、12枚のPNGを保存。
+  その後SDK標準の結果JSONが全画像byteを再保存する段階で作業ディスク不足となった。
+  画像は独立PNGとして保存済みなので、共通driverはJSONに画像名とbyte数だけを記録するよう修正した。
+  再試験も全ケース成功・exit0で正常終了し、12枚のPNGと1.4KiBの結果JSONを保存した。
+- 実GPUの地表と施設のworld変換が動き、地表に対する施設の相対変換は不変であることを検証。
+  火星の中心・縮尺・カメラの構図は不変。木星/土星/環の実meshと自転も確認した。
+  巨惑星と太陽の撮影は実nodeの画角・火星の遮蔽を確認して行い、固定時刻の空振りを採用しない。
+  既存の開始・再開・保存・二重付与なし、全球/近接Sceneの検証も通過した。
+- 最終Simulatorの初回pipeline作成警告は最大558ms。30fps上限を実機の性能達成とは扱わない。
+- Web releaseと独立Chromeでも成功。大小画面・自転する背景・クリック→OP・既存継続・Enter/Space・
+  オフライン/保存維持・外部取得なしを確認し、木星・土星/環と火星を実画像でも確認した。
+
+今回の実表示: [初期の木星・土星](screenshots/title-giants-ios-pristine.png)、
+[火星の自転](screenshots/title-giants-ios-rotation.png)、
+[地表に付いて回る施設](screenshots/title-giants-ios-facilities.png)、
+[巡って現れた地球・太陽](screenshots/title-giants-ios-solar-phase.png)、
+[Web](screenshots/title-giants-web.png)、[Web小画面](screenshots/title-giants-web-small.png)。
+Android実機・長時間の熱/電池/ピークメモリ・Safari/Firefoxは未確認。
+
+### 前回の即時開始・周回・全球モデル共有の検証
 
 - `mise exec -- bash tools/check.sh`で依存方向・内容検査・整形・静的解析・全665テストが成功。
   UI試験は背景未準備のままTap/Enter/Space/Creditsが使えること、背景だけの900ms fade、
@@ -191,7 +228,43 @@ iPhone 17 Pro Max / iOS 26.1 Simulatorで最終のGPU通し試験が成功し、
 
 ## 反映と次の確認
 
-今回の追加修正は上記検証後、作業ブランチ→develop→mainのCI・差分確認と新しい内部配信へ進める。
+### 火星の自転と木星・土星の反映（今回）
+
+全674テスト、Web/Chrome、iOS実GPUと結果保存まで確認後、develop→mainの順に反映する。
+確定HEADのCI・差分・CLEANを確認し、内部配信は配信先の状態とビルド/commit/runを照合する。
+配信後の確定記録は両PR本文とローカルdocsへ追記し、記録だけの追加main pushはしない。
+
+### 前回の即時開始・周回・全球モデルの反映（2026-10-26）
+
+[PR #50](https://github.com/yakitama5/mars-terraforming/pull/50)の確定HEAD
+`35ba92803d313d11d996ee2775d58fefca4fb6dd`で全4check成功・CLEAN後、
+develop `32e17abf4780542e0fbb8ff52f8018426ffe840a`へ反映。
+[PR #51](https://github.com/yakitama5/mars-terraforming/pull/51)は全6check成功・CLEAN後にmainへ反映した。
+mainは`71e8bbeb9cbf44ab70c658f35b72a44cbf84bb83`。検証したfeatureとtree全体が一致。
+
+- main [Prototype checks](https://github.com/yakitama5/mars-terraforming/actions/runs/40255780393)、
+  [Pages](https://github.com/yakitama5/mars-terraforming/actions/runs/40255780263)、
+  [Mobile internal distribution](https://github.com/yakitama5/mars-terraforming/actions/runs/40255780307)が全job成功。
+  各runのheadが上記main全SHAと一致。内部配信はrun14/attempt1。
+- Android **1401**: Play internal/completed/versionCode1401をAPI再取得で確認。
+  recordのplatform・app ID・main全SHA・run・build・配信先・UTC時刻が一致。
+  確認時刻2026-10-26T01:55:44Z（10:55:44 JST）。artifact12622397884のZIP/API/uploadログのSHA-256が
+  `7eeafbeca08f35b532aaeede0dba15140c4b918322c9fcb63ab47a1473c451e0`で一致。
+  署名材料削除・WIF credential cleanupも成功。
+- iOS **14.1**: Apple実照合でVALID / IN_BETA_TESTING / expired=false / group_member=true。
+  record全項目が一致し、確認時刻2026-10-26T01:58:04Z（10:58:04 JST）。
+  artifact12622363127のZIP/API/uploadログのSHA-256が
+  `10a5d6fb949c0b17cb6ee05619ed453857897c1f5a235cbd325325ad85fd4644`で一致。
+  一時keychain/profile/p12/API鍵のcleanupが成功。
+- 公開deployment.jsonのmain/develop/runが上記SHAと40255780263へ一致。
+  公開通常版・試遊版で独立Chromeの開始/背景/保存/オフライン試験が成功し、
+  BaseSceneの準備完了後のsemanticsと実画像で全球地球のGPU表示も確認した。
+
+Android実機と長時間の負荷/熱/電池/ピークメモリはユーザー確認予定。
+配信記録の照合を実機での動作確認と混同しない。結果は両PR本文とローカルdocsへ追記し、記録だけの追加main pushはしない。
+
+### 前回のモデル採用版の配信履歴
+
 以下の#48/#49・Android1301/iOS13.1は前回のモデル採用版の配信記録。
 
 2026-10-26、[PR #48](https://github.com/yakitama5/mars-terraforming/pull/48)の
