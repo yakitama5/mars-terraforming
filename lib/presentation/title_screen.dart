@@ -93,7 +93,7 @@ class _TitleScreenState extends State<TitleScreen>
             '宇宙機・小惑星\nNASA / NASA 3D Resources\n'
             'NASA / Michael D. Carbajal\nNASA / Christopher R. Meaney\n'
             'NASA/Goddard/University of Arizona\n\n'
-            '天体の大きさ・距離・飛行経路と未来の開発は本作の演出です。'
+            '天体の配置・運動の速さ・飛行経路と未来の開発は本作の演出です。'
             'NASA・ESOによる本作の推薦や公認を意味しません。',
             style: TextStyle(fontSize: 12, height: 1.6),
           ),

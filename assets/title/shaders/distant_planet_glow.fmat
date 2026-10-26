@@ -1,0 +1,44 @@
+material {
+  name: "TitleUnresolvedPlanetPoint",
+  shading_model: unlit,
+  blending: additive,
+  culling: none,
+  depth_write: false,
+  parameters: [
+    { type: float, name: strength, default: 0.0 },
+    { type: vec3, name: point_color, default: [1.0, 1.0, 1.0] },
+  ],
+}
+
+fragment {
+  // Gaussian pixel integration shares a tiny source's energy continuously
+  // between adjacent pixels as its center moves, limiting subpixel shimmer.
+  highp float PointErf(highp float x) {
+    highp float a = abs(x);
+    highp float t = 1.0 / (1.0 + 0.3275911 * a);
+    highp float polynomial = (((((1.061405429 * t - 1.453152027) * t)
+        + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
+    return sign(x) * (1.0 - polynomial * exp(-a * a));
+  }
+
+  highp float PointCdf(highp float x) {
+    // sigma = 1 / (2 * sqrt(2 * ln(2))): FWHM exactly 1 render pixel.
+    return 0.5 + 0.5 * PointErf(x * 1.6651092223);
+  }
+
+  void Surface(inout MaterialInputs material) {
+    // The quad spans +/-2.5 render pixels. Its outer tail is negligible;
+    // its geometric extent must not be interpreted as the globe's diameter.
+    highp vec2 p = (GetUV0() - 0.5) * 5.0;
+    highp vec2 footprint = max(fwidth(p), vec2(0.0001));
+    highp vec2 low = p - footprint * 0.5;
+    highp vec2 high = p + footprint * 0.5;
+    highp vec2 integrated = vec2(
+        PointCdf(high.x) - PointCdf(low.x),
+        PointCdf(high.y) - PointCdf(low.y));
+    highp float energy = max(integrated.x * integrated.y, 0.0);
+    vec3 emission = material_params.point_color *
+        (material_params.strength * 0.32 * energy);
+    material.base_color = vec4(emission, 1.0);
+  }
+}

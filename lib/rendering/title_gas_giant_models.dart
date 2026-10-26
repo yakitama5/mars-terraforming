@@ -81,18 +81,26 @@ class TitleGasGiantModels {
     return root;
   }
 
-  /// Perspective camera/light positions, in the scene's world coordinates.
-  /// Analytic self/mutual shadows do not rely on the scene's shadow atlas range.
+  /// Planet-to-Sun vectors are in camera/scene axes, in units of each planet's
+  /// equatorial radius. Compressed display positions must not alter the phase.
+  /// These model roots are direct children of the scene, with uniform scale.
   void updateView({
-    required vm.Vector3 sunPosition,
+    required vm.Vector3 jupiterToSunInRadii,
+    required vm.Vector3 saturnToSunInRadii,
     required vm.Vector3 cameraPosition,
   }) {
-    void update(fs.Node? root, List<fs.PreprocessedMaterial> materials) {
+    void update(
+      fs.Node? root,
+      List<fs.PreprocessedMaterial> materials,
+      vm.Vector3 toSunInRadii,
+    ) {
       if (root == null) return;
       // Invert the parent frame, not the flattened globe child. Shadow shaders
       // apply the oblate polar radius once, while the XZ ring remains circular.
       final inverse = vm.Matrix4.inverted(root.globalTransform);
-      final sun = inverse.transform3(sunPosition.clone());
+      final sun = root.rotation.conjugated().asRotationMatrix().transformed(
+        toSunInRadii,
+      );
       final camera = inverse.transform3(cameraPosition.clone());
       for (final material in materials) {
         material.parameters
@@ -101,8 +109,8 @@ class TitleGasGiantModels {
       }
     }
 
-    update(_jupiterRoot, [_jupiter]);
-    update(_saturnRoot, [_saturn, _rings]);
+    update(_jupiterRoot, [_jupiter], jupiterToSunInRadii);
+    update(_saturnRoot, [_saturn, _rings], saturnToSunInRadii);
   }
 }
 

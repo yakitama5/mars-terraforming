@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'orbital_motion.dart';
+import 'title_apparent_planet_scale.dart';
 
 export 'orbital_motion.dart' show KeplerOrbit, OrbitalPose;
 
@@ -112,41 +113,53 @@ class TitleSceneMotion {
       vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), marsSpin);
 
   late final vm.Vector3 _marsInertial = _circularPosition(
-    1.52,
+    TitleDistantBody.mars.semiMajorAxisAu,
     periodicMotionAngle(seconds, marsYear, marsOrbitAtEpoch),
   );
   late final vm.Vector3 _earthInertial = _circularPosition(
-    1,
+    TitleDistantBody.earth.semiMajorAxisAu,
     periodicMotionAngle(seconds, earthYear, earthOrbitAtEpoch),
   );
   late final vm.Vector3 _jupiterInertial = _circularPosition(
-    5.2,
+    TitleDistantBody.jupiter.semiMajorAxisAu,
     periodicMotionAngle(seconds, jupiterYear, jupiterOrbitAtEpoch),
   );
   late final vm.Vector3 _saturnInertial = _circularPosition(
-    9.58,
+    TitleDistantBody.saturn.semiMajorAxisAu,
     periodicMotionAngle(seconds, saturnYear, saturnOrbitAtEpoch),
   );
 
-  /// 光源と太陽の見かけの位置で、この同じ方向を共有する。
-  late final vm.Vector3 sunDirection = inertialToCamera
+  /// 火星中心から見た実AUの相対ベクトル。描画距離へ圧縮する前の長さを保つ。
+  late final vm.Vector3 sunRelativeAu = inertialToCamera
       .asRotationMatrix()
-      .transformed(-_marsInertial)
-      .normalized();
-  late final vm.Vector3 earthDirection = inertialToCamera
+      .transformed(-_marsInertial);
+  late final vm.Vector3 earthRelativeAu = inertialToCamera
       .asRotationMatrix()
-      .transformed(_earthInertial - _marsInertial)
-      .normalized();
-  late final vm.Vector3 jupiterDirection = inertialToCamera
+      .transformed(_earthInertial - _marsInertial);
+  late final vm.Vector3 jupiterRelativeAu = inertialToCamera
       .asRotationMatrix()
-      .transformed(_jupiterInertial - _marsInertial)
-      .normalized();
-  late final vm.Vector3 saturnDirection = inertialToCamera
+      .transformed(_jupiterInertial - _marsInertial);
+  late final vm.Vector3 saturnRelativeAu = inertialToCamera
       .asRotationMatrix()
-      .transformed(_saturnInertial - _marsInertial)
-      .normalized();
+      .transformed(_saturnInertial - _marsInertial);
 
-  /// 遠景の描画距離のみを圧縮し、方向と光の整合性を保つ。
+  vm.Vector3 get sunDirection => sunRelativeAu.normalized();
+  vm.Vector3 get earthDirection => earthRelativeAu.normalized();
+  vm.Vector3 get jupiterDirection => jupiterRelativeAu.normalized();
+  vm.Vector3 get saturnDirection => saturnRelativeAu.normalized();
+
+  /// 各天体から太陽への実AU。圧縮した表示位置を光源として使わない。
+  late final vm.Vector3 earthToSunAu = inertialToCamera
+      .asRotationMatrix()
+      .transformed(-_earthInertial);
+  late final vm.Vector3 jupiterToSunAu = inertialToCamera
+      .asRotationMatrix()
+      .transformed(-_jupiterInertial);
+  late final vm.Vector3 saturnToSunAu = inertialToCamera
+      .asRotationMatrix()
+      .transformed(-_saturnInertial);
+
+  /// カメラ基準の遠景表示offset。角径は実AU距離から別に求める。
   vm.Vector3 get sunOffset => sunDirection * sunDistance;
   vm.Vector3 get earthOffset => earthDirection * earthDistance;
   vm.Vector3 get jupiterOffset => jupiterDirection * jupiterDistance;
