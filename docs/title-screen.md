@@ -6,14 +6,17 @@
 Figmaの原稿は変更していない。
 
 初稿の手作りの地形・機体・星には、ユーザーから品質が不足しているとの評価があった。
-現在はタイトル専用に、NASAの観測画像と実測標高、詳細な宇宙機モデル、ESOの全天写真を使う
-写実寄りの表現へ作り直した。都市開発の箱庭の絵柄を変更する依頼とは扱わない。
+NASAの観測画像と実測標高、詳細な宇宙機モデル、ESOの全天写真を使う写実寄りの表現へ作り直し、
+ユーザーから「モデルはすごくいい」と採用評価を得た。追加依頼で運動と読込中の操作を変更し、
+ゲーム内の全球表示にもモデルを共有する。都市開発の近接箱庭は現在のトゥーン調を維持する。
 
 ## 起動と操作
 
 - 保存の読み込みと初回保存が成功した後に表示する。破損・未知形式・別タブの停止を迂回しない。
-- 天体・星空・宇宙機・シェーダーの準備が完了し、Sceneを表示してから開始操作を有効にする。
-  ロード中のタップやキー入力で、宇宙の表示を待たずにOPへ進まない。
+- タイトル・開始案内・開始操作は天体や宇宙機の読込を待たずに表示する。
+  ロード中のタップ/キー入力でも開始でき、破棄後に届くready/errorで画面を更新しない。
+- 背景だけを黒から900msでフェードインする。タイトル/CTAは背景のfadeに含めない。
+  動きを減らす設定では背景も即時表示。描画失敗時も開始操作を妨げない。
 - 画面全体のタップ/クリック、Enter/Spaceで開始する。通常は400msの暗転を挟み、
   連打・キーの押しっぱなしでも開始を一度だけ行う。動きを減らす設定では暗転を待たない。
 - 新規世界はタイトル→既存の3D序章/会話/命名→ゲーム。既存世界はタイトル→ゲーム。
@@ -56,9 +59,17 @@ NASA/ESOの原素材へ本作のMITを適用せず、各素材の条件とクレ
 
 ## 演出の動きと負荷の扱い
 
-火星の地表とカメラは固定する。星空の緩い回転、地球の自転、探査機の周回、雲の流れを続け、
-ロケットと小惑星は間隔を空けて横切る。演出は表示用の単調時刻を使い、ゲームの時計・乱数・保存と分離する。
-星空の回転はシェーダーの`sky_yaw`へ渡し、`sky_tilt`で銀河の傾きを調整する。
+火星の地表とカメラは固定する。太陽中心の共通慣性系で地球と火星を公転させ、
+火星の自転・軸傾斜の逆変換で見かけの天体方向を求める。星空は同じ変換で視線を戻して参照する。
+地球と太陽は常時画面へ固定せず、視錐台と火星による遮蔽で自然に現れたり隠れたりする。
+地表の明暗も画面内の太陽と同じ方向へ合わせる。地球と太陽の自転、独立した雲も継続する。
+
+ロケット・MRO・小惑星は火星中心を焦点とする傾斜楕円を途切れず周回する。
+位置と解析速度を同じ離心近点角から求め、ロケット/衛星の+Yを接線へ向ける。
+小惑星は周回姿勢に自転を重ねる。全軌道が最大地形半径の外を通り、カメラへ接近しすぎない。
+旧版の時間窓による出現/消失と直線の横切りは撤去する。機体/小惑星は従来より縮小する。
+周期・距離・縮尺は見える運動へ圧縮した美術仕様で、精密な天文暦や実際の機体の軌道ではない。
+演出は表示用の単調時刻を使い、ゲームの時計・乱数・保存と分離する。
 
 休止・非表示・動きを減らす設定ではTickerを止め、復帰直後の巨大な時間差を演出へ適用しない。
 通常の描画は最大30fps、Sceneの描画倍率は端末倍率を1〜2に制限する。
@@ -74,6 +85,16 @@ NASA/ESOの原素材へ本作のMITを適用せず、各素材の条件とクレ
 露光・ACES・Bloom・SMAA、機体の影と補助光、接地陰影をタイトルSceneで調整する。
 天体用のシェーダーは太陽とカメラの位置を受け取る。これらは美術上の設定であり、ゲームの生産計算ではない。
 30fpsと倍率上限を設定したことだけで、Android実機での性能達成とはしない。
+
+## ゲーム内の全球と近接表示
+
+惑星マップのBaseSceneでは地球/火星を採用済みモデルへ置換し、同じHDR太陽を周辺に表示する。
+全球モデルの根は地理座標と一致させ、タイトルの撮影用回転を適用しない。
+完成した火星施設のsnapshotはpresentationで既存と同じ写像を使う。別の進行式を描画へ導入しない。
+既存の都市と選択マーカーを維持し、火星の都市の地盤はMOLA標高へ合わせる。
+地球/火星の画像と地形は生存Scene間の弱参照cacheで共有し、光や雲の材質は各Sceneで独立する。
+太陽だけの利用でESO全天画像を読み込まない。惑星切替やzoomで画像/地形を再生成しない。
+近接した都市開発は別のCitySceneへ移る既存境界を維持し、現在のトゥーン箱庭を残す。月は旧モデルを維持する。
 
 ## セーブ進捗の反映と境界
 
@@ -103,6 +124,33 @@ MROは元GLBが約4MB、変換後のScene binaryが約39MBで、配布物では�
 通常ビルド・素材の再生成・検証の入口は[開発手順](development.md#タイトルの素材とbuild-hook)を参照する。
 
 ## 検証の現在地
+
+### 2026-10-26の追加修正
+
+- `mise exec -- bash tools/check.sh`で依存方向・内容検査・整形・静的解析・全665テストが成功。
+  UI試験は背景未準備のままTap/Enter/Space/Creditsが使えること、背景だけの900ms fade、
+  減motion、開始後/破棄後のready/error、初回保存ゲートを確認する。
+- 軌道の11テストで位置・解析速度・接線姿勢・周期の連続性、極端な時刻、火星地形との非交差、
+  カメラからの距離、実際の画角と火星遮蔽を含めた可視率を確認。
+  旧い低傾斜候補では一部が常時火星に隠れたため、カメラに対して見える傾斜へ調整した。
+- iPhone 17 Pro Max / iOS26.1 SimulatorのGPU試験は3ケースと後片付けが全成功。
+  最初の独立ケースでNASA3機体のload成功後のtemplate claimが返却済みであることを公開APIで確認。
+  デフォルトload成功時だけreleaseし、実nodeが表示中の素材を保持する。失敗したloadの自動解放と重複しない。
+  初回OP音声の非同期終了を待ってから試験を終えるようハーネスも整備した。
+- 起動直後の開始→OP、新規/発展景観、固定火星/カメラ、約1分後の地球/太陽の出現と明暗変化、
+  小さい宇宙機、背景復帰/再起動・保存・報酬の二重付与なしを実GPUで確認。
+- 全球Earth/Marsのリアルモデル、緯度経度と都市ピン、拡大/選択、旧Moon、Earthのトゥーン都市を確認。
+  都市はWidgetの存在だけでなく内部SceneViewとfallback表示の不存在を確認する。
+- Web releaseと独立Chromeで大小画面・実描画・開始・既存継続・オフライン/保存維持・外部取得なしを確認。
+  開始案内が先に出るため、描画撮影のハーネスは画面下部の火星の実画素を待ち、黒背景を描画成功と扱わない。
+
+現在の配信前証拠: [読込中の即時タイトル](screenshots/title-web-loading.png)、
+[初期の昼側](screenshots/title-ios-pristine.png)、[巡って現れた地球と太陽](screenshots/title-ios-orbital-phase.png)、
+[ゲームの全球Earth](screenshots/title-ios-game-earth.png)、[全球Mars](screenshots/title-ios-game-mars.png)、
+[近接の都市](screenshots/title-ios-game-city-toon.png)。
+Android実機・長時間のGPU負荷/メモリ/熱/電池・故障注入は未実施。所有の解放を、実機メモリ計測と混同しない。
+
+### 前回のモデル採用版の検証履歴
 
 初稿では全648テスト・静的解析・Web/iOSタイトル試験が成功したが、その後にユーザーが
 造形と星空の品質不足を指摘した。648件の結果は**作り直し前の初稿**の記録であり、
@@ -143,9 +191,41 @@ iPhone 17 Pro Max / iOS 26.1 Simulatorで最終のGPU通し試験が成功し、
 
 ## 反映と次の確認
 
-現在の作り直しを含むCI確認、develop→main反映、内部配信はこれから。
-mainの更新は既存設定によりGoogle Play internalとTestFlight内部配信を自動起動する。
-最終main SHA・PR・run・build・配信先・日時・記録artifactを照合し、反映と配信の結果を残す。
+今回の追加修正は上記検証後、作業ブランチ→develop→mainのCI・差分確認と新しい内部配信へ進める。
+以下の#48/#49・Android1301/iOS13.1は前回のモデル採用版の配信記録。
+
+2026-10-26、[PR #48](https://github.com/yakitama5/mars-terraforming/pull/48)の
+確定HEAD `50a12ad3e0dba176445f01e2387b4330ed0fabe3`で全4チェック成功・CLEAN後、
+develop `37317aa394a03007d148ddaff928322486562778`へ反映した。
+[PR #49](https://github.com/yakitama5/mars-terraforming/pull/49)でも全6チェック
+（flutter 2件、Android、iOS、Pages build/deploy）成功・CLEAN後にmainへ反映した。
+mainは`fdbd04f247dfc5f8c4185aed7c511409c87daa59`。
+検証したfeatureの全ファイルとmainのtreeが一致することを確認した。
+
+mainの内部配信runは[40213851837](https://github.com/yakitama5/mars-terraforming/actions/runs/40213851837)、
+Pagesは[40213851869](https://github.com/yakitama5/mars-terraforming/actions/runs/40213851869)、
+Prototype checksは[40213851847](https://github.com/yakitama5/mars-terraforming/actions/runs/40213851847)。
+全3 workflowが成功し、内部配信はprepare/checks/android/iosの全4 job成功。
+各runのheadが上記main SHAと一致した。
+
+- Android **1301**: Google Play internalの`completed`を新規readで確認後、
+  `android-release.json`のapp ID・main全SHA・run・build・配信先を照合。
+  検証時刻は2026-10-25T17:05:36Z（2026-10-26 02:05:36 JST）。
+  artifact `android-internal-1301`（ID12606514143）の取得ZIPとAPI digestのSHA-256が
+  `14108ac4dd45374846c6a49469aa20b7d58a1b233d7e7eb40d6da7ea0d12bff9`で一致。
+  Remove signing materialとPost Authenticate to Google Play through WIFが成功し、
+  一時credentialの削除ログも確認した。
+- iOS **13.1**: Apple実照合ログで`processing=VALID, internal=IN_BETA_TESTING,
+  expired=false, group_member=true`。Internal testersへの配信を確認。
+  `ios-release.json`のapp ID・main全SHA・run・build・配信先が一致。
+  検証時刻は2026-10-25T17:08:23Z（2026-10-26 02:08:23 JST）。
+  artifact `ios-testflight-13.1`（ID12606838885）のZIP/API/uploadログのSHA-256が
+  `75ab23aebaa0af0d7ccc50be0a6517c149a7ece4ca7a435b805b7ac620ac40ff`で一致。
+  一時keychain削除、profile削除を含むlaneと、p12/profile/asc.p8のtempdir削除が成功。
+- 公開`deployment.json`のmain/develop/runが上記SHAと40213851869に完全一致。
+  公開通常版・試遊版の両方で独立Chromeのタイトル試験が自然終了0。
+  大小画面・実3D・クリック→OP入口・既存再開・Enter/Space・オフライン/保存維持・外部取得なしを確認した。
+
 記録だけのmain再pushによる追加配信を避け、配信後の補足はローカル記録とPR本文にも残す。
 
 Android実機での最終試遊はユーザーが行う予定。まず更新されたビルドを確認し、

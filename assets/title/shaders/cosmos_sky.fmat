@@ -6,6 +6,7 @@ material {
     { type: float, name: sky_saturation, default: 0.62 },
     { type: float, name: sky_yaw, default: -1.15 },
     { type: float, name: sky_tilt, default: -0.55 },
+    { type: float, name: body_tilt, default: 0.0 },
   ],
 }
 
@@ -16,6 +17,11 @@ sky {
     vec3 yawed = vec3(cy * direction.x + sy * direction.z,
                      direction.y,
                      -sy * direction.x + cy * direction.z);
+    // 視線を火星の身体固定系から慣性系へ戻す。天体方向と同じ軸傾斜。
+    float cb = cos(material_params.body_tilt);
+    float sb = sin(material_params.body_tilt);
+    yawed = vec3(yawed.x, cb * yawed.y - sb * yawed.z,
+                 sb * yawed.y + cb * yawed.z);
     float ct = cos(material_params.sky_tilt);
     float st = sin(material_params.sky_tilt);
     direction = vec3(ct * yawed.x - st * yawed.y,

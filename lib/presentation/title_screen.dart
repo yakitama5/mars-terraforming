@@ -8,6 +8,12 @@ import '../domain/game_state.dart';
 import '../rendering/title_scene.dart';
 import 'title_scene_data.dart';
 
+typedef TitleSceneBuilder = Widget Function(
+  BuildContext context,
+  VoidCallback onReady,
+  ValueChanged<Object> onError,
+);
+
 /// 起動ごとの入口。開始の操作や演出状態はセーブしない。
 class TitleScreen extends StatefulWidget {
   const TitleScreen({
@@ -15,11 +21,14 @@ class TitleScreen extends StatefulWidget {
     required this.game,
     required this.onStart,
     this.renderScene = true,
+    this.sceneBuilder,
   });
 
   final GameState game;
   final VoidCallback onStart;
   final bool renderScene;
+  @visibleForTesting
+  final TitleSceneBuilder? sceneBuilder;
 
   @override
   State<TitleScreen> createState() => _TitleScreenState();
@@ -29,12 +38,12 @@ class _TitleScreenState extends State<TitleScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _departure;
   bool _starting = false;
-  bool _sceneReady = false;
+  bool _backgroundReady = false;
 
   @override
   void initState() {
     super.initState();
-    _sceneReady = !widget.renderScene;
+    _backgroundReady = !widget.renderScene && widget.sceneBuilder == null;
     _departure = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -42,10 +51,21 @@ class _TitleScreenState extends State<TitleScreen>
   }
 
   Future<void> _start() async {
-    if (_starting || !_sceneReady) return;
+    if (_starting) return;
     setState(() => _starting = true);
-    if (!MediaQuery.disableAnimationsOf(context)) await _departure.forward();
+    if (!MediaQuery.disableAnimationsOf(context)) {
+      try {
+        await _departure.forward().orCancel;
+      } on TickerCanceled {
+        return;
+      }
+    }
     if (mounted) widget.onStart();
+  }
+
+  void _revealBackground() {
+    if (!mounted || _starting || _backgroundReady) return;
+    setState(() => _backgroundReady = true);
   }
 
   @override
@@ -88,7 +108,7 @@ class _TitleScreenState extends State<TitleScreen>
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xff030812),
+    backgroundColor: Colors.black,
     body: Stack(
       fit: StackFit.expand,
       children: [
@@ -110,47 +130,59 @@ class _TitleScreenState extends State<TitleScreen>
           child: Semantics(
             excludeSemantics: true,
             button: true,
-            label: _sceneReady ? 'タップまたはクリックしてスタート' : 'タイトル画面を準備しています',
-            enabled: _sceneReady,
-            onTap: _sceneReady ? _start : null,
+            label: 'タップまたはクリックしてスタート',
+            enabled: !_starting,
+            onTap: _starting ? null : _start,
             child: GestureDetector(
-              key: _sceneReady
-                  ? const Key('title-start')
-                  : const Key('title-loading'),
+              key: const Key('title-start'),
               behavior: HitTestBehavior.opaque,
-              onTap: _sceneReady ? _start : null,
+              onTap: _starting ? null : _start,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (widget.renderScene)
-                    TitleScene(
-                      snapshot: buildTitleSceneSnapshot(widget.game),
-                      onReady: () {
-                        if (mounted) setState(() => _sceneReady = true);
-                      },
-                      onError: (_) {
-                        if (mounted) setState(() => _sceneReady = true);
-                      },
-                    )
-                  else
-                    const ColoredBox(color: Color(0xff030812)),
-                  const IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0x55020710),
-                            Color(0x00020710),
-                            Color(0x00020710),
-                            Color(0x55020710),
+                  if (widget.renderScene || widget.sceneBuilder != null)
+                    AnimatedOpacity(
+                      key: const Key('title-background-fade'),
+                      opacity: _backgroundReady ? 1 : 0,
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 900),
+                      curve: Curves.easeOut,
+                      child: IgnorePointer(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            widget.sceneBuilder?.call(
+                                  context,
+                                  _revealBackground,
+                                  (_) => _revealBackground(),
+                                ) ??
+                                TitleScene(
+                                  snapshot: buildTitleSceneSnapshot(
+                                    widget.game,
+                                  ),
+                                  onReady: _revealBackground,
+                                  onError: (_) => _revealBackground(),
+                                ),
+                            const DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0x55020710),
+                                    Color(0x00020710),
+                                    Color(0x00020710),
+                                    Color(0x55020710),
+                                  ],
+                                  stops: [0, .32, .77, 1],
+                                ),
+                              ),
+                            ),
                           ],
-                          stops: [0, .32, .77, 1],
                         ),
                       ),
                     ),
-                  ),
                   IgnorePointer(
                     child: SafeArea(
                       child: LayoutBuilder(
@@ -242,9 +274,7 @@ class _TitleScreenState extends State<TitleScreen>
                                 child: Column(
                                   children: [
                                     Text(
-                                      !_sceneReady
-                                          ? 'A NEW HORIZON AWAITS'
-                                          : kIsWeb
+                                      kIsWeb
                                           ? 'CLICK TO START'
                                           : 'TAP TO START',
                                       textAlign: TextAlign.center,
@@ -263,11 +293,7 @@ class _TitleScreenState extends State<TitleScreen>
                                     ),
                                     SizedBox(height: 8 * scale),
                                     Text(
-                                      !_sceneReady
-                                          ? '星々の向こうへ'
-                                          : kIsWeb
-                                          ? 'クリックしてはじめる'
-                                          : 'タップしてはじめる',
+                                      kIsWeb ? 'クリックしてはじめる' : 'タップしてはじめる',
                                       style: TextStyle(
                                         fontSize: (9 * scale).clamp(10, 14),
                                         letterSpacing: 1.5 * scale,

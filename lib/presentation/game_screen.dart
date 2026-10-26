@@ -27,6 +27,7 @@ import 'research_display.dart';
 import 'research_developments.dart';
 import 'resource_overview_dialog.dart';
 import 'strategy_widgets.dart';
+import 'title_scene_data.dart';
 import 'title_screen.dart';
 
 class GameScreen extends StatefulWidget {
@@ -381,6 +382,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     moon: planet == 'moon',
                     earthLevel: game.earthLevel,
                     marsHabitats: game.marsHabitats,
+                    marsSnapshot: buildTitleSceneSnapshot(game),
                     hasCargo: planet == 'moon'
                         ? game.moonKits > 0
                         : game.marsKits > 0,

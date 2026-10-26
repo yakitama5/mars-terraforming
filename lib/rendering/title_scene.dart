@@ -35,7 +35,7 @@ class _TitleSceneState extends State<TitleScene>
   TitleCosmosModels? _cosmos;
   late TitleSceneSnapshot _displayedSnapshot;
   TitleMarsModel? _mars;
-  fs.Node? _earth, _earthGlobe, _rocket, _satellite;
+  fs.Node? _earth, _earthGlobe, _sun, _sunGlobe, _rocket, _satellite;
   final _asteroids = <fs.Node>[];
   late final Ticker _ticker;
   Duration? _lastTick;
@@ -46,8 +46,6 @@ class _TitleSceneState extends State<TitleScene>
   int _generation = 0;
   static final _cameraPosition = vm.Vector3(0, 1, 14);
   static final _marsPosition = vm.Vector3(0, -7.4, 0);
-  static final _sunPosition = vm.Vector3(11, 5.5, -8);
-  static final _sunDirection = (_sunPosition - _marsPosition).normalized();
 
   @override
   void initState() {
@@ -112,27 +110,23 @@ class _TitleSceneState extends State<TitleScene>
       _earth = models.earth()
         ..name = 'title-earth'
         ..position = vm.Vector3(-17, 5.8, -22)
-        ..scale = vm.Vector3.all(.70);
+        ..scale = vm.Vector3.all(1.05);
       _earthGlobe = _earth!.getChildByName('title-earth-globe');
       _rocket = spacecraft.rocket
         ..name = 'title-rocket'
-        ..scale = vm.Vector3.all(.30);
+        ..scale = vm.Vector3.all(.035);
       _satellite = spacecraft.satellite
         ..name = 'title-satellite'
-        ..scale = vm.Vector3.all(.24);
-      final sun = cosmos.sun(radius: .32)
-        ..position = _sunPosition
-        ..rotation = vm.Quaternion.fromTwoVectors(
-          vm.Vector3(0, 0, 1),
-          (_cameraPosition - _sunPosition).normalized(),
-        );
-      for (final node in [_mars!.root, _earth!, sun, _rocket!, _satellite!]) {
+        ..scale = vm.Vector3.all(.045);
+      _sun = cosmos.sun(radius: 1.1)..name = 'title-sun';
+      _sunGlobe = _sun!.getChildByName('白熱した太陽光球');
+      for (final node in [_mars!.root, _earth!, _sun!, _rocket!, _satellite!]) {
         pending.add(node);
       }
       for (var i = 0; i < 2; i++) {
         final node =
             (i == 0 ? spacecraft.asteroid : spacecraft.asteroid.clone())
-              ..scale = vm.Vector3.all(.17 + i * .11);
+              ..scale = vm.Vector3.all(.045 + i * .015);
         _asteroids.add(node);
         pending.add(node);
       }
@@ -164,10 +158,10 @@ class _TitleSceneState extends State<TitleScene>
       );
       pending.antiAliasingMode = fs.AntiAliasingMode.smaa;
       pending.directionalLight = fs.DirectionalLight(
-        direction: -_sunDirection,
         color: vm.Vector3(1, .94, .85),
         intensity: 4.0,
         castsShadow: true,
+        cacheStaticShadows: false,
         shadowCascadeCount: 1,
         shadowMapResolution: 2048,
         shadowMaxDistance: 70,
@@ -241,48 +235,47 @@ class _TitleSceneState extends State<TitleScene>
 
   void _animate() {
     final motion = TitleSceneMotion(_seconds);
-    _cosmos?.update(_seconds);
+    final sunPosition = _marsPosition + motion.sunOffset;
+    final sunFacing = vm.Quaternion.fromTwoVectors(
+      vm.Vector3(0, 0, 1),
+      (_cameraPosition - sunPosition).normalized(),
+    );
+    _cosmos?.update(
+      _seconds,
+      skyYaw: motion.starAngle,
+      bodyTilt: -TitleSceneMotion.marsAxialTilt,
+    );
+    _sun
+      ?..position = sunPosition
+      ..rotation = sunFacing;
+    _sunGlobe?.rotation = sunFacing.conjugated() * motion.sunRotation;
+    // 遠景の位置と地表の明暗を同じ太陽方向で動かす。
+    // 既存のlightを更新し、毎フレームcomponentや影atlasを作り直さない。
+    _scene?.directionalLight?.direction = -motion.sunDirection;
+    _earth?.position = _marsPosition + motion.earthOffset;
     _models?.updateView(
       cameraPosition: _cameraPosition,
-      sunDirection: _sunDirection,
-      sunPosition: _sunPosition,
+      sunDirection: motion.sunDirection,
+      sunPosition: sunPosition,
       seconds: _seconds,
+      inertialToBody: motion.inertialToBody,
     );
-    _earthGlobe?.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(0, 1, .15),
-      motion.earthAngle - 2.1,
-    );
-    final orbit = motion.satelliteAngle - .6;
+    _earthGlobe?.rotation = motion.earthRotation;
+    final satellite = motion.satellite;
     _satellite
-      ?..position = vm.Vector3(
-        math.sin(orbit) * 11.2,
-        -3.2 + math.cos(orbit) * 4,
-        math.cos(orbit) * 9.3,
-      )
-      ..rotation = vm.Quaternion.euler(.9 - orbit, -.35, -.2);
+      ?..position = _marsPosition + satellite.position
+      ..rotation = satellite.orientation;
     final rocket = motion.rocket;
-    _rocket?.visible = rocket != null;
-    if (rocket != null) {
-      _rocket
-        ?..position = vm.Vector3(
-          -11 + rocket * 22,
-          -.3 + math.sin(rocket * math.pi) * 1.0,
-          3,
-        )
-        ..rotation = vm.Quaternion.euler(0, .3, -1.35);
-    }
+    _rocket
+      ?..position = _marsPosition + rocket.position
+      ..rotation = rocket.orientation;
     for (var i = 0; i < _asteroids.length; i++) {
-      final progress = motion.asteroid(i);
-      final asteroid = _asteroids[i]..visible = progress != null;
-      if (progress != null) {
-        asteroid
-          ..position = vm.Vector3(
-            14 - progress * 29,
-            4.5 - progress * 5.5 + i * .7,
-            -1 + i * 3.0,
-          )
-          ..rotation = vm.Quaternion.euler(_seconds * .2, _seconds * .17, .4);
-      }
+      final orbit = motion.asteroid(i);
+      _asteroids[i]
+        ..position = _marsPosition + orbit.position
+        ..rotation =
+            orbit.orientation *
+            vm.Quaternion.euler(_seconds * .2, _seconds * .17, .4);
     }
   }
 
@@ -299,6 +292,8 @@ class _TitleSceneState extends State<TitleScene>
     _mars = null;
     _earth = null;
     _earthGlobe = null;
+    _sun = null;
+    _sunGlobe = null;
     _rocket = null;
     _satellite = null;
     _asteroids.clear();

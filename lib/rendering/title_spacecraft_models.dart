@@ -26,7 +26,7 @@ class TitleSpacecraftModels {
   static Future<TitleSpacecraftModels> load({
     SpacecraftSceneLoader? loader,
   }) async {
-    final loadScene = loader ?? fs.loadScene;
+    final loadScene = loader ?? _loadBundledScene;
     final loaded = await Future.wait([
       loadScene(satelliteAsset),
       loadScene(rocketAsset),
@@ -57,6 +57,14 @@ class TitleSpacecraftModels {
       rocket: _normalize(loaded[1], name: 'nasa-saturn-v', extent: 8),
       asteroid: _normalize(loaded[2], name: 'nasa-bennu', extent: 2),
     );
+  }
+
+  static Future<fs.Node> _loadBundledScene(String sourcePath) async {
+    final node = await fs.loadScene(sourcePath);
+    // 返したnodeが描画中の素材を所有する。タイトル終了後までテンプレートの
+    // 強参照を残さない。失敗したloadのclaimはScene側が既に解放している。
+    await fs.releaseScene(sourcePath);
+    return node;
   }
 
   static fs.Node _normalize(

@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart' as fs;
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'orbital_celestial_models.dart';
 import 'planet_geometry.dart';
 import 'planet_models.dart';
+import 'title_scene_snapshot.dart';
 
 export 'planet_models.dart' show SceneCity;
 
@@ -22,6 +24,7 @@ class BaseScene extends StatefulWidget {
     this.cities = const [],
     this.selectedCityId,
     this.onCitySelected,
+    this.marsSnapshot = TitleSceneSnapshot.pristine,
     super.key,
   });
 
@@ -32,6 +35,7 @@ class BaseScene extends StatefulWidget {
   final List<SceneCity> cities;
   final String? selectedCityId;
   final ValueChanged<String>? onCitySelected;
+  final TitleSceneSnapshot marsSnapshot;
 
   @override
   State<BaseScene> createState() => _BaseSceneState();
@@ -40,6 +44,9 @@ class BaseScene extends StatefulWidget {
 class _BaseSceneState extends State<BaseScene> {
   fs.Scene? _scene;
   PlanetModels? _models;
+  OrbitalCelestialModels? _celestial;
+  fs.EnvironmentSettings? _orbitalEnvironment;
+  _OrbitalAnimation? _animation;
   fs.Node? _earthRoot;
   fs.Node? _marsRoot;
   fs.Node? _moonRoot;
@@ -56,12 +63,23 @@ class _BaseSceneState extends State<BaseScene> {
   double _elevation = 0.35;
   double _zoom = 1;
   double _gestureZoom = 1;
+  double _seconds = 0;
+  bool _reduceMotion = false;
+  int _generation = 0;
+  vm.Vector3 _cameraPosition = vm.Vector3(0, 0, 18);
+  vm.Vector3 _sunPosition = vm.Vector3(-4, 3, 6.5);
 
   @override
   void initState() {
     super.initState();
     _resetView();
     _initialize();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
   }
 
   List<SceneCity> get _cities => widget.cities.isNotEmpty
@@ -117,10 +135,15 @@ class _BaseSceneState extends State<BaseScene> {
         ];
 
   Future<void> _initialize() async {
+    final generation = ++_generation;
     fs.Scene? pending;
     try {
       await fs.Scene.initializeStaticResources();
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
+      final celestial = await OrbitalCelestialModels.load(
+        marsSnapshot: widget.marsSnapshot,
+      );
+      if (!mounted || generation != _generation) return;
       pending = fs.Scene()
         ..environmentIntensity = 0.82
         ..directionalLight = fs.DirectionalLight(
@@ -129,16 +152,32 @@ class _BaseSceneState extends State<BaseScene> {
         );
       final models = PlanetModels();
       _models = models;
-      _earthRoot = models.globe(true);
-      _marsRoot = models.globe(false);
+      _celestial = celestial;
+      _orbitalEnvironment = fs.EnvironmentSettings(
+        environment: fs.EnvironmentMap.constantDiffuse(
+          vm.Vector3(.1, .12, .16),
+        ),
+        environmentIntensity: .55,
+        toneMapping: fs.ToneMappingMode.aces,
+        exposure: .95,
+        bloomEnabled: true,
+        bloomThreshold: 1.05,
+        bloomIntensity: .18,
+        bloomScatter: .82,
+      );
+      _earthRoot = celestial.earth;
+      _marsRoot = celestial.mars;
       _moonRoot = models.globe(false, moon: true);
       _rocket = models.rocket()..scale = vm.Vector3.all(0.62);
+      _animation = _OrbitalAnimation(_advanceVisuals);
       pending
         ..add(_earthRoot!)
         ..add(_marsRoot!)
         ..add(_moonRoot!)
+        ..add(celestial.sun)
         ..add(models.orbit())
-        ..add(_rocket!);
+        ..add(_rocket!)
+        ..addTickListener(_animation!);
       _scene = pending;
       _syncVisuals(force: true);
       setState(() {
@@ -146,11 +185,17 @@ class _BaseSceneState extends State<BaseScene> {
         _error = null;
       });
     } catch (error, stack) {
+      pending?.removeAll();
       pending?.dispose();
       debugPrint('FlutterScene initialization: $error\n$stack');
-      if (mounted) {
+      if (mounted && generation == _generation) {
         setState(() {
           _scene = null;
+          _celestial = null;
+          _models = null;
+          _orbitalEnvironment = null;
+          _animation = null;
+          _earthRoot = _marsRoot = _moonRoot = _citiesRoot = _rocket = null;
           _error = error;
           _loading = false;
         });
@@ -162,9 +207,23 @@ class _BaseSceneState extends State<BaseScene> {
     final scene = _scene;
     final models = _models;
     if (scene == null || models == null) return;
+    final celestial = _celestial;
+    if (celestial != null && celestial.updateMars(widget.marsSnapshot)) {
+      if (_marsRoot != null) scene.remove(_marsRoot!);
+      _marsRoot = celestial.mars;
+      scene.add(_marsRoot!);
+    }
     _earthRoot?.visible = widget.earth && !widget.moon;
     _marsRoot?.visible = !widget.earth && !widget.moon;
     _moonRoot?.visible = widget.moon;
+    celestial?.sun.visible = !widget.moon;
+    if (force || _shownMoon != widget.moon) {
+      // The Moon keeps its existing lighting/material treatment. Real orbital
+      // globes share the title's restrained HDR response, without its sky map.
+      scene.environmentSettings = widget.moon
+          ? fs.EnvironmentSettings(environmentIntensity: .82)
+          : _orbitalEnvironment!;
+    }
     final cities = _cities;
     final unchanged =
         _shownCities.length == cities.length &&
@@ -190,6 +249,13 @@ class _BaseSceneState extends State<BaseScene> {
           moon: widget.moon,
           selected: cities[i].id == widget.selectedCityId,
           cargo: widget.hasCargo && i == 0,
+          surfaceRadius: !widget.earth && !widget.moon && celestial != null
+              ? celestial.marsSurfaceRadius(
+                      cities[i].latitude,
+                      cities[i].longitude,
+                    ) +
+                    .01
+              : 3.11,
         ),
       );
     }
@@ -238,9 +304,32 @@ class _BaseSceneState extends State<BaseScene> {
 
   @override
   void dispose() {
+    _generation++;
+    final animation = _animation;
+    if (animation != null) _scene?.removeTickListener(animation);
     _scene?.removeAll();
     _scene?.dispose();
+    _scene = null;
+    _celestial = null;
+    _models = null;
+    _orbitalEnvironment = null;
+    _animation = null;
+    _earthRoot = _marsRoot = _moonRoot = _citiesRoot = _rocket = null;
     super.dispose();
+  }
+
+  void _advanceVisuals(double deltaSeconds) {
+    if (!mounted || _loading || widget.moon || _reduceMotion) return;
+    if (deltaSeconds.isFinite && deltaSeconds > 0) {
+      _seconds += deltaSeconds.clamp(0.0, .1);
+    }
+    // SceneView owns the capped render tick. Updating uniforms/cloud transforms
+    // does not rebuild widgets, reload textures, or regenerate geometry.
+    _celestial?.updateView(
+      cameraPosition: _cameraPosition,
+      sunPosition: _sunPosition,
+      seconds: _seconds,
+    );
   }
 
   fs.OrthographicCamera _camera() {
@@ -253,9 +342,38 @@ class _BaseSceneState extends State<BaseScene> {
     // player rotates the planet. The orbit is a schematic, not flight physics.
     final right = vm.Vector3(-direction.z, 0, direction.x)..normalize();
     final up = right.cross(direction)..normalize();
+    _cameraPosition = direction * 18;
+    // A fixed peripheral Sun is an orbital-map composition, not a solar-system
+    // scale diagram. It has no hit target and stays outside the globe/city pins.
+    _sunPosition =
+        right * (-4.2 / _zoom) + up * (1.45 / _zoom) + direction * 6.5;
+    final sun = _celestial?.sun;
+    if (sun != null) {
+      final radius = .19 / _zoom;
+      sun
+        ..position = _sunPosition
+        ..scale = vm.Vector3.all(radius)
+        // A magnified globe can fill the viewport. Remove the small Sun before
+        // its bright disc could cross any city marker or the planet silhouette.
+        ..visible =
+            !widget.moon &&
+            math.sqrt(4.2 * 4.2 + 1.45 * 1.45) / _zoom > 3.1 + radius + .5
+        ..rotation = vm.Quaternion.fromTwoVectors(
+          vm.Vector3(0, 0, 1),
+          // Orthographic view rays are parallel, including at the frame edge.
+          direction,
+        );
+    }
     _scene?.directionalLight = fs.DirectionalLight(
-      direction: right * 0.5 - up * 0.7 - direction * 0.8,
-      intensity: 2.6,
+      direction: widget.moon
+          ? right * 0.5 - up * 0.7 - direction * 0.8
+          : -_sunPosition.normalized(),
+      intensity: widget.moon ? 2.6 : 4,
+    );
+    _celestial?.updateView(
+      cameraPosition: _cameraPosition,
+      sunPosition: _sunPosition,
+      seconds: _seconds,
     );
     _rocket?.position = right * 3.65 + up * 0.85 + direction * 0.8;
     _rocket?.rotation = vm.Quaternion.fromTwoVectors(
@@ -263,7 +381,7 @@ class _BaseSceneState extends State<BaseScene> {
       (up + right * 0.3).normalized(),
     );
     return fs.OrthographicCamera(
-      position: direction * 18,
+      position: _cameraPosition,
       target: vm.Vector3.zero(),
       projection: fs.OrthographicProjection(
         size: fs.OrthographicSize.contain(10.6 / _zoom, 8.6 / _zoom),
@@ -528,6 +646,15 @@ class _BaseSceneState extends State<BaseScene> {
       ),
     ),
   );
+}
+
+class _OrbitalAnimation extends fs.SceneTickListener {
+  const _OrbitalAnimation(this.advance);
+
+  final void Function(double) advance;
+
+  @override
+  void beforeTick(double deltaSeconds) => advance(deltaSeconds);
 }
 
 class _StarsPainter extends CustomPainter {
