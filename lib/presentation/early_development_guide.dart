@@ -32,6 +32,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
   String _taskStatus(String id) {
     final plan = _plan(id);
     if (plan != null) {
+      if (plan.requiresManualStart) return '要着手 · ${plan.stopReason}';
       if (_isStopped(plan)) return '停止中 · ${_stopReason(plan)}';
       return plan.status == 'running'
           ? '進行中 · 残り ${gameDuration(plan.remainingMs)}'
@@ -74,7 +75,10 @@ class EarlyDevelopmentGuide extends StatelessWidget {
     OnboardingStatus.running => '進行中 · 残り ${gameDuration(step.remainingMs)}',
     OnboardingStatus.queued =>
       step.reason.isEmpty ? '予約済み · 設備の順番待ち' : '予約済み · ${step.reason}',
-    OnboardingStatus.stopped => '停止中 · ${step.reason}',
+    OnboardingStatus.stopped =>
+      step.reason.startsWith('着手待ち')
+          ? '要着手 · ${step.reason}'
+          : '停止中 · ${step.reason}',
     OnboardingStatus.locked => '準備中 · ${step.reason}',
     OnboardingStatus.available => '次に取り組めます',
   };
@@ -457,7 +461,7 @@ class EarlyDevelopmentGuide extends StatelessWidget {
           ? () => onResearch(labWork.taskId)
           : () => onAgency(0);
       if (!labWork.definition.unique) {
-        actionLabel = '人員育成を確認する';
+        actionLabel = '研究施設を確認する';
         actionIcon = Icons.groups_outlined;
       }
     } else if (shortResearch.isNotEmpty) {
@@ -466,18 +470,10 @@ class EarlyDevelopmentGuide extends StatelessWidget {
       detail =
           '${shortResearch.first.name}：${_taskStatus(shortResearch.first.id)}';
       open = () => onResearch(shortResearch.first.id);
-    } else if (game.specialistCount == GameContent.initialSpecialists) {
-      expression = MinaExpression.delight;
-      focusedTask = 'train_specialists';
-      title = '次の研究に向け人員育成も検討';
-      detail = _taskStatus('train_specialists');
-      open = () => onAgency(0);
-      actionLabel = '人員育成を確認する';
-      actionIcon = Icons.groups_outlined;
     } else {
       expression = MinaExpression.delight;
       title = '研究と都市の次の投資を選ぶ';
-      detail = '施設と人員でRPを蓄え、解放した技術を建設・製造へ';
+      detail = '研究施設でRPを蓄え、解放した技術を建設・製造へ';
       open = () => onResearch(
         game.discoveredResearchIds
                 .where((id) => !game.research.contains(id))
@@ -487,7 +483,14 @@ class EarlyDevelopmentGuide extends StatelessWidget {
     }
     if (guide.isComplete) expression = MinaExpression.joy;
     final focusedPlan = focusedTask == null ? null : _plan(focusedTask);
-    if (focusedPlan != null && _isStopped(focusedPlan)) {
+    if (focusedPlan?.requiresManualStart == true) {
+      title = '${focusedPlan!.definition.name}の着手を確認';
+      detail = '要着手 · 条件を確認して手動で開始できます';
+      open = () =>
+          onOperations(0, facilityId: focusedPlan.definition.facilityId);
+      actionLabel = '計画を確認して着手';
+      actionIcon = Icons.play_arrow_outlined;
+    } else if (focusedPlan != null && _isStopped(focusedPlan)) {
       expression = MinaExpression.sorrow;
       title = '${focusedPlan.definition.name}の停止を確認・再開';
       detail = '停止中 · ${_stopReason(focusedPlan)}';

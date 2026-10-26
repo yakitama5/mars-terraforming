@@ -244,8 +244,7 @@ void main() {
       final expected =
           paidMoney +
           game.state.netPerMinute * paidDuration +
-          360 * GameState.moneyScale -
-          52 * GameState.moneyScale;
+          52 * -GameState.moneyScale; // Existing balance exceeds its new cap; the reward cannot accumulate.
       expect(resumed.state.moneyUnits, expected);
       expect(resumed.state.plans.single.completedRuns, 1);
       expect(resumed.state.plans.single.status, 'running');

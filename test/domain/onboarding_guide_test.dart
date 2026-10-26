@@ -60,12 +60,14 @@ void main() {
         ..money = 100000
         ..researchPointUnits = 0,
     );
-    engine.enqueue('life_support');
+    expect(engine.enqueue('life_support'), isNotNull);
     expect(
       step(engine.state, 'first_research').status,
-      OnboardingStatus.queued,
+      OnboardingStatus.available,
     );
     engine.advanceBy(const Duration(minutes: 10));
+    expect(engine.state.research, isEmpty);
+    expect(engine.unlockResearch('life_support'), isNull);
     expect(
       step(engine.state, 'first_research').status,
       OnboardingStatus.completed,
@@ -98,7 +100,10 @@ void main() {
         ..money = 100000
         ..researchPointUnits = 0,
     );
-    engine.enqueue('life_support');
+    engine.state.plans.add(
+      PlannedTask(id: 'old-research', taskId: 'life_support')
+        ..requiresManualStart = true,
+    );
     engine.cancelQueued(engine.state.plans.last.id);
     expect(
       step(engine.state, 'first_research').status,
@@ -109,11 +114,13 @@ void main() {
 
   test('RP accumulation is a reservation and a paused source is stopped', () {
     final engine = GameEngine(GameState.initial(epoch)..researchPointUnits = 0);
-    engine.assignResearchers(0);
-    engine.enqueue('life_support');
+    engine.state.plans.add(
+      PlannedTask(id: 'old-research', taskId: 'life_support')
+        ..requiresManualStart = true,
+    );
     final waiting = step(engine.state, 'first_research');
-    expect(waiting.status, OnboardingStatus.queued);
-    expect(waiting.reason, contains('研究ポイント待ち'));
+    expect(waiting.status, OnboardingStatus.stopped);
+    expect(waiting.reason, contains('着手待ち'));
     expect(waiting.destination, OnboardingDestination.operations);
     engine.setFacilityEnabled('lab', false);
     expect(
@@ -310,9 +317,10 @@ void main() {
 
     // No injected money or milestones: earn in both facilities, compare a
     // coastal plot and move development ahead of future contract iterations.
-    expect(engine.enqueue('factory_contract', repeats: null), isNull);
+    expect(engine.enqueue('factory_contract', repeats: 3), isNull);
     expect(engine.enqueue('launch_contract', repeats: null), isNull);
     expect(engine.enqueue('life_support'), isNull);
+    until(() => engine.state.currentPlanFor('factory') == null);
     final house = prioritize(
       engine.enqueueDistrict('earth_delta', 0, 'housing'),
     );

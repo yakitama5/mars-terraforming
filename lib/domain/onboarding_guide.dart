@@ -60,7 +60,10 @@ class OnboardingGuide {
           : OnboardingStatus.available;
       var reason = '';
       if (!completed && plan != null) {
-        if (state.facilities[plan.definition.facilityId] != true) {
+        if (plan.requiresManualStart) {
+          status = OnboardingStatus.stopped;
+          reason = '着手待ち：条件を確認して手動で開始';
+        } else if (state.facilities[plan.definition.facilityId] != true) {
           status = OnboardingStatus.stopped;
           reason = '設備休止中・設備配分から手動で再開';
         } else if (plan.stopReason.startsWith('研究ポイント待ち')) {
@@ -144,10 +147,11 @@ class OnboardingGuide {
       List.unmodifiable([
         step(
           id: 'first_research',
-          story: '研究所で生まれた知見を、人が暮らせる区画へ。都市の研究者が最初の一歩を支えます。',
+          story: '研究所で生まれた知見を、人が暮らせる区画へ。都市の研究施設が最初の一歩を支えます。',
           title: GameContent.tasks['life_support']!.name,
           timeHint: '0〜5分',
-          lesson: '研究者を配置した施設で共通RPを蓄え、必要量を使って技術を解放します。解放後は、施設や機体の建設・製造へ進めます。',
+          lesson:
+              '稼働中の研究施設で共通RPを蓄え、都市条件と必要量をそろえて技術を解放します。解放後は、施設や機体の建設・製造へ進めます。',
           completed: state.research.contains('life_support'),
           destination: OnboardingDestination.research,
           target: 'life_support',
@@ -158,7 +162,7 @@ class OnboardingGuide {
           story: '宇宙への挑戦を支えるのは、${state.cityName('earth_delta')}で暮らす人々です。',
           title: '地球に最初の地区を建設',
           timeHint: '0〜10分・研究と並行',
-          lesson: '施設→六角区画→建設予約。土地と隣接の効果を比較しましょう。受注と建設は工場を共用します。',
+          lesson: '施設→六角区画→着工。土地と隣接の効果を比較しましょう。受注と建設は工場を共用します。',
           completed: hasEarthDistrict,
           destination: OnboardingDestination.city,
           target: earthConstruction?.cityId ?? 'earth_delta',

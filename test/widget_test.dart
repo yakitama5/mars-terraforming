@@ -404,7 +404,7 @@ void main() {
   });
 
   testWidgets(
-    'discovered research can wait for common RP without another cash bill',
+    'discovered research shows RP shortage without creating a reservation',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1;
@@ -450,10 +450,15 @@ void main() {
       await tester.ensureVisible(
         find.byKey(const Key('queue-automated_fabrication')),
       );
-      await tester.tap(find.byKey(const Key('queue-automated_fabrication')));
-      await tester.pumpAndSettle();
-      expect(controller.state.plans.single.taskId, 'automated_fabrication');
-      expect(controller.state.plans.single.status, 'queued');
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('queue-automated_fabrication')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(controller.state.plans, isEmpty);
       expect(
         controller.state.research,
         contains(ResearchCatalog.idForCatalog('M01')),
@@ -462,7 +467,6 @@ void main() {
         controller.state.research,
         isNot(contains('automated_fabrication')),
       );
-      expect(controller.state.plans.single.stopReason, contains('研究ポイント待ち'));
       expect(controller.state.moneyUnits, moneyBefore);
       expect(tester.takeException(), isNull);
     },

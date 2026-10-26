@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mars_terraforming/application/game_controller.dart';
 import 'package:mars_terraforming/domain/save_repository.dart';
+import 'package:mars_terraforming/domain/game_state.dart';
 import 'package:mars_terraforming/presentation/plan_forecast_dialog.dart';
 
 class _MemorySave implements SaveRepository {
@@ -35,7 +36,10 @@ void main() {
       await controller.command((engine) {
         engine.state.money = 5000;
         engine.state.researchPointUnits = 0;
-        engine.enqueue('life_support');
+        engine.state.plans.add(
+          PlannedTask(id: 'preserved-research', taskId: 'life_support')
+            ..requiresManualStart = true,
+        );
         engine.enqueue('factory_contract', repeats: 3);
         engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
         return engine.enqueue('mars_delivery');
@@ -66,7 +70,8 @@ void main() {
       await tester.tap(find.text('見通しを開く'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('forecast-money')), findsOneWidget);
-      expect(find.byKey(const Key('forecast-research')), findsOneWidget);
+      expect(find.byKey(const Key('forecast-research')), findsNothing);
+      expect(controller.state.research, isEmpty);
       expect(
         find.byKey(const Key('forecast-attention-launch')),
         findsOneWidget,

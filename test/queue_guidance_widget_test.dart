@@ -295,68 +295,71 @@ void main() {
     },
   );
 
-  testWidgets('research nodes show time, queue position and suspension', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(780, 360);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    // Saved, already-paid research keeps its frozen time on migration. New
-    // enqueue calls use RP and cannot create this legacy running state.
-    final state = GameState.initial(epoch)..money = 5000;
-    state.plans.add(
-      PlannedTask(id: 'legacy-paid', taskId: 'life_support')
-        ..status = 'running'
-        ..iterationDurationMs = 120000
-        ..remainingMs = 120000
-        ..iterationSpecialists = GameContent.baselineDepartmentStaff,
-    );
-    state.plans.add(PlannedTask(id: 'legacy-next', taskId: 'cargo_packaging'));
-    state.nextPlanId = 3;
-    final engine = GameEngine(GameState.fromJson(state.toJson()));
-    engine.advanceBy(const Duration(seconds: 30));
-    Future<void> draw() => tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData.dark(useMaterial3: true),
-        home: Scaffold(
-          body: ResearchTree(
-            game: engine.state,
-            selectedId: 'life_support',
-            onSelected: (_) {},
-            requirementReasons: engine.researchRequirementReasons,
+  testWidgets(
+    'research nodes show paid time, preserved manual plans and suspension',
+    (tester) async {
+      tester.view.physicalSize = const Size(780, 360);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      // Saved, already-paid research keeps its frozen time on migration. New
+      // enqueue calls use RP and cannot create this legacy running state.
+      final state = GameState.initial(epoch)..money = 5000;
+      state.plans.add(
+        PlannedTask(id: 'legacy-paid', taskId: 'life_support')
+          ..status = 'running'
+          ..iterationDurationMs = 120000
+          ..remainingMs = 120000
+          ..iterationSpecialists = GameContent.baselineDepartmentStaff,
+      );
+      state.plans.add(
+        PlannedTask(id: 'legacy-next', taskId: 'cargo_packaging'),
+      );
+      state.nextPlanId = 3;
+      final engine = GameEngine(GameState.fromJson(state.toJson()));
+      engine.advanceBy(const Duration(seconds: 30));
+      Future<void> draw() => tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
+          home: Scaffold(
+            body: ResearchTree(
+              game: engine.state,
+              selectedId: 'life_support',
+              onSelected: (_) {},
+              requirementReasons: engine.researchRequirementReasons,
+            ),
           ),
         ),
-      ),
-    );
-    final semantics = tester.ensureSemantics();
-    try {
-      await draw();
-      final spoken = tester
-          .getSemantics(
-            find.byKey(const Key('research-semantics-life_support')),
-          )
-          .getSemanticsData();
-      expect(
-        spoken.label,
-        '${GameContent.tasks['life_support']!.name}、研究中、残り 1分30秒',
       );
-      expect(spoken.hasAction(SemanticsAction.tap), isTrue);
-      expect(find.text('残り 1分30秒'), findsOneWidget);
-      expect(find.textContaining('予約 1番目 · 共用設備の順番待ち'), findsOneWidget);
-      engine.setFacilityEnabled('lab', false);
-      await draw();
-      expect(find.text('研究中・休止'), findsOneWidget);
-      expect(find.text('残り 1分30秒 · 再開待ち'), findsOneWidget);
-      expect(find.textContaining('予約 1番目 · 設備休止中'), findsOneWidget);
-      // The shared status contract still prevents duplicate reservation in details.
-      expect(
-        researchStatus(engine.state, GameContent.tasks['life_support']!),
-        '研究中',
-      );
-      expect(tester.takeException(), isNull);
-    } finally {
-      semantics.dispose();
-    }
-  });
+      final semantics = tester.ensureSemantics();
+      try {
+        await draw();
+        final spoken = tester
+            .getSemantics(
+              find.byKey(const Key('research-semantics-life_support')),
+            )
+            .getSemanticsData();
+        expect(
+          spoken.label,
+          '${GameContent.tasks['life_support']!.name}、研究中、残り 1分30秒',
+        );
+        expect(spoken.hasAction(SemanticsAction.tap), isTrue);
+        expect(find.text('残り 1分30秒'), findsOneWidget);
+        expect(find.textContaining('要着手 · 条件を確認して解放'), findsOneWidget);
+        engine.setFacilityEnabled('lab', false);
+        await draw();
+        expect(find.text('研究中・休止'), findsOneWidget);
+        expect(find.text('残り 1分30秒 · 再開待ち'), findsOneWidget);
+        expect(find.textContaining('要着手 · 条件を確認して解放'), findsOneWidget);
+        // The shared status contract still prevents duplicate reservation in details.
+        expect(
+          researchStatus(engine.state, GameContent.tasks['life_support']!),
+          '研究中',
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
 }

@@ -314,7 +314,7 @@ class InvestmentComparison extends StatelessWidget {
               )
             else
               const Text(
-                '予約可能 · 着工順は設備の予約で決まります',
+                '資金と資材を確認して着工できます',
                 style: TextStyle(color: strategyMint, fontSize: 12),
               ),
           ],
@@ -403,7 +403,7 @@ class InvestmentEstimate extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         StrategyFact('投資費合計', dollars(preview.cost)),
-        StrategyFact('設備占有', '${gameDuration(preview.durationMs)} · 予約待ちを除く'),
+        StrategyFact('設備占有', '${gameDuration(preview.durationMs)} · 着工後'),
         StrategyFact(
           '土地の追加',
           '${preview.additionalPlots}区画${preview.additionalPlots == 0 ? ' · 空地を温存' : ''}',

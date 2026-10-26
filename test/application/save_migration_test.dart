@@ -135,14 +135,10 @@ void main() {
           final contract = game.state.plans.firstWhere(
             (p) => p.taskId == 'factory_contract',
           );
-          final reason = game.reorderPlan(
-            solar.id,
-            relativeToPlanId: contract.id,
-            before: true,
-          );
-          expect(reason, isNull);
+          expect(game.cancelQueued(contract.id), isNull);
           game.advanceBy(Duration(milliseconds: paid.remainingMs));
-          return null;
+          expect(solar.requiresManualStart, isTrue);
+          return game.startPlan(solar.id);
         });
         expect(controller.state.districtAt('earth_highland', 0)!.level, 2);
         expect(paid.completedRuns, 1);
@@ -207,6 +203,9 @@ void main() {
           return null;
         });
         expect(paid.completedRuns, 1);
+        expect(queued.status, 'queued');
+        expect(queued.requiresManualStart, isTrue);
+        await controller.command((game) => game.startPlan(queued.id));
         expect(queued.status, 'running');
         expect(
           queued.iterationDurationMs,
@@ -243,7 +242,7 @@ void main() {
   );
   for (final native in [true, false]) {
     test(
-      '${native ? 'file' : 'browser'} district-4 assigns baseline staff without changing paid work',
+      '${native ? 'file' : 'browser'} district-4 keeps legacy records while future work needs no staffing',
       () async {
         final directory = await Directory.systemTemp.createTemp(
           'mars-agency-migration-',
@@ -286,14 +285,14 @@ void main() {
           return null;
         });
         expect(controller.state.reservedResearchers, 0);
-        expect(controller.state.reservedIndustrialWorkers, 6);
+        expect(controller.state.reservedIndustrialWorkers, 0);
         expect(controller.state.research, contains('life_support'));
         await controller.command((game) => game.assignResearchers(4));
-        expect(controller.state.researchers, 4);
-        expect(controller.state.industrialWorkers, 8);
+        expect(controller.state.researchers, 6);
+        expect(controller.state.industrialWorkers, 6);
         expect(
           controller.state.currentPlanFor('factory')!.iterationSpecialists,
-          6,
+          0,
         );
         expect(
           controller.state.currentPlanFor('factory')!.iterationDurationMs,
@@ -311,11 +310,11 @@ void main() {
         });
         expect(
           resumed.state.currentPlanFor('factory')!.iterationSpecialists,
-          8,
+          0,
         );
         expect(
           resumed.state.currentPlanFor('factory')!.iterationDurationMs,
-          lessThan(90000),
+          90000,
         );
         final next = resumed.state.toJson();
         final again = GameController(reopen(), now: () => fourthEpoch);

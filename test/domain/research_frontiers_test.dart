@@ -22,6 +22,8 @@ void main() {
   GameState developed() {
     final state = GameState.initial(epoch)
       ..money = 10000000
+      ..population = 600
+      ..researchPointUnits = 100000 * GameState.researchPointScale
       ..marsHabitats = 1
       ..habitatChoice = 'dome';
     state.achievements.addAll(['first_landing', 'dome_habitat']);
@@ -47,6 +49,11 @@ void main() {
     ]);
     for (final (city, index, id) in [
       ('earth_delta', 0, 'spaceport'),
+      ('earth_delta', 1, 'industry'),
+      ('earth_delta', 2, 'housing'),
+      ('earth_delta', 3, 'solar'),
+      ('earth_delta', 4, 'solar'),
+      ('earth_delta', 5, 'solar'),
       ('mars_arcadia', 0, 'greenhouse'),
       ('mars_arcadia', 1, 'mars_lab'),
       ('mars_arcadia', 8, 'extractor'),
@@ -58,6 +65,27 @@ void main() {
       );
       state.districts[district.key] = district;
     }
+    for (final id in [
+      'local_resources',
+      'atmospheric_collection',
+      'urban_planning',
+    ]) {
+      state.developments.add(id);
+      final cityId = GameContent.developmentPlanet(id) == 'mars'
+          ? 'mars_arcadia'
+          : 'earth_delta';
+      state.developmentCityIds[id] = cityId;
+      state.developmentEnabled[id] = true;
+      if (GameContent.mapBuildingDefinitions.containsKey(id)) {
+        state.buildingLocations[id] = BuildingLocation(
+          cityId: cityId,
+          plotIndex: -1,
+          legacySite: true,
+        );
+      }
+    }
+    state.connectedGridCities.add('earth_delta');
+    state.surveyedSites.addAll(['earth_delta:1', 'earth_delta:2']);
     return state;
   }
 
@@ -102,7 +130,7 @@ void main() {
     }
   });
 
-  test('six optional research jobs survive split progress and reload without duplicate completion', () {
+  test('six immediate optional unlocks survive split progress and reload without duplicate completion', () {
     final whole = GameEngine(developed());
     for (final id in frontierIds) {
       expect(whole.researchRequirementReasons(id), isEmpty, reason: id);

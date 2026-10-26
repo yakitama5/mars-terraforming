@@ -11,13 +11,23 @@ void main() {
   List<ContextualTip> tips(GameEngine engine) =>
       evaluateContextualTips(engine.state, limit: 20);
 
+  void retainResearch(GameEngine engine) {
+    engine.state.plans.add(
+      PlannedTask(
+        id: 'plan-${engine.state.nextPlanId++}',
+        taskId: 'life_support',
+      )..requiresManualStart = true,
+    );
+    engine.advanceBy(Duration.zero);
+  }
+
   test('fresh game adds no tips over the tutorial', () {
     expect(tips(fresh()), isEmpty);
   });
 
   test('paused work outranks optional parallel-development advice', () {
     final engine = fresh();
-    engine.enqueue('life_support');
+    retainResearch(engine);
     engine.enqueue('launch_contract');
     engine.setFacilityEnabled('launch', false);
     final result = tips(engine);
@@ -62,15 +72,14 @@ void main() {
     }
   });
 
-  test('staff blockage directs to allocation and uses resolved reason', () {
+  test('retired staffing commands never create allocation warnings', () {
     final engine = fresh();
-    engine.assignResearchers(0);
-    engine.enqueue('train_specialists');
-    final tip = tips(engine).first;
-    expect(tip.destination, ContextualTipDestination.agency);
-    expect(tip.id, startsWith('staff:'));
-    expect(tip.agencySection, ContextualTipAgencySection.staffing);
-    expect(tip.detail, contains(engine.state.plans.first.stopReason));
+    final before = engine.state.toJson();
+    expect(engine.assignResearchers(0), isNotNull);
+    expect(engine.enqueue('train_specialists'), isNotNull);
+    expect(engine.state.toJson(), before);
+    expect(tips(engine).any((tip) => tip.id.startsWith('staff:')), isFalse);
+    expect(engine.state.researchPointsPerMinute, greaterThan(0));
   });
 
   test('resource blockage uses the engine reason and clears when supplied', () {
@@ -106,7 +115,7 @@ void main() {
 
   test('reads never mutate progress, money, queue, or save generation', () {
     final engine = fresh();
-    engine.enqueue('life_support');
+    retainResearch(engine);
     final before = engine.state.toJson();
     for (var i = 0; i < 10; i++) {
       tips(engine);
@@ -116,7 +125,7 @@ void main() {
 
   test('ordinary seconds do not rotate suggestions or their text', () {
     final engine = fresh();
-    engine.enqueue('life_support');
+    retainResearch(engine);
     final before = tips(engine).first;
     engine.advanceBy(const Duration(seconds: 1));
     final after = tips(engine).first;
@@ -127,7 +136,7 @@ void main() {
 
   test('limit and dismissed tips are applied after priority selection', () {
     final engine = fresh();
-    engine.enqueue('life_support');
+    retainResearch(engine);
     engine.enqueue('launch_contract');
     engine.setFacilityEnabled('launch', false);
     expect(evaluateContextualTips(engine.state, limit: 0), isEmpty);
@@ -138,27 +147,35 @@ void main() {
         dismissedIds: {'paused:launch:plan-2'},
         limit: 1,
       ).first.id,
-      'requirements:plan-1',
+      'manual-start:plan-1',
     );
     expect(
       evaluateContextualTips(
         engine.state,
-        dismissedIds: {'paused:launch:plan-2', 'requirements:plan-1'},
+        dismissedIds: {'paused:launch:plan-2', 'manual-start:plan-1'},
         limit: 1,
       ).first.id,
       'parallel-city',
     );
   });
 
-  test('zero industrial staff directs idle factory to allocation', () {
-    final engine = fresh();
-    engine.assignResearchers(engine.state.specialistCount);
-    engine.enqueue('life_support');
-    final tip = tips(engine).first;
-    expect(tip.id, 'unassigned:factory');
-    expect(tip.destination, ContextualTipDestination.agency);
-    expect(tips(engine).any((tip) => tip.id == 'parallel-city'), isFalse);
-  });
+  test(
+    'legacy zero staff does not block factory work or request allocation',
+    () {
+      final engine = fresh();
+      engine.state.specialistCount = 0;
+      engine.state.researchers = 0;
+      expect(engine.enqueue('factory_contract'), isNull);
+      expect(engine.state.currentPlanFor('factory'), isNotNull);
+      expect(
+        tips(engine).any(
+          (tip) =>
+              tip.id.startsWith('unassigned:') || tip.id.startsWith('staff:'),
+        ),
+        isFalse,
+      );
+    },
+  );
 
   test('all completed research suppresses the empty research suggestion', () {
     final engine = fresh();
@@ -173,8 +190,8 @@ void main() {
 
   test('resolved warnings are forgotten and reappear on recurrence', () {
     final engine = fresh();
-    engine.enqueue('life_support');
-    engine.setFacilityEnabled('lab', false);
+    engine.enqueue('launch_contract');
+    engine.setFacilityEnabled('launch', false);
     final id = tips(engine).first.id;
     var retained = retainedContextualTipDismissals(engine.state, {id});
     expect(retained, {id});
@@ -182,25 +199,24 @@ void main() {
       evaluateContextualTips(engine.state, dismissedIds: retained),
       isEmpty,
     );
-    engine.setFacilityEnabled('lab', true);
+    engine.setFacilityEnabled('launch', true);
     retained = retainedContextualTipDismissals(engine.state, retained);
     expect(retained, isEmpty);
-    engine.setFacilityEnabled('lab', false);
+    engine.setFacilityEnabled('launch', false);
     expect(
       evaluateContextualTips(engine.state, dismissedIds: retained).first.id,
       id,
     );
   });
 
-  test('missing Mars cargo directs to transport instead of manufacturing', () {
+  test('missing Mars cargo rejects new construction without a phantom waiting plan', () {
     final engine = fresh();
     engine.state.achievements.add('first_landing');
     engine.chooseHabitat('dome');
-    engine.enqueue('build_habitat');
-    final tip = tips(engine).first;
-    expect(tip.id, startsWith('resource:'));
-    expect(tip.destination, ContextualTipDestination.operations);
-    expect(tip.operationsSection, ContextualTipOperationsSection.transport);
+    final before = engine.state.toJson();
+    expect(engine.enqueue('build_habitat'), contains('資源不足'));
+    expect(engine.state.toJson(), before);
+    expect(tips(engine).any((tip) => tip.id.startsWith('resource:')), isFalse);
   });
 
   test('locked manufacturing directs to the missing research', () {
@@ -211,14 +227,11 @@ void main() {
     expect(tip.taskId, 'life_support');
   });
 
-  test('before landing the branch tip explains the required delivery', () {
+  test('before landing construction reports its missing delivery without creating a queue', () {
     final engine = fresh();
-    engine.enqueue('build_habitat');
-    final tip = tips(engine).first;
-    expect(tip.id, startsWith('branch:'));
-    expect(tip.operationsSection, ContextualTipOperationsSection.transport);
-    expect(tip.detail, contains('輸送を完了してください'));
-    expect(tip.detail, isNot(contains('方針を決めると')));
+    expect(engine.enqueue('build_habitat'), contains('輸送後'));
+    expect(engine.state.plans, isEmpty);
+    expect(tips(engine).any((tip) => tip.id.startsWith('branch:')), isFalse);
   });
 
   test('after landing the habitat choice opens the transport section', () {
@@ -256,19 +269,19 @@ void main() {
     },
   );
 
-  test('training at the staff cap needs cancellation rather than waiting', () {
+  test('legacy training limits do not create obsolete cancellation advice', () {
     final engine = fresh();
     engine.state.specialistCount = GameContent.maxSpecialists;
-    engine.enqueue('train_specialists');
-    engine.enqueue('life_support');
-    final tip = tips(engine).first;
-    expect(tip.id, startsWith('training-limit:'));
-    expect(tip.detail, contains('育成の予約を取り消す'));
-    expect(tip.detail, isNot(contains('自動で始まります')));
-    expect(tip.operationsSection, ContextualTipOperationsSection.queues);
-    engine.cancelQueued(engine.state.plans.first.id);
-    expect(engine.state.upcomingPlansFor('lab').first.taskId, 'life_support');
+    expect(engine.enqueue('train_specialists'), isNotNull);
+    retainResearch(engine);
+    expect(tips(engine).first.id, startsWith('manual-start:'));
+    expect(
+      tips(engine).any((tip) => tip.id.startsWith('training-limit:')),
+      isFalse,
+    );
     engine.advanceBy(const Duration(minutes: 4));
+    expect(engine.state.research, isEmpty);
+    expect(engine.startPlan(engine.state.plans.first.id), isNull);
     expect(engine.state.research, contains('life_support'));
   });
 
@@ -319,10 +332,14 @@ void main() {
     final engine = fresh();
     engine.state.achievements.addAll(['first_launch', 'mars_route_open']);
     engine.enqueue('mars_delivery');
-    engine.enqueue('life_support');
+    retainResearch(engine);
     final id = tips(engine).first.id;
     expect(id, startsWith('resource:'));
     engine.advanceBy(const Duration(minutes: 4));
+    final research = engine.state.plans.firstWhere(
+      (plan) => plan.taskId == 'life_support',
+    );
+    expect(engine.startPlan(research.id), isNull);
     expect(engine.state.research, contains('life_support'));
     expect(tips(engine).first.id, id);
     expect(engine.state.currentPlanFor('launch'), isNull);

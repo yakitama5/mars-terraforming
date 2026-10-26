@@ -59,14 +59,21 @@ class _CityDevelopmentState extends State<CityDevelopment> {
   CityDefinition get city => GameContent.cities[widget.cityId]!;
   bool get _narrowTutorial =>
       widget.guidedFirstBuild && MediaQuery.sizeOf(context).width < 650;
+  bool get _awaitingTutorialStart =>
+      game.plans
+          .where((plan) => plan.id == game.firstRunTutorialPlanId)
+          .firstOrNull
+          ?.requiresManualStart ==
+      true;
   String get _tutorialInstruction => switch (game.firstRunTutorial) {
     FirstRunTutorialStep.placeHousing =>
       selectedDistrict == null
           ? (_narrowTutorial ? '下の「住宅地区」を選択。' : '右の「住宅地区」を選択。')
           : !hasPlotSelection
           ? '海沿いの光る空地をタップ。'
-          : '右下の「建設を予約」へ。',
-    FirstRunTutorialStep.finishConstruction => '右のボタンで頼んでください。',
+          : '右下の「着工する」へ。',
+    FirstRunTutorialStep.finishConstruction =>
+      _awaitingTutorialStart ? '右のボタンで、以前の住宅計画を着工。' : '右のボタンで頼んでください。',
     _ => '上の数字を見て、研究へ。',
   };
   List<DistrictDefinition> get available => GameContent.districts.values
@@ -305,6 +312,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                       children: [
                         FirstRunCoach(
                           step: game.firstRunTutorial,
+                          constructionAwaitingStart: _awaitingTutorialStart,
                           instruction: _tutorialInstruction,
                           portraitVisible: false,
                         ),
@@ -595,6 +603,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
         if (widget.guidedFirstBuild && !_narrowTutorial)
           FirstRunCoach(
             step: game.firstRunTutorial,
+            constructionAwaitingStart: _awaitingTutorialStart,
             instruction: _tutorialInstruction,
           )
         else if (!widget.guidedFirstBuild)
@@ -605,7 +614,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
               border: Border(top: BorderSide(color: strategyLine)),
             ),
             child: Text(
-              '${development.stageName} · 完成 ${development.completedPlots}/${city.plotCount}区画 · 総Lv.${development.totalLevels} · 未予約空地 ${development.availablePlots}',
+              '${development.stageName} · 完成 ${development.completedPlots}/${city.plotCount}区画 · 総Lv.${development.totalLevels} · 空地 ${development.availablePlots}',
               key: const Key('city-development-summary'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -862,12 +871,17 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                     preview: preview,
                   ),
                 if (preview.isValid && game.money < preview.cost)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                      '資金待ちで予約できます。後続の受注も待つため、設備の順番に注意。',
-                      key: Key('district-funding-warning'),
-                      style: TextStyle(fontSize: 11, color: strategyCopper),
+                      preview.cost > game.moneyCapacity
+                          ? '必要な建設費が資金の保有上限を超えています。人口を増やして資金の保有上限を広げましょう。'
+                          : '必要な資金を用意してから着工できます。',
+                      key: const Key('district-funding-warning'),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: strategyCopper,
+                      ),
                     ),
                   ),
               ] else ...[
@@ -948,7 +962,18 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                     style: const TextStyle(fontSize: 12, color: strategyCopper),
                   ),
                 ),
-              if (plan != null && widget.onOpenOperations != null)
+              if (plan?.requiresManualStart == true)
+                FilledButton.icon(
+                  key: Key('start-district-plan-${plan!.id}'),
+                  onPressed: widget.controller.busy
+                      ? null
+                      : () => widget.controller.command(
+                          (engine) => engine.startPlan(plan.id),
+                        ),
+                  icon: const Icon(Icons.play_arrow_outlined, size: 17),
+                  label: const Text('着工する'),
+                )
+              else if (plan != null && widget.onOpenOperations != null)
                 OutlinedButton.icon(
                   key: const Key('district-open-operations'),
                   onPressed: widget.onOpenOperations,
@@ -961,6 +986,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                   onPressed:
                       !hasPlotSelection ||
                           !preview.isValid ||
+                          game.money < preview.cost ||
+                          (city.planet == 'moon' && game.moonKits == 0) ||
+                          (city.planet == 'mars' && game.marsKits == 0) ||
                           widget.controller.busy ||
                           (widget.guidedFirstBuild &&
                               widget.controller.error != null)
@@ -968,9 +996,9 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                       : () => _confirmDistrict(id, existing),
                   icon: const Icon(Icons.construction, size: 17),
                   label: Text(
-                    existing == null ? '建設を予約' : '地区を強化',
+                    existing == null ? '着工する' : '地区を強化',
                     semanticsLabel: existing == null
-                        ? 'この区画に建設を予約'
+                        ? 'この区画で建設を開始'
                         : 'この地区を強化する',
                   ),
                 ),
@@ -1105,7 +1133,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 ? null
                 : () => _confirmDistrict('housing', null),
             icon: const Icon(Icons.construction, size: 17),
-            label: const Text('建設を予約'),
+            label: const Text('着工する'),
           ),
         ),
       ],
@@ -1127,7 +1155,11 @@ class _CityDevelopmentState extends State<CityDevelopment> {
             padding: const EdgeInsets.all(14),
             children: [
               Text(
-                completing ? '住宅を建設中' : '住宅が完成！',
+                completing
+                    ? _awaitingTutorialStart
+                          ? '住宅の着工待ち'
+                          : '住宅を建設中'
+                    : '住宅が完成！',
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -1163,14 +1195,27 @@ class _CityDevelopmentState extends State<CityDevelopment> {
           padding: const EdgeInsets.all(10),
           child: FilledButton.icon(
             key: Key(
-              completing
+              _awaitingTutorialStart
+                  ? 'tutorial-start-preserved-construction'
+                  : completing
                   ? 'tutorial-complete-construction'
                   : 'tutorial-continue-income',
             ),
             onPressed: widget.controller.busy || widget.controller.error != null
                 ? null
                 : () async {
-                    if (completing) {
+                    if (_awaitingTutorialStart && plan != null) {
+                      await widget.controller.command((engine) {
+                        if (engine.state.facilities['factory'] != true) {
+                          final reason = engine.setFacilityEnabled(
+                            'factory',
+                            true,
+                          );
+                          if (reason != null) return reason;
+                        }
+                        return engine.startPlan(plan.id);
+                      });
+                    } else if (completing) {
                       await widget.controller.completeTutorialConstruction();
                     } else {
                       await widget.controller.continueFirstRunTutorial();
@@ -1180,7 +1225,15 @@ class _CityDevelopmentState extends State<CityDevelopment> {
               completing ? Icons.auto_fix_high : Icons.arrow_forward,
               size: 18,
             ),
-            label: Text(completing ? 'ルナに完成を頼む' : '研究へ進む'),
+            label: Text(
+              _awaitingTutorialStart
+                  ? game.facilities['factory'] == true
+                        ? '着工する'
+                        : '工場を再開して着工'
+                  : completing
+                  ? 'ルナに完成を頼む'
+                  : '研究へ進む',
+            ),
           ),
         ),
       ],
@@ -1265,7 +1318,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
             ? '待機・停止中 · ${plan.stopReason}'
             : plan.status == 'running'
             ? '建設中'
-            : '建設予約',
+            : '要着手',
         style: const TextStyle(color: strategyCopper),
       ),
       if (plan.status == 'running') ...[
@@ -1398,7 +1451,7 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                             ? '待機・停止中'
                             : plan.status == 'running'
                             ? '建設中'
-                            : '建設予約',
+                            : '要着手',
                         style: const TextStyle(
                           color: strategyCopper,
                           fontWeight: FontWeight.w700,
@@ -1636,8 +1689,10 @@ class _CityDevelopmentState extends State<CityDevelopment> {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
-                    '資金不足 · 予約後、必要な資金が貯まるまで着工を待ちます。'
-                    '${city.planet == 'earth' ? ' 先頭の建設が資金待ちだと、後ろの受注も停止します。受注を先にして資金を準備できます。' : ''}',
+                    preview.cost > game.moneyCapacity
+                        ? '必要な建設費が資金の保有上限を超えています。人口を増やして資金の保有上限を広げましょう。'
+                        : '資金不足 · 必要な資金を用意してから着工できます。'
+                              '${city.planet == 'earth' ? ' 受注や税収で資金を蓄えましょう。' : ''}',
                     key: const Key('district-funding-warning-detail'),
                     style: const TextStyle(fontSize: 12, color: strategyCopper),
                   ),

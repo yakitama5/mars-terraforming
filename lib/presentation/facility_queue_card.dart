@@ -26,7 +26,18 @@ class FacilityQueueCard extends StatelessWidget {
     final facility = GameContent.facilities[facilityId]!;
     final enabled = game.facilities[facilityId]!;
     final current = game.currentPlanFor(facilityId);
-    final upcoming = game.upcomingPlansFor(facilityId);
+    final upcoming = game
+        .upcomingPlansFor(facilityId)
+        .where((plan) => !plan.requiresManualStart)
+        .toList();
+    final manual = game.plans
+        .where(
+          (plan) =>
+              !plan.isFinished &&
+              plan.requiresManualStart &&
+              plan.definition.facilityId == facilityId,
+        )
+        .toList();
     final status = !enabled
         ? '休止中'
         : current != null
@@ -34,7 +45,9 @@ class FacilityQueueCard extends StatelessWidget {
               ? '稼働中'
               : '条件待ち'
         : facilityId == 'lab' && game.researchPointsPerMinute > 0
-        ? 'RPを生産中'
+        ? game.isResearchAtCapacity
+              ? 'RP上限'
+              : 'RPを生産中'
         : upcoming.isNotEmpty
         ? '条件待ち'
         : '待機中';
@@ -92,7 +105,7 @@ class FacilityQueueCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                '共通RP ${game.researchPoints.toStringAsFixed(1)} RP · 全施設で ${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分',
+                '共通RP ${game.researchPoints.toStringAsFixed(1)} / ${game.researchPointCapacity} RP · ${game.researchPointsPerHour.toStringAsFixed(1)} RP/時',
                 key: const Key('lab-common-research-points'),
                 style: const TextStyle(color: _mint, fontSize: 11),
               ),
@@ -116,7 +129,7 @@ class FacilityQueueCard extends StatelessWidget {
                 !enabled
                     ? '設備休止中・スイッチで再開できます'
                     : upcoming.isEmpty
-                    ? '予約なし・次の計画を待っています'
+                    ? '実行中の作業はありません'
                     : '開始待ち · ${upcoming.first.stopReason}',
                 style: TextStyle(
                   color: upcoming.isEmpty && enabled ? _muted : _copper,
@@ -126,23 +139,90 @@ class FacilityQueueCard extends StatelessWidget {
             ),
           const SizedBox(height: 12),
           Text(
-            '次の予約 ${upcoming.length}件',
+            '次の製造・輸送 ${upcoming.length}件',
             style: const TextStyle(fontSize: 11, color: _muted),
           ),
           if (upcoming.isEmpty)
             const Padding(
               padding: EdgeInsets.only(top: 6),
               child: Text(
-                '次の予約はありません',
+                '次の製造・輸送はありません',
                 style: TextStyle(fontSize: 12, color: _muted),
               ),
             ),
           for (final (index, plan) in upcoming.indexed)
             _queued(context, plan, index, upcoming),
+          if (manual.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              '以前の計画 · 要着手',
+              style: TextStyle(fontSize: 12, color: strategyCopper),
+            ),
+            const Text(
+              '未着手の計画を保持しています。自動では始まりません。',
+              style: TextStyle(fontSize: 11, color: strategyMuted),
+            ),
+            for (final plan in manual) _manual(context, plan),
+          ],
         ],
       ),
     );
   }
+
+  Widget _manual(BuildContext context, PlannedTask plan) => Container(
+    key: Key('manual-${plan.id}'),
+    margin: const EdgeInsets.only(top: 8),
+    padding: const EdgeInsets.all(9),
+    decoration: BoxDecoration(
+      border: Border.all(color: strategyLine),
+      borderRadius: BorderRadius.circular(7),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          plan.definition.name,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        if (plan.definition.unique)
+          Text(
+            '必要 ${GameContent.researchPointCost(plan.taskId)} RP · 保有 ${controller.state.researchPoints.toStringAsFixed(1)} RP',
+            key: Key('queue-estimate-${plan.id}'),
+            style: const TextStyle(fontSize: 11, color: strategyMuted),
+          ),
+        if (plan.cityId != null)
+          Text(
+            _location(plan, controller.state),
+            style: const TextStyle(fontSize: 11, color: strategyMint),
+          ),
+        if (plan.stopReason.isNotEmpty)
+          Text(
+            plan.stopReason,
+            style: const TextStyle(fontSize: 11, color: strategyCopper),
+          ),
+        Wrap(
+          spacing: 8,
+          children: [
+            FilledButton.tonalIcon(
+              key: Key('start-plan-${plan.id}'),
+              onPressed: controller.busy
+                  ? null
+                  : () => controller.command(
+                      (engine) => engine.startPlan(plan.id),
+                    ),
+              icon: const Icon(Icons.play_arrow, size: 16),
+              label: Text(plan.definition.unique ? '技術を解放' : '着工する'),
+            ),
+            TextButton(
+              key: Key('cancel-manual-${plan.id}'),
+              onPressed: controller.busy ? null : () => _cancel(context, plan),
+              child: const Text('計画を取り消す'),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
 
   Widget _current(PlannedTask plan, bool enabled) {
     final advancing = enabled && plan.stopReason.isEmpty;
@@ -409,14 +489,14 @@ class QueueRulesDisclosure extends StatelessWidget {
     child: ExpansionTile(
       key: const Key('queue-rules'),
       tilePadding: EdgeInsets.zero,
-      title: const Text('予約・反復のしくみ', style: TextStyle(fontSize: 13)),
+      title: const Text('進行と反復のしくみ', style: TextStyle(fontSize: 13)),
       children: const [
         Padding(
           padding: EdgeInsets.only(bottom: 12),
           child: Text(
             '同じ設備では上から順に着手します。「次に実行」や↑↓で順番を変更できます。進行中の1回は中断しません。\n\n'
-            '研究予約は、必要な共通RPと前提がそろうと技術を必ず解放します。RPの蓄積中は、施設と研究者の配分を見直せます。\n\n'
-            '建設・製造・育成などの費用は1回の着手ごとに支払います。未着手の費用・工期は、その時点の効率や土地で変わることがあります。\n\n'
+            '研究は、必要な共通RPと都市条件をそろえて手動で解放します。建設は条件を満たした時点で着工し、離れている間も進みます。\n\n'
+            '建設・製造などの費用は1回の着手ごとに支払います。未着手の費用・工期は、その時点の効率や土地で変わることがあります。\n\n'
             '先頭が資金・資材・研究の条件待ちなら、後続も待ちます。無期限反復の後ろにある作業は、反復より前に移すと進められます。\n\n'
             '取消は未着手の予約を取り消します。反復中なら現在の1回を最後に終了します。設備スイッチで休止した作業は、再開後に残り時間から続きます。',
             style: TextStyle(fontSize: 12, color: _muted),

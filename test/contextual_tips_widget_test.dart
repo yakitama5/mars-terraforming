@@ -46,7 +46,12 @@ void main() {
   ) async {
     final engine = GameEngine(GameState.initial(DateTime.utc(2026, 1, 1)));
     engine.state.researchPointUnits = 0;
-    engine.enqueue('life_support');
+    engine.state.plans.add(
+      PlannedTask(id: 'paused-paid', taskId: 'life_support')
+        ..status = 'running'
+        ..remainingMs = 120000
+        ..iterationDurationMs = 120000,
+    );
     engine.setFacilityEnabled('lab', false);
     final tip = evaluateContextualTips(engine.state).first;
     await tester.pumpWidget(

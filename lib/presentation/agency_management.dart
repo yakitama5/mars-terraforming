@@ -24,7 +24,6 @@ class AgencyManagement extends StatefulWidget {
 
 class _AgencyManagementState extends State<AgencyManagement> {
   int get section => widget.section;
-  int? proposedResearchers;
   GameState get game => widget.controller.state;
 
   @override
@@ -37,7 +36,7 @@ class _AgencyManagementState extends State<AgencyManagement> {
           child: Row(
             children: [
               for (final (index, id, label) in [
-                (0, 'staff', '人員配分'),
+                (0, 'foundation', '都市基盤'),
                 (1, 'partnerships', '提携・支援'),
               ])
                 Expanded(
@@ -58,7 +57,7 @@ class _AgencyManagementState extends State<AgencyManagement> {
             ],
           ),
         ),
-        Expanded(child: section == 0 ? _staff() : _partnerships()),
+        Expanded(child: section == 0 ? _foundation() : _partnerships()),
       ],
     ),
   );
@@ -68,8 +67,8 @@ class _AgencyManagementState extends State<AgencyManagement> {
     final metrics = <(String, String, String, String, IconData)>[
       (
         '資金',
-        dollars(game.money),
-        '研究・建設・人員育成に使う運転資金。',
+        '${dollars(game.money)} / ${dollars(game.moneyCapacity)}',
+        '建設・製造・都市運営に使う資金。人口に応じて保有上限が広がります。',
         '税収・外部受注・提携支援で増加。現在 ${signedDollars(game.netPerMinute)}/分（税収−維持費）。',
         Icons.account_balance_wallet_outlined,
       ),
@@ -88,25 +87,18 @@ class _AgencyManagementState extends State<AgencyManagement> {
         Icons.science_outlined,
       ),
       (
-        '研究者',
-        '${game.researchers}人',
-        '研究施設へ配分した専門職。',
-        '基礎研究所 ${game.labResearchers}人・専門設備 ${game.specializedResearchers}人。現在 ${game.researchPointsPerMinute.toStringAsFixed(1)} RP/分を生産します。',
-        Icons.school_outlined,
+        '総人口',
+        '${game.totalPopulation}人',
+        '研究と投資を支える都市の規模。',
+        '全都市の実際の住民数です。人口が増えると、RPと資金の保有上限が広がります。',
+        Icons.location_city_outlined,
       ),
       (
         '共通RP',
-        '${game.researchPoints.toStringAsFixed(1)} RP',
+        '${game.researchPoints.toStringAsFixed(1)} / ${game.researchPointCapacity} RP',
         '全分野の技術解放に使う研究ポイント。',
-        '研究者を配置した稼働施設から蓄積します。必要RPと前提がそろえば技術を必ず解放できます。',
+        '稼働中の研究施設から毎時${game.researchPointsPerHour.toStringAsFixed(1)}RPを生産します。都市条件と必要RPがそろえば、その場で解放できます。',
         Icons.auto_awesome_outlined,
-      ),
-      (
-        '工業員',
-        '${game.industrialWorkers}人',
-        '共用工場へ割り当てた専門職。',
-        '右の人員配分で変更。工場の人員効果 ${signedNumber(game.staffEfficiencyBonus('factory'))}%。受注・製造・地球建設を担当します。',
-        Icons.engineering_outlined,
       ),
       (
         '友好',
@@ -127,7 +119,7 @@ class _AgencyManagementState extends State<AgencyManagement> {
       key: const Key('agency-metrics'),
       padding: const EdgeInsets.all(14),
       children: [
-        const StrategyHeading('機関を育てる', '人員と提携を整え、研究と都市開発を並行して進めます。'),
+        const StrategyHeading('機関を育てる', '都市基盤と提携を育て、研究と都市開発を進めます。'),
         LayoutBuilder(
           builder: (context, constraints) {
             final columns = constraints.maxWidth >= 440 ? 2 : 1;
@@ -215,221 +207,51 @@ class _AgencyManagementState extends State<AgencyManagement> {
     );
   }
 
-  Widget _staff() => LayoutBuilder(
-    builder: (context, constraints) => _staffPanel(
-      // Keep enough space to expose the whole allocation control on phones.
-      scrollConfirmation: constraints.maxHeight < 240,
-    ),
-  );
-
-  Widget _staffPanel({required bool scrollConfirmation}) {
-    final minimum = game.minAssignableResearchers;
-    final maximum = game.maxAssignableResearchers;
-    final candidate = (proposedResearchers ?? game.researchers).clamp(
-      minimum,
-      maximum,
-    );
-    final reason = game.staffAllocationReason(candidate);
-    final training = GameContent.tasks['train_specialists']!;
-    final trainingPlan = game.plans
-        .where((p) => p.taskId == training.id && !p.isFinished)
-        .firstOrNull;
-    return Column(
-      children: [
-        Expanded(
-          child: ListView(
-            key: const Key('agency-staff'),
-            padding: const EdgeInsets.all(14),
-            children: [
-              Text(
-                '専門職 ${game.specialistCount}人',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                '研究を増やすか、受注・製造へ人員を残すかを選びます。',
-                style: TextStyle(fontSize: 12, color: strategyMuted),
-              ),
-              const SizedBox(height: 12),
-              StrategyFact(
-                '現在の配分',
-                '研究 ${game.researchers}人 / 工業 ${game.industrialWorkers}人 / 設備運用 ${game.developmentWorkers}人',
-              ),
-              StrategyFact(
-                '研究者の配置',
-                '基礎研究所 ${game.labResearchers}人 / 専門設備 ${game.specializedResearchers}人',
-              ),
-              Row(
-                children: [
-                  IconButton(
-                    key: const Key('staff-research-less'),
-                    tooltip: '研究者を1人減らす',
-                    onPressed: candidate <= minimum
-                        ? null
-                        : () => setState(
-                            () => proposedResearchers = candidate - 1,
-                          ),
-                    icon: const Icon(Icons.remove_circle_outline),
-                  ),
-                  Expanded(
-                    child: Text(
-                      '研究 $candidate人 / 工業 ${game.specialistCount - game.developmentWorkers - candidate}人',
-                      key: const Key('staff-proposed'),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  IconButton(
-                    key: const Key('staff-research-more'),
-                    tooltip: '研究者を1人増やす',
-                    onPressed: candidate >= maximum
-                        ? null
-                        : () => setState(
-                            () => proposedResearchers = candidate + 1,
-                          ),
-                    icon: const Icon(Icons.add_circle_outline),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: StrategyStat(
-                      '研究ポイントの生産',
-                      '${game.researchPointsPerMinute.toStringAsFixed(1)} → ${game.researchPointsPerMinuteForResearchers(candidate).toStringAsFixed(1)} RP/分',
-                    ),
-                  ),
-                  Expanded(
-                    child: StrategyStat(
-                      '工場の人員効果',
-                      '${signedNumber(game.staffEfficiencyBonus('factory'))}% → ${signedNumber(game.staffEfficiencyBonusFor('factory', candidate))}%',
-                    ),
-                  ),
-                ],
-              ),
-              if (game.industrialWorkers > 0 &&
-                  candidate < game.researchers &&
-                  game.facilityBonusPercent('factory') >=
-                      game.facilityBonusCap('factory'))
-                const Text(
-                  '製造効率は現在の上限に達しているため、この増員だけでは工期を短縮できません。',
-                  style: TextStyle(fontSize: 11, color: strategyCopper),
-                ),
-              if (game.reservedResearchers > 0 ||
-                  game.reservedIndustrialWorkers > 0) ...[
-                const SizedBox(height: 10),
-                Text(
-                  '作業中：研究 ${game.reservedResearchers}人・工業 ${game.reservedIndustrialWorkers}人。完了まで移動できません。',
-                  style: const TextStyle(fontSize: 12, color: strategyCopper),
-                ),
-                TextButton.icon(
-                  key: const Key('agency-open-operations'),
-                  onPressed: widget.onOpenOperations,
-                  icon: const Icon(Icons.reorder, size: 17),
-                  label: const Text('設備・進行で反復と予約を確認'),
-                ),
-              ],
-              ExpansionTile(
-                key: const Key('staff-allocation-help'),
-                tilePadding: EdgeInsets.zero,
-                title: const Text('配分のしくみ', style: TextStyle(fontSize: 12)),
-                children: const [
-                  Padding(
-                    padding: EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      '±で研究者の総人数を調整し、下のボタンで確定します。専門設備への配属は保持し、残りが基礎研究所で共通RPを生産します。同じ人を工場と研究施設へ二重には配置できません。\n\n'
-                      '専門設備の配属は、開発設備の操作で変更します。研究者を減らすと、工業へ回せる人員が増えます。\n\n'
-                      '作業中の人数と工期は完成まで固定され、変更は次の着手から反映されます。\n\n'
-                      '無期限の反復中は、設備・進行で反復を終了してから現在の1回の完成を待つと再配分できます。設備の休止だけでは人員は解放されません。',
-                      style: TextStyle(fontSize: 12, color: strategyMuted),
-                    ),
-                  ),
-                ],
-              ),
-              if (reason != null)
-                Text(
-                  reason,
-                  style: const TextStyle(fontSize: 12, color: strategyCopper),
-                ),
-              if (scrollConfirmation) ...[
-                const SizedBox(height: 12),
-                _staffConfirmation(candidate, reason),
-              ],
-              const SizedBox(height: 16),
-              const Text(
-                '専門職を育成する',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${dollars(training.cost)} · 研究所 ${gameDuration(game.currentTaskDurationMs(training.id))} · ${GameContent.specialistTrainingCount}人増員',
-                style: const TextStyle(fontSize: 12, color: strategyMint),
-              ),
-              const Text(
-                '研究所を使って育成し、完成すると工業に加わります。',
-                style: TextStyle(fontSize: 11, color: strategyMuted),
-              ),
-              if (trainingPlan != null)
-                Text(
-                  trainingPlan.status == 'running'
-                      ? trainingPlan.stopReason.isNotEmpty
-                            ? '育成停止中 · ${trainingPlan.stopReason}'
-                            : '育成中 · 残り ${gameDuration(trainingPlan.remainingMs)}'
-                      : '育成を予約済み · ${trainingPlan.stopReason}',
-                  style: const TextStyle(fontSize: 12, color: strategyCopper),
-                ),
-              if (game.money < training.cost && trainingPlan == null)
-                Text(
-                  '着手にはあと ${dollars(training.cost - game.money)}が必要です。予約して資金を待てます。',
-                  style: const TextStyle(fontSize: 11, color: strategyCopper),
-                ),
-              FilledButton.tonalIcon(
-                key: const Key('queue-train_specialists'),
-                onPressed:
-                    widget.controller.busy ||
-                        trainingPlan != null ||
-                        game.specialistCount >= GameContent.maxSpecialists
-                    ? null
-                    : () => widget.controller.command(
-                        (engine) => engine.enqueue(training.id),
-                      ),
-                icon: const Icon(Icons.person_add_alt_outlined, size: 18),
-                label: Text(
-                  game.specialistCount >= GameContent.maxSpecialists
-                      ? '人員上限に達しています'
-                      : '専門職の育成を予約',
-                ),
-              ),
-            ],
-          ),
+  Widget _foundation() => ListView(
+    key: const Key('agency-foundation'),
+    padding: const EdgeInsets.all(14),
+    children: [
+      const StrategyHeading('都市の基盤', '人口を増やすと保有上限が広がります。\n施設への投資で生産能力を伸ばせます。'),
+      StrategyCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            StrategyFact('総人口', '${game.totalPopulation}人'),
+            StrategyFact(
+              '資金（ドル）',
+              '${formatInteger(game.money)} / ${formatInteger(game.moneyCapacity)}',
+            ),
+            StrategyFact(
+              '共通RP',
+              '${game.researchPoints.toStringAsFixed(1)} / ${game.researchPointCapacity} RP',
+            ),
+            StrategyFact(
+              '研究能力',
+              '${game.researchPointsPerHour.toStringAsFixed(1)} RP/時',
+            ),
+            const SizedBox(height: 8),
+            Text(
+              game.isMoneyAtCapacity || game.isResearchAtCapacity
+                  ? '保有上限に達した資源は追加の蓄積を止めています。研究や建設へ使うか、都市の人口を増やしましょう。'
+                  : '人口を増やすと保有上限が広がります。研究施設を増やすとRPの生産能力が上がります。',
+              style: const TextStyle(fontSize: 12, color: strategyMuted),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              '施設は電力・資材・維持費を賄って運営します。都市と施設への投資で生産能力を高めましょう。',
+              style: TextStyle(fontSize: 12),
+            ),
+          ],
         ),
-        if (!scrollConfirmation) _staffConfirmation(candidate, reason),
-      ],
-    );
-  }
-
-  Widget _staffConfirmation(int candidate, String? reason) => StrategyActionBar(
-    message: candidate == game.researchers
-        ? '現在の配分です'
-        : '研究 $candidate人 / 工業 ${game.specialistCount - game.developmentWorkers - candidate}人に変更',
-    child: FilledButton(
-      key: const Key('confirm-staff-allocation'),
-      onPressed:
-          candidate == game.researchers ||
-              reason != null ||
-              widget.controller.busy
-          ? null
-          : () async {
-              await widget.controller.command(
-                (engine) => engine.assignResearchers(candidate),
-              );
-              if (mounted) setState(() => proposedResearchers = null);
-            },
-      child: const Text('人員配分を確定'),
-    ),
+      ),
+      const SizedBox(height: 12),
+      OutlinedButton.icon(
+        key: const Key('foundation-open-operations'),
+        onPressed: widget.onOpenOperations,
+        icon: const Icon(Icons.factory_outlined, size: 17),
+        label: const Text('施設の稼働と進行を確認'),
+      ),
+    ],
   );
 
   Future<void> _confirmPartnership(

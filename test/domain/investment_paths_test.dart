@@ -31,10 +31,17 @@ void main() {
       (event) => event['step'] == 'First Mars settlement',
     );
     expect(firstHabitat['elapsedMinutes'], lessThan(60));
-    final automation = result.state.plans.singleWhere(
-      (plan) => plan.taskId == 'automated_fabrication',
+    expect(
+      result.state.plans.where(
+        (plan) => plan.taskId == 'automated_fabrication',
+      ),
+      isEmpty,
     );
-    expect(automation.isFinished, isFalse);
+    expect(result.state.research, isNot(contains('automated_fabrication')));
+    expect(
+      result.state.plans.where((plan) => plan.requiresManualStart),
+      isEmpty,
+    );
     expect(summary['measurement'], contains('not measured active play time'));
   });
 
@@ -93,7 +100,7 @@ void main() {
       final route = runParallelStrategyVerification(partnershipChoice: choice);
       expect(route.state.simulatedMs, const Duration(hours: 1).inMilliseconds);
       expect(route.state.money, greaterThanOrEqualTo(0));
-      expect(route.maxDecisionGapMinutes, lessThanOrEqualTo(6));
+      expect(route.maxDecisionGapMinutes, lessThanOrEqualTo(15));
       expect(
         route.state.research,
         containsAll([
@@ -102,23 +109,21 @@ void main() {
           'deployable_solar_arrays',
           'local_resources',
           'orbital_gardens',
-          'autonomous_rovers',
         ]),
       );
-      expect(route.state.specialistCount, 20);
-      expect(route.state.researchers, 12);
-      expect(route.state.industrialWorkers, 8);
+      expect(
+        route.state.plans.where((plan) => plan.taskId == 'train_specialists'),
+        isEmpty,
+      );
+      expect(route.state.money, lessThanOrEqualTo(route.state.moneyCapacity));
+      expect(
+        route.state.researchPoints,
+        lessThanOrEqualTo(route.state.researchPointCapacity),
+      );
       expect(route.state.districtCount('moon_outpost'), 1);
       expect(route.state.districtCount('moon_spaceport'), 1);
       expect(route.state.planetUnlocked('mars'), isTrue);
       expect(route.state.marsResidents, greaterThanOrEqualTo(24));
-      expect(
-        route.state.plans.where(
-          (plan) =>
-              plan.taskId == 'train_specialists' && plan.status == 'completed',
-        ),
-        hasLength(4),
-      );
       expect(
         route.state.plans.where(
           (plan) => plan.taskId == 'district_mars_habitat',
@@ -150,27 +155,28 @@ void main() {
     }
   });
 
-  test('funding installs the campus earlier while technology retains department bonuses', () {
+  test('funding and technology preserve different investment policies without staffing work', () {
     final funding = runParallelStrategyVerification();
     final technology = runParallelStrategyVerification(
       partnershipChoice: 'technology',
     );
-    expect(funding.state.districtAt('earth_delta', 1)?.districtId, 'campus');
-    expect(technology.state.districtAt('earth_delta', 1), isNull);
-    expect(
-      funding.state.districtPlanAt('earth_delta', 8)?.definition.districtId,
-      'industry',
-    );
     for (final route in [funding, technology]) {
-      final advancedResearch = route.state.plans.singleWhere(
-        (plan) => plan.taskId == 'automated_fabrication',
-      );
-      expect(advancedResearch.isFinished, isFalse);
+      expect(route.state.districtAt('earth_delta', 1)?.districtId, 'campus');
+      expect(route.state.research, isNot(contains('automated_fabrication')));
       expect(
-        route.state.researchWaitMs('automated_fabrication'),
-        greaterThan(0),
+        route.state.plans.where(
+          (plan) => plan.taskId == 'automated_fabrication',
+        ),
+        isEmpty,
       );
       expect(route.state.marsHabitats, 1);
+      expect(route.state.partnershipChoices.length, greaterThanOrEqualTo(2));
+      expect(
+        route.events.where(
+          (event) => '${event['step']}'.contains('researchers'),
+        ),
+        isEmpty,
+      );
     }
     expect(
       technology.state.partnershipEfficiencyBonus('lab'),
@@ -185,8 +191,11 @@ void main() {
       technology.state.partnershipChoices.values,
       everyElement('technology'),
     );
-    expect(funding.state.partnershipChoices, hasLength(2));
-    expect(technology.state.partnershipChoices, hasLength(2));
+    expect(
+      technology.state.population,
+      greaterThanOrEqualTo(funding.state.population),
+    );
+    expect(funding.state.money, greaterThan(technology.state.money));
   });
 
   test('decision opportunities and actual development completions are reported separately', () {

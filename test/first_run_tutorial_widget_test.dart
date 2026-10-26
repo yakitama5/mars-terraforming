@@ -266,6 +266,88 @@ void main() {
   );
 
   testWidgets(
+    'a retained unpaid first house can reopen its factory and start explicitly',
+    (tester) async {
+      final state = GameState.initial(DateTime.utc(2026, 10, 16))
+        ..openingSeen = true
+        ..firstRunTutorial = FirstRunTutorialStep.finishConstruction
+        ..firstRunTutorialPlanId = 'plan-1'
+        ..nextPlanId = 2;
+      state.facilities['factory'] = false;
+      state.plans.add(
+        PlannedTask(
+          id: 'plan-1',
+          taskId: 'district_housing',
+          cityId: 'earth_delta',
+          plotIndex: 1,
+          targetLevel: 1,
+        ),
+      );
+      final store = MemorySave()
+        ..data = (state.toJson()..['contentVersion'] = 'district-10');
+      final controller = await open(tester, store: store);
+      expect(controller.state.plans.single.requiresManualStart, isTrue);
+      expect(controller.state.plans.single.status, 'queued');
+      expect(find.text('工場を再開して着工'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const Key('tutorial-start-preserved-construction')),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.state.facilities['factory'], isTrue);
+      expect(controller.state.plans.single.status, 'running');
+      expect(controller.state.plans.single.requiresManualStart, isFalse);
+      await tester.tap(find.byKey(const Key('tutorial-complete-construction')));
+      await tester.pumpAndSettle();
+      expect(controller.state.firstRunTutorial, FirstRunTutorialStep.income);
+      expect(controller.state.districtAt('earth_delta', 1), isNotNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'a retained first research can use its restored starter budget explicitly',
+    (tester) async {
+      final engine = GameEngine(
+        GameState.initial(DateTime.utc(2026, 10, 16))..openingSeen = true,
+      );
+      engine.enqueueDistrict('earth_delta', 1, 'housing');
+      engine.completeTutorialConstruction();
+      engine.continueFirstRunTutorial();
+      engine.state
+        ..researchPointUnits = 0
+        ..plans.add(
+          PlannedTask(
+            id: 'plan-${engine.state.nextPlanId++}',
+            taskId: 'life_support',
+          ),
+        );
+      final store = MemorySave()
+        ..data = (engine.state.toJson()..['contentVersion'] = 'district-10');
+      final controller = await open(tester, store: store);
+      expect(
+        controller.state.firstRunTutorial,
+        FirstRunTutorialStep.startResearch,
+      );
+      expect(controller.state.research, isNot(contains('life_support')));
+      expect(
+        controller.state.researchPoints,
+        GameContent.researchPointCost('life_support'),
+      );
+      final action = find.byKey(const Key('queue-life_support'));
+      expect(tester.widget<FilledButton>(action).onPressed, isNotNull);
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+      expect(controller.state.research, contains('life_support'));
+      expect(controller.state.researchPoints, 0);
+      expect(
+        controller.state.firstRunTutorial,
+        FirstRunTutorialStep.researchStarted,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'older saves and explicit introduction suppression remain free to play',
     (tester) async {
       final old = GameState.initial(DateTime.utc(2026, 10, 16)).toJson()

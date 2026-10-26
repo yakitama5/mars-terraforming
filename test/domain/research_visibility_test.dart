@@ -68,7 +68,10 @@ void main() {
       final state = GameState.initial(epoch);
       final engine = GameEngine(state);
       final prerequisite = id('M18');
-      final statuses = engine.researchRequirements('industrial_network');
+      final statuses = engine
+          .researchRequirements('industrial_network')
+          .where((status) => !status.unmetReason.startsWith('都市条件：'))
+          .toList();
       expect(statuses, hasLength(1));
       expect(statuses.single.isMet, isFalse);
       expect(statuses.single.label, contains('手掛かり'));
@@ -78,7 +81,7 @@ void main() {
       );
       state.research.add(id('M17'));
       expect(
-        engine.researchRequirements('industrial_network').single.label,
+        engine.researchRequirements('industrial_network').first.label,
         contains(GameContent.tasks[prerequisite]!.name),
       );
     },
@@ -93,7 +96,10 @@ void main() {
       final hiddenAlternative = id('B23');
       expect(state.isResearchDiscovered(id('B24')), isTrue);
       expect(state.isResearchDiscovered(hiddenAlternative), isFalse);
-      final statuses = engine.researchRequirements(id('B24'));
+      final statuses = engine
+          .researchRequirements(id('B24'))
+          .where((status) => !status.unmetReason.startsWith('都市条件：'))
+          .toList();
       expect(statuses, hasLength(1));
       expect(statuses.single.isMet, isTrue);
       expect(

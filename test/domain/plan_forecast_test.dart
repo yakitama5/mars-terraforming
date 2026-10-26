@@ -58,22 +58,25 @@ void main() {
     () {
       final game = ready();
       game.state.researchPointUnits = 0;
-      expect(game.enqueue('life_support'), isNull);
+      game.state.research.add('life_support');
       game.enqueue('habitat_kit');
       game.state.achievements.addAll(['first_launch', 'mars_route_open']);
       game.enqueue('mars_delivery');
-      game.enqueue('build_habitat', repeats: null);
+      game.state.plans.add(
+        PlannedTask(id: 'old-house', taskId: 'build_habitat')
+          ..requiresManualStart = true,
+      );
       final result = forecastPlans(game.state, const Duration(hours: 8));
-      expect(result.completedResearch, {'life_support'});
+      expect(result.completedResearch, isEmpty);
       expect(result.newAchievements, {'first_landing'});
-      expect(result.completedRuns, 3);
+      expect(result.completedRuns, 2);
       expect(result.earthKits, 0);
       expect(result.marsKits, 1);
       expect(result.marsResidents, 0);
       expect(facility(result, 'mars').status, ForecastFacilityStatus.waiting);
       expect(facility(result, 'mars').taskId, 'build_habitat');
-      expect(facility(result, 'mars').stopReason, contains('分岐待ち'));
-      expect(game.state.research, isEmpty);
+      expect(facility(result, 'mars').stopReason, contains('着手待ち'));
+      expect(game.state.research, {'life_support'});
       expect(game.state.habitatChoice, isNull);
     },
   );
@@ -82,7 +85,12 @@ void main() {
     final game = ready();
     game.state.research.add(ResearchCatalog.idForCatalog('E01'));
     game.state.researchPointUnits = 0;
-    expect(game.enqueue('urban_planning'), isNull);
+    game.state.plans.add(
+      PlannedTask(
+        id: 'plan-${game.state.nextPlanId++}',
+        taskId: 'urban_planning',
+      )..requiresManualStart = true,
+    );
     // A reservation retained from the old tree remains inspectable while its
     // new knowledge prerequisite is missing. New hidden nodes cannot be queued.
     game.state.plans.add(
@@ -94,11 +102,19 @@ void main() {
     game.state.achievements.addAll(['first_launch', 'mars_route_open']);
     game.enqueue('mars_delivery');
     game.setFacilityEnabled('factory', false);
-    game.enqueueDistrict('earth_delta', 0, 'housing');
+    game.state.plans.add(
+      PlannedTask(
+        id: 'old-house',
+        taskId: 'district_housing',
+        cityId: 'earth_delta',
+        plotIndex: 0,
+        targetLevel: 1,
+      )..requiresManualStart = true,
+    );
     final result = forecastPlans(game.state, const Duration(hours: 8));
-    expect(result.completedResearch, {'urban_planning'});
+    expect(result.completedResearch, isEmpty);
     expect(facility(result, 'lab').status, ForecastFacilityStatus.waiting);
-    expect(facility(result, 'lab').stopReason, contains('前提研究待ち'));
+    expect(facility(result, 'lab').stopReason, contains('着手待ち'));
     expect(facility(result, 'launch').status, ForecastFacilityStatus.waiting);
     expect(facility(result, 'launch').stopReason, contains('資源不足'));
     expect(facility(result, 'factory').status, ForecastFacilityStatus.paused);
@@ -110,16 +126,25 @@ void main() {
     'insufficient funds wait and reserved work starts when income recovers',
     () {
       final game = GameEngine(GameState.initial(epoch)..money = 0);
-      game.enqueueDistrict('earth_delta', 0, 'housing');
+      expect(game.enqueueDistrict('earth_delta', 0, 'housing'), isNotNull);
+      game.state.plans.add(
+        PlannedTask(
+          id: 'old-house',
+          taskId: 'district_housing',
+          cityId: 'earth_delta',
+          plotIndex: 0,
+          targetLevel: 1,
+        )..requiresManualStart = true,
+      );
       final near = forecastPlans(game.state, const Duration(minutes: 30));
       expect(near.districtDelta, 0);
       expect(facility(near, 'factory').status, ForecastFacilityStatus.waiting);
-      expect(facility(near, 'factory').stopReason, contains('資金不足'));
+      expect(facility(near, 'factory').stopReason, contains('着手待ち'));
       final later = forecastPlans(game.state, const Duration(hours: 8));
-      expect(later.districtDelta, 1);
-      expect(later.districtLevelDelta, 1);
-      expect(later.populationDelta, 60);
-      expect(later.completedRuns, 1);
+      expect(later.districtDelta, 0);
+      expect(later.districtLevelDelta, 0);
+      expect(later.populationDelta, 0);
+      expect(later.completedRuns, 0);
       expect(later.money, greaterThanOrEqualTo(0));
       expect(facility(later, 'launch').enabled, isFalse);
       expect(game.state.money, 0);
@@ -148,7 +173,11 @@ void main() {
         'urban_planning',
       ); // Already researched: rejected, never duplicated.
       game.enqueueDistrict('mars_arcadia', 2, 'mars_habitat');
-      expect(game.enqueue(pendingResearch), isNull);
+      expect(game.enqueue(pendingResearch), isNotNull);
+      game.state.plans.add(
+        PlannedTask(id: 'old-research', taskId: pendingResearch)
+          ..requiresManualStart = true,
+      );
       game.enqueue('launch_contract', repeats: 3);
       final before = jsonEncode(game.state.toJson());
       final result = forecastPlans(game.state, const Duration(hours: 8));
@@ -179,8 +208,8 @@ void main() {
             game.state.plans.fold(0, (sum, p) => sum + p.completedRuns),
       );
       expect(result.marsResidentsDelta, 24);
-      expect(result.districtDelta, 3);
-      expect(result.completedResearch, contains(pendingResearch));
+      expect(result.districtDelta, 2);
+      expect(result.completedResearch, isEmpty);
       for (final item in result.facilities) {
         expect(item.enabled, actual.state.facilities[item.facilityId]);
         expect(
@@ -257,34 +286,31 @@ void main() {
     expect(facility(result, 'launch').completedRuns, 2);
   });
 
-  test('reordering a build ahead of unlimited work changes the forecast without interrupting the paid run', () {
+  test('construction starts after a paid contract and forecast never creates a reservation', () {
     final game = ready();
     game.enqueue('factory_contract', repeats: null);
     final contract = game.state.currentPlanFor('factory')!;
-    game.enqueueDistrict('earth_delta', 0, 'housing');
-    final house = game.state.plans.last;
+    final beforeRejected = game.state.toJson();
+    expect(game.enqueueDistrict('earth_delta', 0, 'housing'), isNotNull);
+    expect(game.state.toJson(), beforeRejected);
     final blocked = forecastPlans(game.state, const Duration(minutes: 30));
     expect(blocked.districtDelta, 0);
-    expect(blocked.completions.any((c) => c.planId == house.id), isFalse);
-    expect(
-      game.reorderPlan(house.id, relativeToPlanId: contract.id, before: true),
-      isNull,
-    );
-    expect(game.state.currentPlanFor('factory'), same(contract));
-    expect(contract.completedRuns, 0);
+    expect(game.cancelQueued(contract.id), isNull);
+    game.advanceBy(Duration(milliseconds: contract.remainingMs));
+    expect(game.enqueueDistrict('earth_delta', 0, 'housing'), isNull);
+    final house = game.state.plans.last;
     final before = jsonEncode(game.state.toJson());
-    final prioritized = forecastPlans(game.state, const Duration(minutes: 30));
-    expect(prioritized.districtDelta, 1);
-    expect(prioritized.populationDelta, 60);
+    final projected = forecastPlans(game.state, const Duration(minutes: 30));
+    expect(projected.districtDelta, 1);
+    expect(projected.populationDelta, 60);
     expect(
-      prioritized.completions.singleWhere((c) => c.planId == house.id).runs,
+      projected.completions.singleWhere((c) => c.planId == house.id).runs,
       1,
     );
-    expect(prioritized.money, lessThan(blocked.money));
     expect(jsonEncode(game.state.toJson()), before);
     game.advanceBy(const Duration(minutes: 30));
-    expect(game.state.moneyUnits, prioritized.moneyUnits);
-    expect(game.state.districts.length, prioritized.districtCount);
+    expect(game.state.moneyUnits, projected.moneyUnits);
+    expect(game.state.districts.length, projected.districtCount);
   });
 
   test('unlimited work is counted accurately for eight hours without reserving more', () {
@@ -341,29 +367,32 @@ void main() {
     },
   );
 
-  test('RP forecast unlocks exactly at the affordable boundary without mutating its bank', () {
-    final game = ready();
-    game.state.researchPointUnits = 0;
-    expect(game.enqueue('life_support'), isNull);
-    final wait = game.state.researchWaitMs('life_support')!;
-    final before = jsonEncode(game.state.toJson());
-    final near = forecastPlans(game.state, Duration(milliseconds: wait - 1));
-    expect(near.completedResearch, isEmpty);
-    expect(facility(near, 'lab').status, ForecastFacilityStatus.waiting);
-    expect(facility(near, 'lab').stopReason, contains('研究ポイント待ち'));
-    final readyAtBoundary = forecastPlans(
-      game.state,
-      Duration(milliseconds: wait),
-    );
-    expect(readyAtBoundary.completedResearch, {'life_support'});
-    expect(readyAtBoundary.completedRuns, 1);
-    expect(
-      facility(readyAtBoundary, 'lab').status,
-      ForecastFacilityStatus.idle,
-    );
-    expect(jsonEncode(game.state.toJson()), before);
-    expect(game.state.researchPointUnits, 0);
-  });
+  test(
+    'RP forecast accrues the bank at the boundary but never chooses research',
+    () {
+      final game = ready();
+      game.state.researchPointUnits = 0;
+      expect(game.enqueue('life_support'), isNotNull);
+      expect(game.state.plans, isEmpty);
+      final wait = game.state.researchWaitMs('life_support')!;
+      final before = jsonEncode(game.state.toJson());
+      final near = forecastPlans(game.state, Duration(milliseconds: wait - 1));
+      expect(near.completedResearch, isEmpty);
+      expect(facility(near, 'lab').status, ForecastFacilityStatus.idle);
+      final readyAtBoundary = forecastPlans(
+        game.state,
+        Duration(milliseconds: wait),
+      );
+      expect(readyAtBoundary.completedResearch, isEmpty);
+      expect(readyAtBoundary.completedRuns, 0);
+      expect(jsonEncode(game.state.toJson()), before);
+      expect(game.state.researchPointUnits, 0);
+      game.advanceBy(Duration(milliseconds: wait));
+      expect(game.unlockResearch('life_support'), isNull);
+      expect(game.state.research, {'life_support'});
+      expect(game.state.researchPoints, 0);
+    },
+  );
 
   test(
     'negative horizons are rejected and result collections are immutable',

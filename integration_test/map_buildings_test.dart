@@ -208,8 +208,10 @@ void main() {
       await palette();
       await tap('building-option-$greenhouse');
       await tap('enable-map-building-$greenhouseId');
-      await tap('map-building-research-plus-$greenhouseId');
-      expect(controller.state.developmentResearchers[greenhouseId], 1);
+      expect(
+        find.byKey(Key('map-building-research-plus-$greenhouseId')),
+        findsNothing,
+      );
       await tap('reserve-building-work-building_import_water');
       await finishUntil(
         () => controller.state.cityStock('earth_delta', 'water') > 0,
@@ -324,7 +326,7 @@ void main() {
         restored.cityStock('earth_delta', 'food'),
         controller.state.cityStock('earth_delta', 'food'),
       );
-      expect(restored.developmentResearchers[greenhouseId], 1);
+      expect(restored.developmentResearchers[greenhouseId] ?? 0, 0);
       expect(controller.error, isNull);
       expect(tester.takeException(), isNull);
     },

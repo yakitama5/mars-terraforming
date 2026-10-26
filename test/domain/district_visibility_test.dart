@@ -22,17 +22,28 @@ void main() {
 
   test('discovery and research reservation do not unlock construction', () {
     final game = GameEngine(fresh());
-    expect(game.unlockResearch('deployable_solar_arrays'), isNull);
+    game.state.research.add('deployable_solar_arrays');
     expect(game.state.isResearchDiscovered('urban_planning'), isTrue);
     expect(game.state.districtResearchUnlocked('campus'), isFalse);
     expect(game.state.districtResearchUnlocked('industry'), isFalse);
-    expect(game.enqueue('urban_planning'), isNull);
+    game.state.plans.add(
+      PlannedTask(id: 'old-research', taskId: 'urban_planning')
+        ..requiresManualStart = true,
+    );
     expect(game.state.plans.last.status, 'queued');
     expect(game.state.districtResearchUnlocked('campus'), isFalse);
     game.state.researchPointUnits =
         GameContent.researchPointCost('urban_planning') *
         GameState.researchPointScale;
+    game.state.population = 180;
+    game.state.districts['earth_delta:1'] = const DistrictState(
+      cityId: 'earth_delta',
+      plotIndex: 1,
+      districtId: 'solar',
+    );
     game.advanceBy(Duration.zero);
+    expect(game.state.research, isNot(contains('urban_planning')));
+    expect(game.startPlan('old-research'), isNull);
     expect(game.state.research, contains('urban_planning'));
     expect(game.state.districtResearchUnlocked('campus'), isTrue);
     expect(game.state.districtResearchUnlocked('industry'), isTrue);

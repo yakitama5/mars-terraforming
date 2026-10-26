@@ -39,17 +39,29 @@ void main() {
     final engine = ready();
     engine.enqueue('factory_contract', repeats: null);
     final contract = engine.state.currentPlanFor('factory')!;
-    expect(engine.enqueueDistrict(city.id, 0, 'housing'), isNull);
-    final plan = engine.state.districtPlanAt(city.id, 0)!;
+    expect(engine.enqueueDistrict(city.id, 0, 'housing'), isNotNull);
+    final plan =
+        PlannedTask(
+            id: 'preserved-housing',
+            taskId: 'district_housing',
+            cityId: city.id,
+            plotIndex: 0,
+            targetLevel: 1,
+          )
+          ..requiresManualStart = true
+          ..stopReason = '着手待ち';
+    engine.state.plans.add(plan);
     final reserved = scenePlotsForCity(engine.state, city)[0];
     expect(reserved.workState, SceneWorkState.queued);
     expect(reserved.districtId, 'housing');
     expect(reserved.level, 0);
-    expect(reserved.workLabel, contains('順番待ち'));
+    expect(reserved.workLabel, contains('着手待ち'));
     expect(engine.state.districtAt(city.id, 0), isNull);
 
-    engine.reorderPlan(plan.id, relativeToPlanId: contract.id, before: true);
+    engine.cancelQueued(contract.id);
     engine.advanceBy(Duration(milliseconds: contract.remainingMs));
+    expect(plan.status, 'queued');
+    expect(engine.startPlan(plan.id), isNull);
     expect(
       scenePlotsForCity(engine.state, city)[0].workState,
       SceneWorkState.building,

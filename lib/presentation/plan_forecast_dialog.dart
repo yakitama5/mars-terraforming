@@ -216,7 +216,7 @@ class _PlanForecastDialogState extends State<PlanForecastDialog> {
                         Padding(
                           padding: EdgeInsets.only(bottom: 12),
                           child: Text(
-                            '開始・予約済みの作業だけを試算します。未指定の研究・建設や居住方式は選びません。\n\n'
+                            '着手済みの建設と、製造・輸送の反復を試算します。要着手の計画や、新しい研究・建設・居住方式は自動で始めません。\n\n'
                             '受注の完了収入は資金見込みに含みます。この画面を開いている間も実際の計画は進行します。',
                             style: TextStyle(
                               color: strategyMuted,
